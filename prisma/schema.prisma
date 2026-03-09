@@ -1,0 +1,294 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============ ENUMS ============
+enum Platform {
+  youtube
+  twitter
+  instagram
+  tiktok
+}
+
+enum UserRole {
+  admin
+  viewer
+}
+
+enum ContentFilter {
+  all
+  video_only
+}
+
+enum SyncStatus {
+  pending
+  syncing
+  success
+  failed
+}
+
+enum DataImportStatus {
+  pending
+  processing
+  success
+  failed
+  partial
+}
+
+enum SyncType {
+  initial_full_sync
+  daily_update
+  manual_trigger
+}
+
+enum PostType {
+  video
+  image
+  carousel
+  text
+  short
+  live
+  story
+}
+
+enum MetricType {
+  views
+  impressions
+  likes
+  comments
+  shares
+  engagement_rate
+  reach
+  watch_duration
+  ctr
+  bookmarks
+  followers
+  profile_visits
+}
+
+// ============ MODELS ============
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String?
+  owner     User?    @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users          User[]
+  socialAccounts SocialAccount[]
+  dataImports    DataImport[]
+
+  @@index([ownerId])
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  passwordHash   String
+  name           String
+  role           UserRole     @default(viewer)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  ownedOrganizations Organization[] @relation("OrganizationOwner")
+  dataImports        DataImport[]
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+model SocialAccount {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  platform       Platform
+  accountId      String
+  accountName    String
+  contentFilter  ContentFilter @default(all)
+  isActive       Boolean      @default(true)
+
+  // API/Auth credentials (encrypted)
+  apiKey       String?
+  authToken    String?
+  refreshToken String?
+
+  // Sync metadata
+  lastSyncedAt DateTime?
+  syncStatus   SyncStatus @default(pending)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  posts        Post[]
+  postMetrics  PostMetric[]
+  dailyRollups AccountDailyRollup[]
+  syncLogs     SyncLog[]
+
+  @@unique([organizationId, platform, accountId])
+  @@index([organizationId, platform])
+  @@index([platform, accountId])
+}
+
+model Post {
+  id              String        @id @default(cuid())
+  socialAccountId String
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platform        Platform
+  postId          String
+  postType        PostType
+
+  title        String?
+  description  String?
+  contentUrl   String
+  thumbnailUrl String?
+
+  publishedAt         DateTime
+  lastMetricRefreshAt DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  isDeleted           Boolean  @default(false)
+  isTrending          Boolean  @default(false)
+
+  metrics PostMetric[]
+
+  @@unique([socialAccountId, postId])
+  @@index([socialAccountId, publishedAt])
+  @@index([platform, publishedAt])
+  @@index([lastMetricRefreshAt])
+}
+
+model PostMetric {
+  id              String        @id @default(cuid())
+  postId          String
+  post            Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccountId String
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platform        Platform
+
+  metricDate  DateTime   @db.Date
+  metricType  MetricType
+  metricValue BigInt
+  recordedAt  DateTime   @default(now())
+
+  @@unique([postId, metricType, metricDate])
+  @@index([postId, metricType, metricDate])
+  @@index([socialAccountId, metricType, metricDate])
+  @@index([socialAccountId, metricDate])
+}
+
+model AccountDailyRollup {
+  id              String        @id @default(cuid())
+  socialAccountId String
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platform        Platform
+
+  rollupDate DateTime @db.Date
+
+  totalViews       BigInt @default(0)
+  totalLikes       BigInt @default(0)
+  totalComments    BigInt @default(0)
+  totalShares      BigInt @default(0)
+  totalImpressions BigInt @default(0)
+  totalReach       BigInt @default(0)
+  newFollowers     BigInt @default(0)
+  totalFollowers   BigInt @default(0)
+  engagementRate   Float  @default(0.0)
+  postsPublished   Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([socialAccountId, rollupDate])
+  @@index([socialAccountId, rollupDate])
+  @@index([socialAccountId, platform, rollupDate])
+}
+
+model SyncLog {
+  id              String        @id @default(cuid())
+  socialAccountId String
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  syncType     SyncType
+  status       SyncStatus @default(pending)
+  errorMessage String?
+
+  postsSynced   Int @default(0)
+  metricsSynced Int @default(0)
+
+  startedAt   DateTime
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([socialAccountId, createdAt])
+  @@index([status, createdAt])
+}
+
+model DataImport {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  fileName String
+  fileSize BigInt
+  platform Platform?
+
+  status       DataImportStatus @default(pending)
+  errorDetails String?
+
+  rowsAttempted  Int @default(0)
+  rowsSuccessful Int @default(0)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+}
+
+// ============ NEXTAUTH MODELS ============
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
