@@ -1,0 +1,100 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+
+interface PostItem {
+  id: string;
+  postType: string;
+  title: string | null;
+  contentUrl: string;
+  thumbnailUrl: string | null;
+  publishedAt: string;
+  isTrending: boolean;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  impressions: number;
+  reach: number;
+  watchDuration: number;
+  engagements: number;
+  engagementRate: number;
+}
+
+interface PlatformSummary {
+  totalViews: number;
+  totalLikes: number;
+  totalComments: number;
+  totalShares: number;
+  totalImpressions: number;
+  totalReach: number;
+  avgEngagementRate: number;
+  totalPosts: number;
+}
+
+interface PieSlice {
+  name: string;
+  value: number;
+  color: string;
+}
+
+interface TopPost {
+  name: string;
+  value: number;
+  id: string;
+}
+
+interface AccountInfo {
+  id: string;
+  accountName: string;
+  syncStatus: string;
+  lastSyncedAt: string | null;
+}
+
+export interface PlatformDashboardData {
+  summary: PlatformSummary;
+  posts: PostItem[];
+  trends: Record<string, unknown>[];
+  engagementBreakdown: PieSlice[];
+  topPosts: TopPost[];
+  accounts: AccountInfo[];
+}
+
+export function usePlatformDashboard(
+  platform: string,
+  startDate: string,
+  endDate: string,
+  contentType?: string
+) {
+  const [data, setData] = useState<PlatformDashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ startDate, endDate });
+      if (contentType && contentType !== "all") {
+        params.set("contentType", contentType);
+      }
+      const res = await fetch(`/api/metrics/platform/${platform}?${params}`);
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || `Failed to load ${platform} dashboard`);
+        return;
+      }
+      setData(json.data);
+    } catch {
+      setError(`Failed to load ${platform} dashboard`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [platform, startDate, endDate, contentType]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return { data, isLoading, error, refetch: fetchData };
+}

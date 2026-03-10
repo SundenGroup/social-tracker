@@ -1,0 +1,306 @@
+import type { Page } from "playwright";
+
+export interface ScrapedPost {
+  postId: string;
+  text: string;
+  publishedAt: string;
+  hasVideo: boolean;
+  hasImage: boolean;
+  permalink: string;
+}
+
+export interface ScrapedMetrics {
+  views?: number;
+  likes?: number;
+  retweets?: number;
+  replies?: number;
+  bookmarks?: number;
+}
+
+export interface ScrapedProfile {
+  username: string;
+  displayName: string;
+  followers: number;
+  following: number;
+}
+
+const USER_AGENTS = [
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+];
+
+export function getRandomUserAgent(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+/**
+ * Extract posts from a Twitter/X profile timeline page.
+ */
+export async function extractPostsFromTimeline(
+  page: Page,
+  username: string,
+  maxPosts = 50
+): Promise<ScrapedPost[]> {
+  const posts: ScrapedPost[] = [];
+  const seen = new Set<string>();
+
+  // Scroll and collect posts
+  let scrollAttempts = 0;
+  const maxScrolls = 10;
+
+  while (posts.length < maxPosts && scrollAttempts < maxScrolls) {
+    // Extract tweet articles from the current viewport
+    const tweetElements = await page.$$('article[data-testid="tweet"]');
+
+    for (const tweet of tweetElements) {
+      if (posts.length >= maxPosts) break;
+
+      try {
+        // Extract post link to get the post ID
+        const linkEl = await tweet.$('a[href*="/status/"]');
+        if (!linkEl) continue;
+
+        const href = await linkEl.getAttribute("href");
+        if (!href) continue;
+
+        const match = href.match(/\/status\/(\d+)/);
+        if (!match) continue;
+
+        const postId = match[1];
+        if (seen.has(postId)) continue;
+        seen.add(postId);
+
+        // Extract text
+        const textEl = await tweet.$('[data-testid="tweetText"]');
+        const text = textEl ? (await textEl.innerText()) : "";
+
+        // Extract timestamp
+        const timeEl = await tweet.$("time");
+        const publishedAt = timeEl
+          ? (await timeEl.getAttribute("datetime")) ?? new Date().toISOString()
+          : new Date().toISOString();
+
+        // Detect media type
+        const videoEl = await tweet.$('[data-testid="videoPlayer"]');
+        const hasVideo = !!videoEl;
+        const imageEl = await tweet.$('[data-testid="tweetPhoto"]');
+        const hasImage = !!imageEl;
+
+        posts.push({
+          postId,
+          text,
+          publishedAt,
+          hasVideo,
+          hasImage,
+          permalink: `https://x.com/${username}/status/${postId}`,
+        });
+      } catch {
+        // Skip individual tweet parsing errors
+      }
+    }
+
+    // Scroll down to load more
+    await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
+    await page.waitForTimeout(2000 + Math.random() * 1000);
+    scrollAttempts++;
+  }
+
+  return posts;
+}
+
+/**
+ * Extract metrics from an individual post page.
+ */
+export async function extractMetricsFromPost(
+  page: Page,
+  postUrl: string
+): Promise<ScrapedMetrics> {
+  const metrics: ScrapedMetrics = {};
+
+  try {
+    await page.goto(postUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
+    await page.waitForTimeout(2000);
+
+    // Try to extract metrics from aria-labels on engagement buttons
+    const groups = await page.$$('[role="group"]');
+
+    for (const group of groups) {
+      const buttons = await group.$$("button");
+      for (const button of buttons) {
+        const ariaLabel = await button.getAttribute("aria-label");
+        if (!ariaLabel) continue;
+
+        const lower = ariaLabel.toLowerCase();
+        const numMatch = ariaLabel.match(/([\d,]+)/);
+        if (!numMatch) continue;
+        const value = parseInt(numMatch[1].replace(/,/g, ""), 10);
+
+        if (lower.includes("repl")) metrics.replies = value;
+        else if (lower.includes("repost") || lower.includes("retweet"))
+          metrics.retweets = value;
+        else if (lower.includes("like")) metrics.likes = value;
+        else if (lower.includes("bookmark")) metrics.bookmarks = value;
+        else if (lower.includes("view")) metrics.views = value;
+      }
+    }
+
+    // Try to find view count in analytics link
+    const analyticsLinks = await page.$$('a[href*="/analytics"]');
+    for (const link of analyticsLinks) {
+      const ariaLabel = await link.getAttribute("aria-label");
+      if (ariaLabel) {
+        const numMatch = ariaLabel.match(/([\d,]+)/);
+        if (numMatch) {
+          metrics.views = parseInt(numMatch[1].replace(/,/g, ""), 10);
+        }
+      }
+    }
+  } catch {
+    // Return whatever we've collected so far
+  }
+
+  return metrics;
+}
+
+/**
+ * Extract metrics from X's internal GraphQL TweetDetail response.
+ * Intercepts network responses while loading a tweet page.
+ */
+export async function extractMetricsFromGraphQL(
+  page: Page,
+  postUrl: string
+): Promise<ScrapedMetrics> {
+  const metrics: ScrapedMetrics = {};
+
+  const graphQLPromise = new Promise<ScrapedMetrics>((resolve) => {
+    const timeout = setTimeout(() => resolve(metrics), 10000);
+
+    page.on("response", async (response) => {
+      const url = response.url();
+      if (!url.includes("/TweetDetail") && !url.includes("/TweetResultByRestId"))
+        return;
+
+      try {
+        const json = await response.json();
+        const result = findTweetMetrics(json);
+        if (result) {
+          clearTimeout(timeout);
+          resolve(result);
+        }
+      } catch {
+        // Not JSON or parsing error
+      }
+    });
+  });
+
+  await page.goto(postUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
+
+  return graphQLPromise;
+}
+
+function findTweetMetrics(obj: unknown): ScrapedMetrics | null {
+  if (!obj || typeof obj !== "object") return null;
+
+  const record = obj as Record<string, unknown>;
+
+  // Look for the legacy metrics in the GraphQL response
+  if (
+    "favorite_count" in record ||
+    "retweet_count" in record ||
+    "reply_count" in record
+  ) {
+    return {
+      likes: (record.favorite_count as number) ?? undefined,
+      retweets: (record.retweet_count as number) ?? undefined,
+      replies: (record.reply_count as number) ?? undefined,
+      bookmarks: (record.bookmark_count as number) ?? undefined,
+      views:
+        typeof record.views === "object" && record.views
+          ? (Number((record.views as Record<string, unknown>).count) || undefined)
+          : undefined,
+    };
+  }
+
+  // Recursively search nested objects
+  for (const value of Object.values(record)) {
+    if (typeof value === "object" && value !== null) {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const result = findTweetMetrics(item);
+          if (result) return result;
+        }
+      } else {
+        const result = findTweetMetrics(value);
+        if (result) return result;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract profile stats from a Twitter/X profile page.
+ */
+export async function extractProfileStats(
+  page: Page
+): Promise<ScrapedProfile | null> {
+  try {
+    // Wait for profile header
+    await page.waitForSelector('[data-testid="UserName"]', { timeout: 10000 });
+
+    const displayNameEl = await page.$('[data-testid="UserName"] span');
+    const displayName = displayNameEl
+      ? await displayNameEl.innerText()
+      : "Unknown";
+
+    // Extract follower/following counts
+    let followers = 0;
+    let following = 0;
+
+    const links = await page.$$("a");
+    for (const link of links) {
+      const href = await link.getAttribute("href");
+      const text = await link.innerText();
+
+      if (href?.includes("/followers")) {
+        followers = parseCompactNumber(text);
+      } else if (href?.includes("/following")) {
+        following = parseCompactNumber(text);
+      }
+    }
+
+    return {
+      username: displayName,
+      displayName,
+      followers,
+      following,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse compact numbers like "1.2M", "45.3K", "892".
+ */
+function parseCompactNumber(text: string): number {
+  const cleaned = text.replace(/[^0-9.KMBkmb]/g, "");
+  const match = cleaned.match(/([\d.]+)\s*([KMBkmb])?/);
+  if (!match) return 0;
+
+  const num = parseFloat(match[1]);
+  const suffix = (match[2] ?? "").toUpperCase();
+
+  switch (suffix) {
+    case "K":
+      return Math.round(num * 1_000);
+    case "M":
+      return Math.round(num * 1_000_000);
+    case "B":
+      return Math.round(num * 1_000_000_000);
+    default:
+      return Math.round(num);
+  }
+}

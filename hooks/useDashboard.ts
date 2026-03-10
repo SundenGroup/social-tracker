@@ -1,0 +1,73 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import type { PostPerformance } from "@/types";
+
+interface PlatformSummary {
+  platform: string;
+  views: number;
+  engagements: number;
+  topPost: string | null;
+}
+
+interface AccountHealth {
+  id: string;
+  platform: string;
+  accountName: string;
+  syncStatus: string;
+  lastSyncedAt: string | null;
+}
+
+interface DashboardSummary {
+  totalViews: number;
+  totalEngagements: number;
+  avgEngagementRate: number;
+  totalImpressions: number;
+}
+
+interface TrendPoint {
+  date: string;
+  youtube?: number;
+  twitter?: number;
+  instagram?: number;
+  tiktok?: number;
+}
+
+interface DashboardData {
+  summary: DashboardSummary;
+  platforms: PlatformSummary[];
+  posts: PostPerformance[];
+  trends: TrendPoint[];
+  accounts: AccountHealth[];
+}
+
+export function useDashboard(startDate: string, endDate: string) {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ startDate, endDate });
+      const res = await fetch(`/api/metrics/dashboard?${params}`);
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || "Failed to load dashboard");
+        return;
+      }
+      setData(json.data);
+    } catch {
+      setError("Failed to load dashboard");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [startDate, endDate]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return { data, isLoading, error, refetch: fetchData };
+}

@@ -24,9 +24,9 @@ async function main() {
 
   const admin = await prisma.user.create({
     data: {
-      email: "admin@clutchgg.com",
+      email: "simon@clutch.game",
       passwordHash: adminPassword,
-      name: "Admin User",
+      name: "Simon",
       role: UserRole.admin,
       organizationId: org.id,
     },
@@ -39,7 +39,7 @@ async function main() {
 
   const viewer = await prisma.user.create({
     data: {
-      email: "viewer@clutchgg.com",
+      email: "viewer@clutch.game",
       passwordHash: viewerPassword,
       name: "Viewer User",
       role: UserRole.viewer,
@@ -47,7 +47,7 @@ async function main() {
     },
   });
 
-  console.log("Created users: admin@clutchgg.com (admin), viewer@clutchgg.com (viewer)");
+  console.log("Created users: simon@clutch.game (admin), viewer@clutch.game (viewer)");
 
   // Create social accounts
   const youtube = await prisma.socialAccount.create({
