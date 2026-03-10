@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { decrypt } from "@/lib/api-keys";
+import { prisma } from "@/lib/db";
 import {
   BaseCollector,
   type PostData,
@@ -129,6 +130,24 @@ export class YouTubeCollector extends BaseCollector {
 
         const stats = video.statistics;
 
+        // Detect Shorts by duration (<=60s) and update post type
+        const duration = video.contentDetails?.duration;
+        if (duration) {
+          const seconds = parseISO8601Duration(duration);
+          const detectedType = seconds > 0 && seconds <= 60 ? "short" : "video";
+          const contentUrl = detectedType === "short"
+            ? `https://www.youtube.com/shorts/${video.id}`
+            : `https://www.youtube.com/watch?v=${video.id}`;
+
+          await prisma.post.updateMany({
+            where: {
+              socialAccountId: this.account.id,
+              postId: video.id,
+            },
+            data: { postType: detectedType, contentUrl },
+          });
+        }
+
         if (stats.viewCount) {
           metrics.push({
             postId: video.id,
@@ -199,10 +218,21 @@ export class YouTubeCollector extends BaseCollector {
     title: string,
     description: string
   ): "video" | "short" | "live" {
+    // Initial guess based on text — will be corrected by duration in fetchMetrics
     const lower = title.toLowerCase() + " " + description.toLowerCase();
     if (lower.includes("#shorts") || lower.includes("#short")) return "short";
     if (lower.includes("live stream") || lower.includes("livestream"))
       return "live";
     return "video";
   }
+}
+
+/** Parse ISO 8601 duration (e.g., "PT1M30S", "PT45S", "PT1H2M") to seconds */
+function parseISO8601Duration(duration: string): number {
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  const hours = parseInt(match[1] ?? "0", 10);
+  const minutes = parseInt(match[2] ?? "0", 10);
+  const seconds = parseInt(match[3] ?? "0", 10);
+  return hours * 3600 + minutes * 60 + seconds;
 }
