@@ -41,8 +41,8 @@ export default function TwitterDashboardPage() {
 
   const trendLines = [
     { dataKey: "views", name: "Views", color: "#1DA1F2" },
-    { dataKey: "impressions", name: "Impressions", color: "#121B6C" },
-    { dataKey: "likes", name: "Engagements", color: "#FF154D" },
+    { dataKey: "likes", name: "Likes", color: "#FF154D" },
+    { dataKey: "shares", name: "Retweets", color: "#121B6C" },
   ];
 
   return (
@@ -82,9 +82,8 @@ export default function TwitterDashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-5">
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         <KPICard label="Total Views" value={formatCompact(data.summary.totalViews)} />
-        <KPICard label="Impressions" value={formatCompact(data.summary.totalImpressions)} />
         <KPICard label="Engagement Rate" value={`${data.summary.avgEngagementRate}%`} />
         <KPICard label="Engagements" value={formatCompact(data.summary.totalLikes + data.summary.totalComments + data.summary.totalShares)} />
         <KPICard label="Total Posts" value={String(data.summary.totalPosts)} />
@@ -92,7 +91,7 @@ export default function TwitterDashboardPage() {
 
       {/* Trend Chart */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-bold text-clutch-black">Views & Impressions Trend</h2>
+        <h2 className="mb-4 text-sm font-bold text-clutch-black">Views & Engagement Trend</h2>
         <TrendChart data={data.trends} lines={trendLines} />
       </div>
 
@@ -118,7 +117,6 @@ export default function TwitterDashboardPage() {
                 <th className="pb-2 pr-4 font-medium">Tweet</th>
                 <th className="pb-2 pr-4 font-medium">Type</th>
                 <th className="pb-2 pr-4 font-medium text-right">Views</th>
-                <th className="pb-2 pr-4 font-medium text-right">Impressions</th>
                 <th className="pb-2 pr-4 font-medium text-right">Likes</th>
                 <th className="pb-2 pr-4 font-medium text-right">Retweets</th>
                 <th className="pb-2 pr-4 font-medium text-right">Replies</th>
@@ -135,7 +133,6 @@ export default function TwitterDashboardPage() {
                   </td>
                   <td className="py-2 pr-4 capitalize text-clutch-grey/70">{post.postType}</td>
                   <td className="py-2 pr-4 text-right">{formatCompact(post.views)}</td>
-                  <td className="py-2 pr-4 text-right">{formatCompact(post.impressions)}</td>
                   <td className="py-2 pr-4 text-right">{formatCompact(post.likes)}</td>
                   <td className="py-2 pr-4 text-right">{formatCompact(post.shares)}</td>
                   <td className="py-2 pr-4 text-right">{formatCompact(post.comments)}</td>
