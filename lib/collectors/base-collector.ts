@@ -54,11 +54,21 @@ export abstract class BaseCollector {
   abstract fetchMetrics(postIds: string[]): Promise<MetricData[]>;
   abstract getAccountStats(): Promise<AccountStats>;
 
-  /** Sanitize text for PostgreSQL storage (remove null bytes and control characters) */
-  protected sanitizeText(text: string | null): string | null {
+  /** Sanitize and truncate text for PostgreSQL storage */
+  protected sanitizeText(text: string | null, maxLength = 500): string | null {
     if (!text) return text;
     // eslint-disable-next-line no-control-regex
-    return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+    let clean = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+    // Safe truncation: avoid cutting surrogate pairs (emojis)
+    if (clean.length > maxLength) {
+      clean = clean.substring(0, maxLength);
+      // If we cut a high surrogate in half, remove it
+      const lastChar = clean.charCodeAt(clean.length - 1);
+      if (lastChar >= 0xD800 && lastChar <= 0xDBFF) {
+        clean = clean.substring(0, clean.length - 1);
+      }
+    }
+    return clean;
   }
 
   async sync(syncType: SyncType): Promise<SyncResult> {

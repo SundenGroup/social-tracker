@@ -91,9 +91,7 @@ export class YouTubeCollector extends BaseCollector {
           platform: "youtube",
           postType: this.detectPostType(snippet.title ?? "", snippet.description ?? ""),
           title: snippet.title ?? null,
-          description: snippet.description
-            ? snippet.description.substring(0, 500)
-            : null,
+          description: snippet.description ?? null,
           contentUrl: `https://www.youtube.com/watch?v=${videoId}`,
           thumbnailUrl:
             snippet.thumbnails?.high?.url ??
