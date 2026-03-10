@@ -54,6 +54,13 @@ export abstract class BaseCollector {
   abstract fetchMetrics(postIds: string[]): Promise<MetricData[]>;
   abstract getAccountStats(): Promise<AccountStats>;
 
+  /** Sanitize text for PostgreSQL storage (remove null bytes and control characters) */
+  protected sanitizeText(text: string | null): string | null {
+    if (!text) return text;
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  }
+
   async sync(syncType: SyncType): Promise<SyncResult> {
     const syncLog = await prisma.syncLog.create({
       data: {
@@ -97,15 +104,15 @@ export abstract class BaseCollector {
               platform: post.platform,
               postId: post.postId,
               postType: post.postType,
-              title: post.title,
-              description: post.description,
+              title: this.sanitizeText(post.title),
+              description: this.sanitizeText(post.description),
               contentUrl: post.contentUrl,
               thumbnailUrl: post.thumbnailUrl,
               publishedAt: post.publishedAt,
             },
             update: {
-              title: post.title,
-              description: post.description,
+              title: this.sanitizeText(post.title),
+              description: this.sanitizeText(post.description),
               thumbnailUrl: post.thumbnailUrl,
               lastMetricRefreshAt: new Date(),
             },
