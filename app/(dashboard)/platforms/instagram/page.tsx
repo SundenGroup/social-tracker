@@ -30,7 +30,7 @@ export default function InstagramDashboardPage() {
   const [startDate, setStartDate] = useState(thirtyDaysAgo);
   const [endDate, setEndDate] = useState(today);
   const [contentType, setContentType] = useState("all");
-  const [gallerySortBy, setGallerySortBy] = useState<"reach" | "engagements" | "impressions">("reach");
+  const [gallerySortBy, setGallerySortBy] = useState<"views" | "engagements" | "likes">("views");
   const { data, isLoading, error, refetch } = usePlatformDashboard("instagram", startDate, endDate, contentType);
 
   if (isLoading) {
@@ -48,22 +48,22 @@ export default function InstagramDashboardPage() {
   if (!data) return null;
 
   const trendLines = [
-    { dataKey: "reach", name: "Reach", color: "#E4405F" },
-    { dataKey: "impressions", name: "Impressions", color: "#121B6C" },
-    { dataKey: "likes", name: "Engagements", color: "#FF154D" },
+    { dataKey: "views", name: "Views", color: "#E4405F" },
+    { dataKey: "likes", name: "Likes", color: "#FF154D" },
+    { dataKey: "comments", name: "Comments", color: "#121B6C" },
   ];
 
   const sortedPosts = [...data.posts].sort((a, b) => {
-    if (gallerySortBy === "reach") return b.reach - a.reach;
+    if (gallerySortBy === "views") return b.views - a.views;
     if (gallerySortBy === "engagements") return b.engagements - a.engagements;
-    return b.impressions - a.impressions;
+    return b.likes - a.likes;
   });
 
   const galleryItems = sortedPosts.slice(0, 15).map((p) => ({
     id: p.id,
     thumbnailUrl: p.thumbnailUrl,
     title: p.title,
-    metric: gallerySortBy === "reach" ? p.reach : gallerySortBy === "engagements" ? p.engagements : p.impressions,
+    metric: gallerySortBy === "views" ? p.views : gallerySortBy === "engagements" ? p.engagements : p.likes,
     metricLabel: gallerySortBy,
     contentUrl: p.contentUrl,
   }));
@@ -103,15 +103,15 @@ export default function InstagramDashboardPage() {
 
       {/* KPI Cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <KPICard label="Total Reach" value={formatCompact(data.summary.totalReach)} />
+        <KPICard label="Total Views" value={formatCompact(data.summary.totalViews)} />
         <KPICard label="Engagement Rate" value={`${data.summary.avgEngagementRate}%`} />
-        <KPICard label="Engagements" value={formatCompact(data.summary.totalLikes + data.summary.totalComments + data.summary.totalShares)} />
+        <KPICard label="Total Likes" value={formatCompact(data.summary.totalLikes)} />
         <KPICard label="Total Posts" value={String(data.summary.totalPosts)} />
       </div>
 
       {/* Reach vs Impressions Trend */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-bold text-clutch-black">Reach vs Impressions</h2>
+        <h2 className="mb-4 text-sm font-bold text-clutch-black">Views & Engagement Trend</h2>
         <TrendChart data={data.trends} lines={trendLines} />
       </div>
 
@@ -126,7 +126,7 @@ export default function InstagramDashboardPage() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-bold text-clutch-black">Top Posts</h2>
           <div className="flex gap-1">
-            {(["reach", "engagements", "impressions"] as const).map((s) => (
+            {(["views", "engagements", "likes"] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setGallerySortBy(s)}
@@ -153,8 +153,7 @@ export default function InstagramDashboardPage() {
               <tr className="border-b border-gray-100 text-clutch-grey/50">
                 <th className="pb-2 pr-4 font-medium">Caption</th>
                 <th className="pb-2 pr-4 font-medium">Type</th>
-                <th className="pb-2 pr-4 font-medium text-right">Reach</th>
-                <th className="pb-2 pr-4 font-medium text-right">Impressions</th>
+                <th className="pb-2 pr-4 font-medium text-right">Views</th>
                 <th className="pb-2 pr-4 font-medium text-right">Likes</th>
                 <th className="pb-2 pr-4 font-medium text-right">Comments</th>
                 <th className="pb-2 pr-4 font-medium text-right">Eng. Rate</th>
@@ -170,8 +169,7 @@ export default function InstagramDashboardPage() {
                     </a>
                   </td>
                   <td className="py-2 pr-4 capitalize text-clutch-grey/70">{post.postType}</td>
-                  <td className="py-2 pr-4 text-right">{formatCompact(post.reach)}</td>
-                  <td className="py-2 pr-4 text-right">{formatCompact(post.impressions)}</td>
+                  <td className="py-2 pr-4 text-right">{formatCompact(post.views)}</td>
                   <td className="py-2 pr-4 text-right">{formatCompact(post.likes)}</td>
                   <td className="py-2 pr-4 text-right">{formatCompact(post.comments)}</td>
                   <td className="py-2 pr-4 text-right">{post.engagementRate}%</td>
