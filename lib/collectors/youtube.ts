@@ -16,11 +16,14 @@ export class YouTubeCollector extends BaseCollector {
   constructor(account: SocialAccount) {
     super(account);
 
-    if (!account.apiKey) {
-      throw new Error("YouTube account missing API key");
+    const apiKey = account.apiKey
+      ? decrypt(account.apiKey)
+      : process.env.YOUTUBE_API_KEY;
+
+    if (!apiKey) {
+      throw new Error("YouTube API key not found. Set YOUTUBE_API_KEY in .env or add it to the account.");
     }
 
-    const apiKey = decrypt(account.apiKey);
     this.youtube = google.youtube({
       version: "v3",
       auth: apiKey,
