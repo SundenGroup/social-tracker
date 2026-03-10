@@ -87,7 +87,10 @@ export const GET = apiHandler(
       const reach = latestOf("reach");
       const watchDuration = latestOf("watch_duration");
       const engagements = likes + comments + shares;
-      const base = views || impressions || 1;
+      // Only compute engagement rate when we have a meaningful denominator
+      // (Instagram images have no views — showing 0% instead of absurd 1000%+)
+      const base = views || impressions || 0;
+      const engagementRate = base > 0 ? Number(((engagements / base) * 100).toFixed(2)) : 0;
 
       return {
         id: post.id,
@@ -105,7 +108,7 @@ export const GET = apiHandler(
         reach,
         watchDuration,
         engagements,
-        engagementRate: Number(((engagements / base) * 100).toFixed(2)),
+        engagementRate,
       };
     });
 
@@ -143,7 +146,7 @@ export const GET = apiHandler(
     }
 
     const totalEngagements = totalLikes + totalComments + totalShares;
-    const engBase = totalViews || totalImpressions || 1;
+    const engBase = totalViews || totalImpressions || 0;
 
     // Daily trend data — compute day-over-day DELTAS instead of cumulative totals
     // Fetch one extra day before start so we can compute the delta for the first day
@@ -212,7 +215,7 @@ export const GET = apiHandler(
           totalShares,
           totalImpressions,
           totalReach,
-          avgEngagementRate: Number(((totalEngagements / engBase) * 100).toFixed(2)),
+          avgEngagementRate: engBase > 0 ? Number(((totalEngagements / engBase) * 100).toFixed(2)) : 0,
           totalPosts: posts.length,
         },
         posts: postPerformance,

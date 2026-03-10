@@ -102,7 +102,7 @@ export const GET = apiHandler(
       const comments = latestOf("comments");
       const shares = latestOf("shares");
       const impressions = latestOf("impressions");
-      const base = views || impressions || 1;
+      const base = views || impressions || 0;
       const engagements = likes + comments + shares;
 
       return {
@@ -119,7 +119,7 @@ export const GET = apiHandler(
         comments,
         shares,
         impressions,
-        engagementRate: Number(((engagements / base) * 100).toFixed(2)),
+        engagementRate: base > 0 ? Number(((engagements / base) * 100).toFixed(2)) : 0,
       };
     });
 
@@ -179,7 +179,7 @@ export const GET = apiHandler(
     }
 
     const totalEngagements = Number(totalLikes + totalComments + totalShares);
-    const base = Number(totalViews) || Number(totalImpressions) || 1;
+    const base = Number(totalViews) || Number(totalImpressions) || 0;
 
     // Platform summaries for cards
     const platformSummaries = Array.from(platformMap.entries()).map(
@@ -202,9 +202,9 @@ export const GET = apiHandler(
         summary: {
           totalViews: Number(totalViews),
           totalEngagements,
-          avgEngagementRate: Number(
+          avgEngagementRate: base > 0 ? Number(
             ((totalEngagements / base) * 100).toFixed(2)
-          ),
+          ) : 0,
           totalImpressions: Number(totalImpressions),
         },
         platforms: platformSummaries,
