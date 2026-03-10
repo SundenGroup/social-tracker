@@ -220,7 +220,8 @@ function findTweetMetrics(obj: unknown): ScrapedMetrics | null {
 
   const record = obj as Record<string, unknown>;
 
-  // Look for the legacy metrics in the GraphQL response
+  // X's GraphQL structure: { legacy: { favorite_count, ... }, views: { count: "123" } }
+  // The metrics are in "legacy" but views is a sibling, so check for both patterns
   if (
     "favorite_count" in record ||
     "retweet_count" in record ||
@@ -236,6 +237,23 @@ function findTweetMetrics(obj: unknown): ScrapedMetrics | null {
           ? (Number((record.views as Record<string, unknown>).count) || undefined)
           : undefined,
     };
+  }
+
+  // Check for parent objects that have both "legacy" (with metrics) and "views" (sibling)
+  if ("legacy" in record && typeof record.legacy === "object" && record.legacy) {
+    const legacy = record.legacy as Record<string, unknown>;
+    if ("favorite_count" in legacy) {
+      return {
+        likes: (legacy.favorite_count as number) ?? undefined,
+        retweets: (legacy.retweet_count as number) ?? undefined,
+        replies: (legacy.reply_count as number) ?? undefined,
+        bookmarks: (legacy.bookmark_count as number) ?? undefined,
+        views:
+          typeof record.views === "object" && record.views
+            ? (Number((record.views as Record<string, unknown>).count) || undefined)
+            : undefined,
+      };
+    }
   }
 
   // Recursively search nested objects
