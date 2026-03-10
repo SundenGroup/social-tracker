@@ -244,16 +244,19 @@ function parseISO8601Duration(duration: string): number {
 
 /**
  * Check if a YouTube video is a Short by probing the /shorts/ URL.
- * YouTube returns 200 for Shorts and 303 redirect for regular videos.
+ * If the final URL (after redirects) still contains /shorts/, it's a Short.
+ * Regular videos get redirected to /watch?v=...
  */
 async function isYouTubeShort(videoId: string): Promise<boolean> {
   try {
     const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
-      method: "HEAD",
-      redirect: "manual",
+      redirect: "follow",
+      headers: {
+        "Accept-Language": "en-US",
+        "Cookie": "CONSENT=YES+",
+      },
     });
-    // 200 = it's a Short, 303 = redirect means regular video
-    return res.status === 200;
+    return res.url.includes("/shorts/");
   } catch {
     return false;
   }
