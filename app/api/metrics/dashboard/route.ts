@@ -25,17 +25,14 @@ export const GET = apiHandler(
 
     const accountIds = accounts.map((a) => a.id);
 
-    // Get aggregated metrics per platform
-    const metrics = await prisma.postMetric.groupBy({
-      by: ["socialAccountId", "metricType"],
-      where: {
-        socialAccountId: { in: accountIds },
-        metricDate: { gte: start, lte: end },
-      },
-      _sum: { metricValue: true },
+    // Get the latest metric date in range for accurate snapshot
+    const latestMetricDate = await prisma.postMetric.findFirst({
+      where: { socialAccountId: { in: accountIds }, metricDate: { gte: start, lte: end } },
+      orderBy: { metricDate: "desc" },
+      select: { metricDate: true },
     });
 
-    // Build per-platform summaries
+    // Build per-platform summaries using latest date snapshot only
     const platformMap = new Map<string, { views: bigint; likes: bigint; comments: bigint; shares: bigint; impressions: bigint }>();
 
     for (const account of accounts) {
@@ -46,19 +43,30 @@ export const GET = apiHandler(
       }
     }
 
-    for (const m of metrics) {
-      const account = accounts.find((a) => a.id === m.socialAccountId);
-      if (!account) continue;
-      const platform = platformMap.get(account.platform);
-      if (!platform) continue;
+    if (latestMetricDate) {
+      const metrics = await prisma.postMetric.groupBy({
+        by: ["socialAccountId", "metricType"],
+        where: {
+          socialAccountId: { in: accountIds },
+          metricDate: latestMetricDate.metricDate,
+        },
+        _sum: { metricValue: true },
+      });
 
-      const val = m._sum.metricValue ?? 0n;
-      switch (m.metricType) {
-        case "views": platform.views += val; break;
-        case "likes": platform.likes += val; break;
-        case "comments": platform.comments += val; break;
-        case "shares": platform.shares += val; break;
-        case "impressions": platform.impressions += val; break;
+      for (const m of metrics) {
+        const account = accounts.find((a) => a.id === m.socialAccountId);
+        if (!account) continue;
+        const platform = platformMap.get(account.platform);
+        if (!platform) continue;
+
+        const val = m._sum.metricValue ?? 0n;
+        switch (m.metricType) {
+          case "views": platform.views += val; break;
+          case "likes": platform.likes += val; break;
+          case "comments": platform.comments += val; break;
+          case "shares": platform.shares += val; break;
+          case "impressions": platform.impressions += val; break;
+        }
       }
     }
 
@@ -77,14 +85,23 @@ export const GET = apiHandler(
       take: 100,
     });
 
-    // Build post performance list
+    // Build post performance list — use LATEST metric snapshot, not sum across dates
     const postPerformance = topPosts.map((post) => {
       const postMetrics = post.metrics;
-      const views = postMetrics.filter((m) => m.metricType === "views").reduce((s, m) => s + Number(m.metricValue), 0);
-      const likes = Number(postMetrics.filter((m) => m.metricType === "likes").reduce((s, m) => s + Number(m.metricValue), 0));
-      const comments = Number(postMetrics.filter((m) => m.metricType === "comments").reduce((s, m) => s + Number(m.metricValue), 0));
-      const shares = Number(postMetrics.filter((m) => m.metricType === "shares").reduce((s, m) => s + Number(m.metricValue), 0));
-      const impressions = Number(postMetrics.filter((m) => m.metricType === "impressions").reduce((s, m) => s + Number(m.metricValue), 0));
+      const latestOf = (type: string) => {
+        const records = postMetrics.filter((m) => m.metricType === type);
+        if (records.length === 0) return 0;
+        const latest = records.reduce((a, b) =>
+          a.metricDate.getTime() > b.metricDate.getTime() ? a : b
+        );
+        return Number(latest.metricValue);
+      };
+
+      const views = latestOf("views");
+      const likes = latestOf("likes");
+      const comments = latestOf("comments");
+      const shares = latestOf("shares");
+      const impressions = latestOf("impressions");
       const base = views || impressions || 1;
       const engagements = likes + comments + shares;
 
@@ -106,26 +123,44 @@ export const GET = apiHandler(
       };
     });
 
-    // Build daily trend data
+    // Build daily trend data — compute day-over-day DELTAS per platform
+    const dayBeforeStart = new Date(start.getTime() - 86400000);
     const dailyMetrics = await prisma.postMetric.groupBy({
       by: ["metricDate", "platform"],
       where: {
         socialAccountId: { in: accountIds },
-        metricDate: { gte: start, lte: end },
+        metricDate: { gte: dayBeforeStart, lte: end },
         metricType: "views",
       },
       _sum: { metricValue: true },
       orderBy: { metricDate: "asc" },
     });
 
-    const trendMap = new Map<string, Record<string, number>>();
+    // Group cumulative totals by platform
+    const cumulativeByPlatform: Record<string, { date: string; total: number }[]> = {};
     for (const dm of dailyMetrics) {
-      const dateKey = dm.metricDate.toISOString().split("T")[0];
-      if (!trendMap.has(dateKey)) {
-        trendMap.set(dateKey, { date: dateKey } as unknown as Record<string, number>);
+      const plat = dm.platform;
+      if (!cumulativeByPlatform[plat]) cumulativeByPlatform[plat] = [];
+      cumulativeByPlatform[plat].push({
+        date: dm.metricDate.toISOString().split("T")[0],
+        total: Number(dm._sum.metricValue ?? 0),
+      });
+    }
+
+    // Compute daily deltas per platform
+    const startStr = start.toISOString().split("T")[0];
+    const trendMap = new Map<string, Record<string, number>>();
+    for (const [plat, entries] of Object.entries(cumulativeByPlatform)) {
+      entries.sort((a, b) => a.date.localeCompare(b.date));
+      for (let i = 1; i < entries.length; i++) {
+        const date = entries[i].date;
+        if (date < startStr) continue;
+        const delta = Math.max(0, entries[i].total - entries[i - 1].total);
+        if (!trendMap.has(date)) {
+          trendMap.set(date, { date } as unknown as Record<string, number>);
+        }
+        trendMap.get(date)![plat] = delta;
       }
-      const entry = trendMap.get(dateKey)!;
-      entry[dm.platform] = Number(dm._sum.metricValue ?? 0);
     }
 
     // Build totals

@@ -67,19 +67,25 @@ export const GET = apiHandler(
       take: 200,
     });
 
-    // Build post performance list
+    // Build post performance list — use LATEST metric snapshot, not sum across dates
     const postPerformance = posts.map((post) => {
       const pm = post.metrics;
-      const sumOf = (type: string) =>
-        pm.filter((m) => m.metricType === type).reduce((s, m) => s + Number(m.metricValue), 0);
+      const latestOf = (type: string) => {
+        const records = pm.filter((m) => m.metricType === type);
+        if (records.length === 0) return 0;
+        const latest = records.reduce((a, b) =>
+          a.metricDate.getTime() > b.metricDate.getTime() ? a : b
+        );
+        return Number(latest.metricValue);
+      };
 
-      const views = sumOf("views");
-      const likes = sumOf("likes");
-      const comments = sumOf("comments");
-      const shares = sumOf("shares");
-      const impressions = sumOf("impressions");
-      const reach = sumOf("reach");
-      const watchDuration = sumOf("watch_duration");
+      const views = latestOf("views");
+      const likes = latestOf("likes");
+      const comments = latestOf("comments");
+      const shares = latestOf("shares");
+      const impressions = latestOf("impressions");
+      const reach = latestOf("reach");
+      const watchDuration = latestOf("watch_duration");
       const engagements = likes + comments + shares;
       const base = views || impressions || 1;
 
@@ -103,51 +109,81 @@ export const GET = apiHandler(
       };
     });
 
-    // Aggregated metrics
-    const metricAgg = await prisma.postMetric.groupBy({
-      by: ["metricType"],
-      where: {
-        socialAccountId: { in: accountIds },
-        metricDate: { gte: start, lte: end },
-      },
-      _sum: { metricValue: true },
+    // Summary: use the latest date's snapshot (not sum across dates)
+    const latestMetricDate = await prisma.postMetric.findFirst({
+      where: { socialAccountId: { in: accountIds }, metricDate: { gte: start, lte: end } },
+      orderBy: { metricDate: "desc" },
+      select: { metricDate: true },
     });
 
-    const metricTotals: Record<string, number> = {};
-    for (const m of metricAgg) {
-      metricTotals[m.metricType] = Number(m._sum.metricValue ?? 0);
+    let totalViews = 0, totalLikes = 0, totalComments = 0, totalShares = 0;
+    let totalImpressions = 0, totalReach = 0;
+
+    if (latestMetricDate) {
+      const metricAgg = await prisma.postMetric.groupBy({
+        by: ["metricType"],
+        where: {
+          socialAccountId: { in: accountIds },
+          metricDate: latestMetricDate.metricDate,
+        },
+        _sum: { metricValue: true },
+      });
+
+      for (const m of metricAgg) {
+        const val = Number(m._sum.metricValue ?? 0);
+        switch (m.metricType) {
+          case "views": totalViews = val; break;
+          case "likes": totalLikes = val; break;
+          case "comments": totalComments = val; break;
+          case "shares": totalShares = val; break;
+          case "impressions": totalImpressions = val; break;
+          case "reach": totalReach = val; break;
+        }
+      }
     }
 
-    const totalViews = metricTotals["views"] ?? 0;
-    const totalLikes = metricTotals["likes"] ?? 0;
-    const totalComments = metricTotals["comments"] ?? 0;
-    const totalShares = metricTotals["shares"] ?? 0;
-    const totalImpressions = metricTotals["impressions"] ?? 0;
-    const totalReach = metricTotals["reach"] ?? 0;
     const totalEngagements = totalLikes + totalComments + totalShares;
     const engBase = totalViews || totalImpressions || 1;
 
-    // Daily trend data (multiple metric types)
+    // Daily trend data — compute day-over-day DELTAS instead of cumulative totals
+    // Fetch one extra day before start so we can compute the delta for the first day
+    const dayBeforeStart = new Date(start.getTime() - 86400000);
     const dailyMetrics = await prisma.postMetric.groupBy({
       by: ["metricDate", "metricType"],
       where: {
         socialAccountId: { in: accountIds },
-        metricDate: { gte: start, lte: end },
+        metricDate: { gte: dayBeforeStart, lte: end },
         metricType: { in: ["views", "likes", "comments", "shares", "impressions", "reach"] },
       },
       _sum: { metricValue: true },
       orderBy: { metricDate: "asc" },
     });
 
-    const trendMap = new Map<string, Record<string, number>>();
+    // Group cumulative totals by metric type
+    const cumulativeByType: Record<string, { date: string; total: number }[]> = {};
     for (const dm of dailyMetrics) {
-      const dateKey = dm.metricDate.toISOString().split("T")[0];
-      if (!trendMap.has(dateKey)) {
-        trendMap.set(dateKey, { date: 0 } as unknown as Record<string, number>);
-        (trendMap.get(dateKey)! as Record<string, unknown>).date = dateKey;
+      const type = dm.metricType;
+      if (!cumulativeByType[type]) cumulativeByType[type] = [];
+      cumulativeByType[type].push({
+        date: dm.metricDate.toISOString().split("T")[0],
+        total: Number(dm._sum.metricValue ?? 0),
+      });
+    }
+
+    // Compute daily deltas
+    const startStr = start.toISOString().split("T")[0];
+    const trendMap = new Map<string, Record<string, number>>();
+    for (const [type, entries] of Object.entries(cumulativeByType)) {
+      entries.sort((a, b) => a.date.localeCompare(b.date));
+      for (let i = 1; i < entries.length; i++) {
+        const date = entries[i].date;
+        if (date < startStr) continue; // skip the extra baseline day
+        const delta = Math.max(0, entries[i].total - entries[i - 1].total);
+        if (!trendMap.has(date)) {
+          trendMap.set(date, { date } as unknown as Record<string, number>);
+        }
+        trendMap.get(date)![type] = delta;
       }
-      const entry = trendMap.get(dateKey)!;
-      entry[dm.metricType] = Number(dm._sum.metricValue ?? 0);
     }
 
     // Engagement breakdown for pie chart

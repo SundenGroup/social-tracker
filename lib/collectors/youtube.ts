@@ -130,11 +130,16 @@ export class YouTubeCollector extends BaseCollector {
 
         const stats = video.statistics;
 
-        // Detect Shorts by duration (<=60s) and update post type
+        // Detect Shorts: check duration first, then confirm via URL probe
         const duration = video.contentDetails?.duration;
         if (duration) {
           const seconds = parseISO8601Duration(duration);
-          const detectedType = seconds > 0 && seconds <= 60 ? "short" : "video";
+          // Videos <= 3 min are Short candidates (YouTube extended Shorts length)
+          // Use URL probe to definitively confirm
+          let detectedType: "short" | "video" = "video";
+          if (seconds > 0 && seconds <= 180) {
+            detectedType = await isYouTubeShort(video.id) ? "short" : "video";
+          }
           const contentUrl = detectedType === "short"
             ? `https://www.youtube.com/shorts/${video.id}`
             : `https://www.youtube.com/watch?v=${video.id}`;
@@ -235,4 +240,21 @@ function parseISO8601Duration(duration: string): number {
   const minutes = parseInt(match[2] ?? "0", 10);
   const seconds = parseInt(match[3] ?? "0", 10);
   return hours * 3600 + minutes * 60 + seconds;
+}
+
+/**
+ * Check if a YouTube video is a Short by probing the /shorts/ URL.
+ * YouTube returns 200 for Shorts and 303 redirect for regular videos.
+ */
+async function isYouTubeShort(videoId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
+      method: "HEAD",
+      redirect: "manual",
+    });
+    // 200 = it's a Short, 303 = redirect means regular video
+    return res.status === 200;
+  } catch {
+    return false;
+  }
 }
