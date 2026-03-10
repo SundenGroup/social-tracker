@@ -34,24 +34,49 @@ export const POST = apiHandler(
           ? "YouTube API key format is valid"
           : "YouTube requires an API key";
         break;
-      case "twitter":
-        // Twitter uses scraping — no API keys needed, just a valid handle
-        isValid = !!accountId && /^[A-Za-z0-9_]{1,15}$/.test(accountId.replace(/^@/, ""));
-        message = isValid
-          ? "X/Twitter handle format is valid. Profile will be verified during first sync."
-          : "X/Twitter requires a valid handle (1-15 alphanumeric/underscore characters)";
+      case "twitter": {
+        const validHandle = !!accountId && /^[A-Za-z0-9_]{1,15}$/.test(accountId.replace(/^@/, ""));
+        if (!validHandle) {
+          isValid = false;
+          message = "X/Twitter requires a valid handle (1-15 alphanumeric/underscore characters)";
+        } else if (authToken) {
+          const hasAuthToken = authToken.includes("auth_token=");
+          isValid = true;
+          message = hasAuthToken
+            ? "X/Twitter handle and session cookies look valid."
+            : "X/Twitter handle is valid. Cookies should include auth_token for reliable scraping.";
+        } else {
+          isValid = true;
+          message = "X/Twitter handle is valid. Add session cookies for reliable scraping (recommended).";
+        }
         break;
+      }
       case "instagram":
-        isValid = !!authToken;
-        message = isValid
-          ? "Instagram access token format is valid"
-          : "Instagram requires an access token";
+        if (!authToken) {
+          isValid = false;
+          message = "Instagram requires session cookies. Export cookies from a logged-in browser.";
+        } else {
+          // Check for required cookie names in the raw string
+          const hasSessionId = authToken.includes("sessionid=");
+          const hasCsrf = authToken.includes("csrftoken=");
+          isValid = hasSessionId && hasCsrf;
+          message = isValid
+            ? "Instagram session cookies look valid. They will be verified during first sync."
+            : "Instagram cookies should include at least sessionid and csrftoken";
+        }
         break;
       case "tiktok":
         isValid = !!accountId && accountId.length > 0;
-        message = isValid
-          ? "TikTok handle format is valid. Profile will be verified during first sync."
-          : "TikTok requires a valid username";
+        if (isValid && authToken) {
+          const hasTikTokSession = authToken.includes("sessionid");
+          message = hasTikTokSession
+            ? "TikTok handle and session cookies look valid."
+            : "TikTok handle is valid. Cookies should include sessionid for full video listing.";
+        } else {
+          message = isValid
+            ? "TikTok handle is valid. Add session cookies for full video listing (optional)."
+            : "TikTok requires a valid username";
+        }
         break;
     }
 

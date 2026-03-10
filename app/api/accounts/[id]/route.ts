@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { socialAccountSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/api-keys";
 import { NotFoundError } from "@/lib/errors";
+import { buildCookiePayload } from "@/lib/utils/browser-cookies";
 
 // GET /api/accounts/[id] - Get account details
 export const GET = apiHandler(
@@ -69,8 +70,18 @@ export const PUT = apiHandler(
       );
     }
 
-    const { platform, accountId, accountName, contentFilter, apiKey, authToken, refreshToken } =
+    const { platform, accountId, accountName, contentFilter, apiKey, refreshToken } =
       result.data;
+    let { authToken } = result.data;
+
+    // For Instagram/TikTok, convert raw cookie header string to structured JSON
+    if (authToken && (platform === "instagram" || platform === "tiktok" || platform === "twitter")) {
+      try {
+        JSON.parse(authToken);
+      } catch {
+        authToken = buildCookiePayload(authToken, platform);
+      }
+    }
 
     // Check for duplicate if platform/accountId changed
     if (platform !== existing.platform || accountId !== existing.accountId) {

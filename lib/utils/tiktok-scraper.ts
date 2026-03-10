@@ -6,6 +6,7 @@ export interface ScrapedTikTokVideo {
   coverUrl: string | null;
   permalink: string;
   views: number;
+  createTime?: number;
 }
 
 export interface ScrapedTikTokMetrics {
@@ -141,6 +142,7 @@ async function tryExtractFromJSON(
         coverUrl: item.video?.cover ?? item.video?.originCover ?? null,
         permalink: `https://www.tiktok.com/@${username}/video/${item.id}`,
         views: Number(item.stats?.playCount ?? item.video?.playCount ?? 0),
+        createTime: item.createTime ? Number(item.createTime) : undefined,
       });
     }
 

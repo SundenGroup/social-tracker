@@ -3,6 +3,7 @@ import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { socialAccountSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/api-keys";
+import { buildCookiePayload } from "@/lib/utils/browser-cookies";
 
 // GET /api/accounts - List accounts for organization
 export const GET = apiHandler(
@@ -47,8 +48,20 @@ export const POST = apiHandler(
       );
     }
 
-    const { platform, accountId, accountName, contentFilter, apiKey, authToken, refreshToken } =
+    const { platform, accountId, accountName, contentFilter, apiKey, refreshToken } =
       result.data;
+    let { authToken } = result.data;
+
+    // For Instagram/TikTok, convert raw cookie header string to structured JSON
+    if (authToken && (platform === "instagram" || platform === "tiktok" || platform === "twitter")) {
+      try {
+        // If it's already valid JSON (re-submission), leave it alone
+        JSON.parse(authToken);
+      } catch {
+        // Raw cookie header string — convert to structured format
+        authToken = buildCookiePayload(authToken, platform);
+      }
+    }
 
     // Check for duplicate account
     const existing = await prisma.socialAccount.findUnique({

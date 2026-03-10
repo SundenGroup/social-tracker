@@ -1,77 +1,127 @@
-import axios from "axios";
-import { decrypt } from "@/lib/api-keys";
+import { chromium, type Browser, type Page } from "playwright";
 import {
   BaseCollector,
   type PostData,
   type MetricData,
   type AccountStats,
 } from "./base-collector";
+import {
+  parseCookieData,
+  loadCookiesIntoContext,
+  validateCookiesForPlatform,
+  areCookiesExpired,
+} from "@/lib/utils/browser-cookies";
+import {
+  fetchAllInstagramPosts,
+  resolveInstagramUserId,
+  fetchInstagramProfile,
+  type ScrapedInstagramPost,
+} from "@/lib/utils/instagram-scraper";
+import { getRandomUserAgent } from "@/lib/utils/tiktok-scraper";
 import type { SocialAccount, PostType } from "@prisma/client";
 
-const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
-const RATE_LIMIT_DELAY = 2000; // 200 calls/hour ≈ 1 call per 18s, but batch helps
+const MAX_POSTS_PER_SYNC = 200;
 
 export class InstagramCollector extends BaseCollector {
-  private accessToken: string;
+  private username: string;
+  // Cache metrics from fetchPosts so fetchMetrics doesn't need a second browser session
+  private metricsCache = new Map<
+    string,
+    { likes: number; comments: number; plays: number }
+  >();
 
   constructor(account: SocialAccount) {
     super(account);
+    this.username = account.accountId.replace(/^@/, "");
 
     if (!account.authToken) {
-      throw new Error("Instagram account missing access token");
+      throw new Error(
+        "Instagram account missing session cookies. Export cookies from a logged-in browser and paste them in the account settings."
+      );
+    }
+  }
+
+  private async withAuthenticatedBrowser<T>(
+    fn: (page: Page, browser: Browser) => Promise<T>
+  ): Promise<T> {
+    // Parse and validate cookies
+    const cookieData = parseCookieData(this.account.authToken!);
+
+    const validation = validateCookiesForPlatform(cookieData, "instagram");
+    if (!validation.valid) {
+      throw new Error(
+        `Instagram session cookies missing required cookies: ${validation.missing.join(", ")}. Re-export cookies from your browser.`
+      );
     }
 
-    this.accessToken = decrypt(account.authToken);
+    if (areCookiesExpired(cookieData, "instagram")) {
+      throw new Error(
+        "Instagram session cookies have expired. Please log in to Instagram in your browser and re-export fresh cookies."
+      );
+    }
+
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const context = await browser.newContext({
+        userAgent: getRandomUserAgent(),
+        viewport: { width: 1280, height: 800 },
+      });
+
+      const loaded = await loadCookiesIntoContext(context, cookieData);
+      this.logger(`Loaded ${loaded} cookies into browser context`);
+
+      const page = await context.newPage();
+
+      // Navigate to instagram.com to establish the session
+      await page.goto("https://www.instagram.com/", {
+        waitUntil: "domcontentloaded",
+        timeout: 30000,
+      });
+      await page.waitForTimeout(2000);
+
+      return await fn(page, browser);
+    } finally {
+      await browser.close();
+    }
   }
 
   async fetchPosts(): Promise<PostData[]> {
-    const posts: PostData[] = [];
-    const igUserId = this.account.accountId;
+    return this.withAuthenticatedBrowser(async (page) => {
+      this.logger(`Fetching posts for @${this.username}...`);
 
-    this.logger("Fetching media from Instagram Graph API...");
+      // Resolve username to numeric userId
+      const userId = await resolveInstagramUserId(page, this.username);
+      this.logger(`Resolved @${this.username} to userId ${userId}`);
 
-    let url = `${GRAPH_API_BASE}/${igUserId}/media`;
-    let params: Record<string, string> = {
-      access_token: this.accessToken,
-      fields: "id,media_type,media_product_type,caption,timestamp,permalink,thumbnail_url,media_url",
-      limit: "50",
-    };
+      // Fetch posts via internal feed API
+      const igPosts = await fetchAllInstagramPosts(
+        page,
+        userId,
+        MAX_POSTS_PER_SYNC
+      );
 
-    let pageCount = 0;
-    const maxPages = 10;
+      this.logger(`Fetched ${igPosts.length} posts from feed API`);
 
-    while (url && pageCount < maxPages) {
-      const res = await axios.get(url, { params });
-      const data = res.data;
-
-      for (const item of data.data ?? []) {
-        const postType = this.mapMediaType(
-          item.media_type,
-          item.media_product_type
-        );
-
-        posts.push({
-          postId: item.id,
-          platform: "instagram",
-          postType,
-          title: item.caption ? item.caption.substring(0, 200) : null,
-          description: item.caption ?? null,
-          contentUrl: item.permalink ?? `https://www.instagram.com/p/${item.id}/`,
-          thumbnailUrl: item.thumbnail_url ?? item.media_url ?? null,
-          publishedAt: new Date(item.timestamp),
+      // Cache metrics for fetchMetrics()
+      for (const post of igPosts) {
+        this.metricsCache.set(post.postId, {
+          likes: post.likeCount,
+          comments: post.commentCount,
+          plays: post.playCount,
         });
       }
 
-      // Pagination — next page cursor
-      url = data.paging?.next ?? null;
-      params = {}; // Next URL already has all params
-      pageCount++;
-
-      await this.delay(RATE_LIMIT_DELAY);
-    }
-
-    this.logger(`Fetched ${posts.length} posts`);
-    return posts;
+      return igPosts.map((post) => ({
+        postId: post.postId,
+        platform: "instagram" as const,
+        postType: this.mapMediaType(post),
+        title: post.caption ? post.caption.substring(0, 200) : null,
+        description: post.caption || null,
+        contentUrl: post.permalink,
+        thumbnailUrl: post.thumbnailUrl,
+        publishedAt: new Date(post.publishedAt * 1000),
+      }));
+    });
   }
 
   async fetchMetrics(postIds: string[]): Promise<MetricData[]> {
@@ -79,137 +129,66 @@ export class InstagramCollector extends BaseCollector {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    this.logger(`Fetching metrics for ${postIds.length} posts...`);
+    this.logger(
+      `Reading cached metrics for ${postIds.length} posts...`
+    );
 
     for (const postId of postIds) {
-      try {
-        // Get basic metrics (available for all media types)
-        const basicRes = await axios.get(
-          `${GRAPH_API_BASE}/${postId}`,
-          {
-            params: {
-              access_token: this.accessToken,
-              fields: "like_count,comments_count",
-            },
-          }
-        );
+      const cached = this.metricsCache.get(postId);
+      if (!cached) continue;
 
-        const basic = basicRes.data;
+      metrics.push({
+        postId,
+        metricType: "likes",
+        metricDate: today,
+        metricValue: BigInt(cached.likes),
+      });
 
-        if (basic.like_count !== undefined) {
-          metrics.push({
-            postId,
-            metricType: "likes",
-            metricDate: today,
-            metricValue: BigInt(basic.like_count),
-          });
-        }
+      metrics.push({
+        postId,
+        metricType: "comments",
+        metricDate: today,
+        metricValue: BigInt(cached.comments),
+      });
 
-        if (basic.comments_count !== undefined) {
-          metrics.push({
-            postId,
-            metricType: "comments",
-            metricDate: today,
-            metricValue: BigInt(basic.comments_count),
-          });
-        }
-
-        // Get insights (impressions, reach, shares, saves)
-        // Available for business/creator accounts only
-        try {
-          const insightsRes = await axios.get(
-            `${GRAPH_API_BASE}/${postId}/insights`,
-            {
-              params: {
-                access_token: this.accessToken,
-                metric: "impressions,reach,saved,shares",
-              },
-            }
-          );
-
-          for (const insight of insightsRes.data.data ?? []) {
-            const value = insight.values?.[0]?.value ?? 0;
-            const metricType = this.mapInsightMetric(insight.name);
-            if (metricType) {
-              metrics.push({
-                postId,
-                metricType,
-                metricDate: today,
-                metricValue: BigInt(value),
-              });
-            }
-          }
-        } catch {
-          // Insights may not be available for all media types
-        }
-
-        await this.delay(RATE_LIMIT_DELAY);
-      } catch (err) {
-        this.logger(`Failed to fetch metrics for post ${postId}: ${err}`);
+      if (cached.plays > 0) {
+        metrics.push({
+          postId,
+          metricType: "views",
+          metricDate: today,
+          metricValue: BigInt(cached.plays),
+        });
       }
     }
 
+    this.logger(`Returned ${metrics.length} cached metric records`);
     return metrics;
   }
 
   async getAccountStats(): Promise<AccountStats> {
-    this.logger("Fetching account stats...");
+    return this.withAuthenticatedBrowser(async (page) => {
+      this.logger(`Fetching profile stats for @${this.username}...`);
 
-    try {
-      const res = await axios.get(
-        `${GRAPH_API_BASE}/${this.account.accountId}`,
-        {
-          params: {
-            access_token: this.accessToken,
-            fields: "followers_count,follows_count,media_count",
-          },
-        }
-      );
+      const profile = await fetchInstagramProfile(page, this.username);
 
       return {
-        followers: res.data.followers_count ?? 0,
-        following: res.data.follows_count ?? 0,
-        totalPosts: res.data.media_count ?? 0,
+        followers: profile.followers,
+        following: profile.following,
+        totalPosts: profile.postCount,
       };
-    } catch (err) {
-      this.logger(`Failed to get account stats: ${err}`);
-      return { followers: 0 };
-    }
+    });
   }
 
-  private mapMediaType(
-    mediaType: string,
-    mediaProductType?: string
-  ): PostType {
-    // media_product_type: FEED, REELS, STORIES
-    if (mediaProductType === "REELS") return "video";
-    if (mediaProductType === "STORIES") return "story";
-
-    switch (mediaType) {
-      case "VIDEO":
+  private mapMediaType(post: ScrapedInstagramPost): PostType {
+    if (post.isReel) return "video";
+    switch (post.mediaType) {
+      case "video":
         return "video";
-      case "CAROUSEL_ALBUM":
+      case "carousel":
         return "carousel";
-      case "IMAGE":
+      case "image":
       default:
         return "image";
-    }
-  }
-
-  private mapInsightMetric(
-    name: string
-  ): MetricData["metricType"] | null {
-    switch (name) {
-      case "impressions":
-        return "impressions";
-      case "reach":
-        return "reach";
-      case "saved":
-        return "bookmarks";
-      case "shares":
-        return "shares";
-      default:
-        return null;
     }
   }
 }

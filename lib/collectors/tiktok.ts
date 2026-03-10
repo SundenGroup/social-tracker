@@ -11,6 +11,12 @@ import {
   extractProfileStats,
   getRandomUserAgent,
 } from "@/lib/utils/tiktok-scraper";
+import {
+  parseCookieData,
+  loadCookiesIntoContext,
+  validateCookiesForPlatform,
+  areCookiesExpired,
+} from "@/lib/utils/browser-cookies";
 import type { SocialAccount } from "@prisma/client";
 
 const MAX_VIDEOS_PER_SYNC = 50;
@@ -18,10 +24,12 @@ const PAGE_LOAD_DELAY = 3000;
 
 export class TikTokCollector extends BaseCollector {
   private username: string;
+  private hasCookies: boolean;
 
   constructor(account: SocialAccount) {
     super(account);
     this.username = account.accountId.replace(/^@/, "");
+    this.hasCookies = !!account.authToken;
   }
 
   private async withBrowser<T>(
@@ -33,6 +41,34 @@ export class TikTokCollector extends BaseCollector {
         userAgent: getRandomUserAgent(),
         viewport: { width: 1280, height: 800 },
       });
+
+      // Load session cookies if available
+      if (this.hasCookies) {
+        try {
+          const cookieData = parseCookieData(this.account.authToken!);
+
+          const validation = validateCookiesForPlatform(cookieData, "tiktok");
+          if (!validation.valid) {
+            this.logger(
+              `Warning: TikTok cookies missing: ${validation.missing.join(", ")}. Video list may be incomplete.`
+            );
+          } else if (areCookiesExpired(cookieData, "tiktok")) {
+            this.logger(
+              "Warning: TikTok session cookies have expired. Video list may be empty."
+            );
+          } else {
+            const loaded = await loadCookiesIntoContext(context, cookieData);
+            this.logger(`Loaded ${loaded} cookies into browser context`);
+          }
+        } catch (err) {
+          this.logger(`Warning: Failed to load TikTok cookies: ${err}`);
+        }
+      } else {
+        this.logger(
+          "Warning: No session cookies configured. Video list may be empty without session cookies."
+        );
+      }
+
       const page = await context.newPage();
       return await fn(page, browser);
     } finally {
@@ -62,12 +98,14 @@ export class TikTokCollector extends BaseCollector {
       return videos.map((video) => ({
         postId: video.videoId,
         platform: "tiktok" as const,
-        postType: "video" as const, // TikTok is all video
+        postType: "video" as const,
         title: video.description.substring(0, 200) || null,
         description: video.description || null,
         contentUrl: video.permalink,
         thumbnailUrl: video.coverUrl,
-        publishedAt: new Date(), // TikTok profile page doesn't show exact dates
+        publishedAt: video.createTime
+          ? new Date(video.createTime * 1000)
+          : new Date(),
       }));
     });
   }

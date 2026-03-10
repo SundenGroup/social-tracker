@@ -103,7 +103,17 @@ export default function AccountForm({ account }: AccountFormProps) {
   }
 
   const needsApiKey = platform === "youtube";
-  const needsAuthToken = platform !== "youtube";
+  const needsCookies = platform === "instagram" || platform === "tiktok" || platform === "twitter";
+
+  const cookieHelperTexts: Record<string, string> = {
+    instagram:
+      "Open Instagram in your browser while logged in. Open DevTools (F12) > Application > Cookies > instagram.com. Copy all cookie values as: name=value; name2=value2",
+    tiktok:
+      "Open TikTok in your browser while logged in. Open DevTools (F12) > Application > Cookies > tiktok.com. Copy all cookie values as: name=value; name2=value2",
+    twitter:
+      "Open X/Twitter in your browser while logged in. Open DevTools (F12) > Application > Cookies > x.com. Copy all cookie values as: name=value; name2=value2",
+  };
+  const cookieHelperText = cookieHelperTexts[platform] ?? "";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -203,18 +213,25 @@ export default function AccountForm({ account }: AccountFormProps) {
         </div>
       )}
 
-      {needsAuthToken && (
+      {needsCookies && (
         <div>
           <label className="mb-1 block text-sm font-medium text-clutch-black">
-            Auth Token
+            Session Cookies
           </label>
-          <input
-            type="password"
+          <textarea
             value={authToken}
             onChange={(e) => setAuthToken(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
-            placeholder={isEditing ? "Leave blank to keep current" : "Enter auth token"}
+            rows={4}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+            placeholder={
+              isEditing
+                ? "Leave blank to keep current cookies"
+                : "sessionid=abc123; csrftoken=xyz789; ds_user_id=12345..."
+            }
           />
+          <p className="mt-1 text-xs text-gray-500">
+            {cookieHelperText}
+          </p>
         </div>
       )}
 

@@ -7,10 +7,17 @@ import {
 } from "./base-collector";
 import {
   extractPostsFromTimeline,
+  extractMetricsFromGraphQL,
   extractMetricsFromPost,
   extractProfileStats,
   getRandomUserAgent,
 } from "@/lib/utils/twitter-scraper";
+import {
+  parseCookieData,
+  loadCookiesIntoContext,
+  validateCookiesForPlatform,
+  areCookiesExpired,
+} from "@/lib/utils/browser-cookies";
 import type { SocialAccount } from "@prisma/client";
 
 const MAX_POSTS_PER_SYNC = 100;
@@ -18,11 +25,13 @@ const PAGE_LOAD_DELAY = 3000; // 3s between page loads
 
 export class TwitterCollector extends BaseCollector {
   private username: string;
+  private hasCookies: boolean;
 
   constructor(account: SocialAccount) {
     super(account);
     // accountId is the handle (e.g., "PUBGEsports")
     this.username = account.accountId.replace(/^@/, "");
+    this.hasCookies = !!account.authToken;
   }
 
   private async withBrowser<T>(
@@ -34,6 +43,34 @@ export class TwitterCollector extends BaseCollector {
         userAgent: getRandomUserAgent(),
         viewport: { width: 1280, height: 800 },
       });
+
+      // Load session cookies if available
+      if (this.hasCookies) {
+        try {
+          const cookieData = parseCookieData(this.account.authToken!);
+
+          const validation = validateCookiesForPlatform(cookieData, "twitter");
+          if (!validation.valid) {
+            this.logger(
+              `Warning: X cookies missing: ${validation.missing.join(", ")}. Scraping may fail.`
+            );
+          } else if (areCookiesExpired(cookieData, "twitter")) {
+            this.logger(
+              "Warning: X session cookies have expired. Scraping may fail."
+            );
+          } else {
+            const loaded = await loadCookiesIntoContext(context, cookieData);
+            this.logger(`Loaded ${loaded} cookies into browser context`);
+          }
+        } catch (err) {
+          this.logger(`Warning: Failed to load X cookies: ${err}`);
+        }
+      } else {
+        this.logger(
+          "Warning: No session cookies configured. X may block unauthenticated scraping."
+        );
+      }
+
       const page = await context.newPage();
       return await fn(page, browser);
     } finally {
@@ -85,7 +122,17 @@ export class TwitterCollector extends BaseCollector {
       for (const postId of postIds) {
         try {
           const postUrl = `https://x.com/${this.username}/status/${postId}`;
-          const scraped = await extractMetricsFromPost(page, postUrl);
+          let scraped = await extractMetricsFromGraphQL(page, postUrl);
+
+          // Fall back to DOM scraping if GraphQL returned nothing
+          if (
+            scraped.views === undefined &&
+            scraped.likes === undefined &&
+            scraped.retweets === undefined
+          ) {
+            this.logger(`GraphQL empty for ${postId}, trying DOM fallback`);
+            scraped = await extractMetricsFromPost(page, postUrl);
+          }
 
           if (scraped.views !== undefined) {
             metrics.push({

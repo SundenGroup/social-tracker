@@ -47,9 +47,11 @@ export async function extractPostsFromTimeline(
 
   // Scroll and collect posts
   let scrollAttempts = 0;
-  const maxScrolls = 10;
+  const maxScrolls = Math.max(10, Math.ceil(maxPosts / 5)); // ~5 posts per scroll
+  let noNewPostsCount = 0;
 
   while (posts.length < maxPosts && scrollAttempts < maxScrolls) {
+    const prevCount = posts.length;
     // Extract tweet articles from the current viewport
     const tweetElements = await page.$$('article[data-testid="tweet"]');
 
@@ -98,6 +100,14 @@ export async function extractPostsFromTimeline(
       } catch {
         // Skip individual tweet parsing errors
       }
+    }
+
+    // Stop early if timeline stopped loading new posts
+    if (posts.length === prevCount) {
+      noNewPostsCount++;
+      if (noNewPostsCount >= 3) break;
+    } else {
+      noNewPostsCount = 0;
     }
 
     // Scroll down to load more
@@ -174,9 +184,12 @@ export async function extractMetricsFromGraphQL(
   const metrics: ScrapedMetrics = {};
 
   const graphQLPromise = new Promise<ScrapedMetrics>((resolve) => {
-    const timeout = setTimeout(() => resolve(metrics), 10000);
+    const timeout = setTimeout(() => {
+      page.removeListener("response", handler);
+      resolve(metrics);
+    }, 10000);
 
-    page.on("response", async (response) => {
+    const handler = async (response: { url: () => string; json: () => Promise<unknown> }) => {
       const url = response.url();
       if (!url.includes("/TweetDetail") && !url.includes("/TweetResultByRestId"))
         return;
@@ -186,12 +199,15 @@ export async function extractMetricsFromGraphQL(
         const result = findTweetMetrics(json);
         if (result) {
           clearTimeout(timeout);
+          page.removeListener("response", handler);
           resolve(result);
         }
       } catch {
         // Not JSON or parsing error
       }
-    });
+    };
+
+    page.on("response", handler);
   });
 
   await page.goto(postUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
