@@ -8,7 +8,7 @@ export default auth((req) => {
   // Redirect authenticated users away from auth pages
   const isAuthPage = pathname === "/login" || pathname === "/register";
   if (isAuthenticated && isAuthPage) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return NextResponse.redirect(new URL("/", req.url));
   }
 
   // Allow auth pages for unauthenticated users
