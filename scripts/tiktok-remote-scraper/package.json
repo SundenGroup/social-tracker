@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "scrape": "npx tsx scrape.ts",
-    "setup": "npm install && npx playwright install chromium"
+    "scrape:setup": "npx tsx scrape.ts --setup",
+    "install-browser": "npm install && npx playwright install chromium"
   },
   "dependencies": {
     "playwright": "^1.49.0",

@@ -1,0 +1,4 @@
+node_modules/
+browser-profile/
+.env
+debug-screenshot.png
