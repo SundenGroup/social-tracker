@@ -24,7 +24,8 @@ export default function DashboardPage() {
 
   const [startDate, setStartDate] = useState(thirtyDaysAgo);
   const [endDate, setEndDate] = useState(today);
-  const { data, isLoading, error, refetch } = useDashboard(startDate, endDate);
+  const [contentType, setContentType] = useState("all");
+  const { data, isLoading, error, refetch } = useDashboard(startDate, endDate, contentType);
 
   if (isLoading) {
     return (
@@ -77,6 +78,29 @@ export default function DashboardPage() {
           Refresh
         </button>
       </Header>
+
+      {/* Content Type Tabs */}
+      <div className="mb-6 flex gap-2">
+        {[
+          { label: "All", value: "all" },
+          { label: "Video", value: "video" },
+          { label: "Short", value: "short" },
+          { label: "Image", value: "image" },
+          { label: "Carousel", value: "carousel" },
+        ].map((ct) => (
+          <button
+            key={ct.value}
+            onClick={() => setContentType(ct.value)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              contentType === ct.value
+                ? "bg-clutch-black text-white"
+                : "border border-gray-300 text-clutch-grey hover:bg-gray-50"
+            }`}
+          >
+            {ct.label}
+          </button>
+        ))}
+      </div>
 
       {/* KPI Cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -147,7 +171,7 @@ export default function DashboardPage() {
         <h2 className="mb-3 text-sm font-bold text-clutch-black">
           Content Performance
         </h2>
-        <ContentPerformanceTable posts={data.posts} />
+        <ContentPerformanceTable posts={data.posts} onToggleSponsored={() => refetch()} />
       </div>
 
       {/* Account Health */}

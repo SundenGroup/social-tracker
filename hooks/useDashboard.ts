@@ -52,7 +52,7 @@ interface DashboardData {
   accounts: AccountHealth[];
 }
 
-export function useDashboard(startDate: string, endDate: string) {
+export function useDashboard(startDate: string, endDate: string, contentType?: string) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +62,9 @@ export function useDashboard(startDate: string, endDate: string) {
     setError(null);
     try {
       const params = new URLSearchParams({ startDate, endDate });
+      if (contentType && contentType !== "all") {
+        params.set("contentType", contentType);
+      }
       const res = await fetch(`/api/metrics/dashboard?${params}`);
       const json = await res.json();
       if (!res.ok) {
@@ -74,7 +77,7 @@ export function useDashboard(startDate: string, endDate: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, contentType]);
 
   useEffect(() => {
     fetchData();

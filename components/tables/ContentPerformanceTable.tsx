@@ -15,6 +15,7 @@ type SortKey = "views" | "engagementRate" | "publishedAt" | "likes";
 interface ContentPerformanceTableProps {
   posts: PostPerformance[];
   pageSize?: number;
+  onToggleSponsored?: (postId: string, isSponsored: boolean) => void;
 }
 
 function formatCompact(n: number): string {
@@ -23,9 +24,29 @@ function formatCompact(n: number): string {
   return String(n);
 }
 
+function SponsoredIcon({ filled, onClick }: { filled: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={filled ? "Sponsored (click to remove)" : "Mark as sponsored"}
+      className={`inline-flex items-center justify-center rounded p-0.5 transition-colors ${
+        filled
+          ? "text-amber-600 hover:text-amber-700"
+          : "text-gray-300 hover:text-gray-400"
+      }`}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+        <line x1="7" y1="7" x2="7.01" y2="7" />
+      </svg>
+    </button>
+  );
+}
+
 export default function ContentPerformanceTable({
   posts,
   pageSize = 20,
+  onToggleSponsored,
 }: ContentPerformanceTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("publishedAt");
   const [sortAsc, setSortAsc] = useState(false);
@@ -39,6 +60,21 @@ export default function ContentPerformanceTable({
       setSortAsc(false);
     }
     setPage(0);
+  }
+
+  async function handleToggleSponsored(postId: string, current: boolean) {
+    try {
+      const res = await fetch(`/api/posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isSponsored: !current }),
+      });
+      if (res.ok && onToggleSponsored) {
+        onToggleSponsored(postId, !current);
+      }
+    } catch {
+      // silently fail
+    }
   }
 
   const sorted = [...posts].sort((a, b) => {
@@ -78,6 +114,9 @@ export default function ContentPerformanceTable({
               <th className="px-4 py-3 font-medium text-clutch-grey/60">
                 Title
               </th>
+              <th className="w-8 px-2 py-3 font-medium text-clutch-grey/60" title="Sponsored">
+                Sp.
+              </th>
               <th className="px-4 py-3 font-medium text-clutch-grey/60">
                 Type
               </th>
@@ -103,7 +142,7 @@ export default function ContentPerformanceTable({
           </thead>
           <tbody className="divide-y divide-gray-100">
             {paged.map((post) => (
-              <tr key={post.id} className="hover:bg-gray-50/50">
+              <tr key={post.id} className={`hover:bg-gray-50/50 ${post.isSponsored ? "bg-amber-50/40" : ""}`}>
                 <td className="px-4 py-3 text-xs font-medium">
                   {PLATFORM_LABELS[post.platform] ?? post.platform}
                 </td>
@@ -116,6 +155,12 @@ export default function ContentPerformanceTable({
                   >
                     {post.title || "Untitled"}
                   </a>
+                </td>
+                <td className="px-2 py-3">
+                  <SponsoredIcon
+                    filled={post.isSponsored}
+                    onClick={() => handleToggleSponsored(post.id, post.isSponsored)}
+                  />
                 </td>
                 <td className="px-4 py-3 text-xs capitalize">{post.postType}</td>
                 <td className="px-4 py-3 font-medium">

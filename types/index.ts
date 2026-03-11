@@ -63,6 +63,7 @@ export interface PostResponse {
   thumbnailUrl: string | null;
   publishedAt: string;
   isTrending: boolean;
+  isSponsored: boolean;
 }
 
 // ============ Metrics ============
@@ -114,6 +115,7 @@ export interface PostPerformance {
   thumbnailUrl: string | null;
   publishedAt: string;
   isTrending: boolean;
+  isSponsored: boolean;
   views: number;
   likes: number;
   comments: number;

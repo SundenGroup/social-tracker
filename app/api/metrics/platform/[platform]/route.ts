@@ -99,6 +99,7 @@ export const GET = apiHandler(
         thumbnailUrl: post.thumbnailUrl,
         publishedAt: post.publishedAt.toISOString(),
         isTrending: post.isTrending,
+        isSponsored: post.isSponsored,
         views,
         likes,
         comments,

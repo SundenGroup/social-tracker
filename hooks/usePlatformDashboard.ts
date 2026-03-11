@@ -10,6 +10,7 @@ interface PostItem {
   thumbnailUrl: string | null;
   publishedAt: string;
   isTrending: boolean;
+  isSponsored: boolean;
   views: number;
   likes: number;
   comments: number;

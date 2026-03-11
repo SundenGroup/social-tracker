@@ -8,6 +8,7 @@ export const GET = apiHandler(
     const url = new URL(req.url);
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
+    const contentType = url.searchParams.get("contentType");
 
     const orgId = session!.user.organizationId;
 
@@ -25,12 +26,18 @@ export const GET = apiHandler(
 
     const accountIds = accounts.map((a) => a.id);
 
+    // Build optional postType filter
+    const postTypeFilter = contentType && contentType !== "all"
+      ? { postType: contentType as import("@prisma/client").PostType }
+      : {};
+
     // Get posts filtered by publishedAt date range
     const topPosts = await prisma.post.findMany({
       where: {
         socialAccountId: { in: accountIds },
         publishedAt: { gte: start, lte: end },
         isDeleted: false,
+        ...postTypeFilter,
       },
       include: {
         metrics: {
@@ -117,6 +124,7 @@ export const GET = apiHandler(
         thumbnailUrl: post.thumbnailUrl,
         publishedAt: post.publishedAt.toISOString(),
         isTrending: post.isTrending,
+        isSponsored: post.isSponsored,
         views,
         likes,
         comments,
@@ -165,6 +173,7 @@ export const GET = apiHandler(
         socialAccountId: { in: accountIds },
         publishedAt: { gte: prevStart, lte: prevEnd },
         isDeleted: false,
+        ...postTypeFilter,
       },
       select: { id: true },
     });

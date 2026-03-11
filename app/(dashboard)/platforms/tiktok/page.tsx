@@ -10,6 +10,7 @@ import EngagementPieChart from "@/components/charts/EngagementPieChart";
 import TopPostsBarChart from "@/components/charts/TopPostsBarChart";
 import PostGallery from "@/components/gallery/PostGallery";
 import { usePlatformDashboard } from "@/hooks/usePlatformDashboard";
+import SponsoredToggle from "@/components/tables/SponsoredToggle";
 
 function formatCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -156,6 +157,7 @@ export default function TikTokDashboardPage() {
             <thead>
               <tr className="border-b border-gray-100 text-clutch-grey/50">
                 <th className="pb-2 pr-4 font-medium">Title</th>
+                <th className="pb-2 pr-1 font-medium" title="Sponsored">Sp.</th>
                 <th className="pb-2 pr-4 font-medium text-right">Views</th>
                 <th className="pb-2 pr-4 font-medium text-right">Likes</th>
                 <th className="pb-2 pr-4 font-medium text-right">Comments</th>
@@ -166,11 +168,14 @@ export default function TikTokDashboardPage() {
             </thead>
             <tbody>
               {data.posts.slice(0, 50).map((post) => (
-                <tr key={post.id} className="border-b border-gray-50">
+                <tr key={post.id} className={`border-b border-gray-50 ${post.isSponsored ? "bg-amber-50/40" : ""}`}>
                   <td className="max-w-[200px] truncate py-2 pr-4 font-medium text-clutch-black">
                     <a href={post.contentUrl} target="_blank" rel="noopener noreferrer" className="hover:text-clutch-grey">
                       {post.title || "Untitled"}
                     </a>
+                  </td>
+                  <td className="py-2 pr-1">
+                    <SponsoredToggle postId={post.id} isSponsored={post.isSponsored} onToggled={() => refetch()} />
                   </td>
                   <td className="py-2 pr-4 text-right">{formatCompact(post.views)}</td>
                   <td className="py-2 pr-4 text-right">{formatCompact(post.likes)}</td>

@@ -159,6 +159,7 @@ model Post {
   updatedAt           DateTime @updatedAt
   isDeleted           Boolean  @default(false)
   isTrending          Boolean  @default(false)
+  isSponsored         Boolean  @default(false)
 
   metrics PostMetric[]
 

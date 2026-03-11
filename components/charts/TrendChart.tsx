@@ -10,7 +10,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
 
@@ -39,6 +38,22 @@ function formatDate(dateStr: string): string {
 
 export default function TrendChart({ data, lines, height = 300 }: TrendChartProps) {
   const [chartType, setChartType] = useState<"bar" | "line">("bar");
+  const [visibleLines, setVisibleLines] = useState<Set<string>>(
+    () => new Set(lines.map((l) => l.dataKey))
+  );
+
+  function toggleLine(dataKey: string) {
+    setVisibleLines((prev) => {
+      const next = new Set(prev);
+      if (next.has(dataKey)) {
+        // Don't allow hiding all lines
+        if (next.size > 1) next.delete(dataKey);
+      } else {
+        next.add(dataKey);
+      }
+      return next;
+    });
+  }
 
   if (data.length === 0) {
     return (
@@ -53,9 +68,34 @@ export default function TrendChart({ data, lines, height = 300 }: TrendChartProp
     margin: { top: 5, right: 20, bottom: 5, left: 0 },
   };
 
+  const activeLines = lines.filter((l) => visibleLines.has(l.dataKey));
+
   return (
     <div>
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex items-center justify-between">
+        {/* Metric toggles */}
+        <div className="flex flex-wrap gap-1.5">
+          {lines.map((line) => {
+            const active = visibleLines.has(line.dataKey);
+            return (
+              <button
+                key={line.dataKey}
+                onClick={() => toggleLine(line.dataKey)}
+                className="rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-all"
+                style={{
+                  backgroundColor: active ? line.color : "transparent",
+                  color: active ? "#fff" : line.color,
+                  border: `1.5px solid ${active ? line.color : line.color + "60"}`,
+                  opacity: active ? 1 : 0.5,
+                }}
+              >
+                {line.name}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Chart type switcher */}
         <div className="flex gap-1 rounded-md bg-gray-100 p-0.5">
           <button
             onClick={() => setChartType("bar")}
@@ -82,8 +122,7 @@ export default function TrendChart({ data, lines, height = 300 }: TrendChartProp
             <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={formatDate} />
             <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={formatNumber} />
             <Tooltip formatter={(value) => formatNumber(Number(value))} labelFormatter={(label) => formatDate(String(label))} contentStyle={{ fontSize: 12 }} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            {lines.map((line) => (
+            {activeLines.map((line) => (
               <Bar
                 key={line.dataKey}
                 dataKey={line.dataKey}
@@ -98,8 +137,7 @@ export default function TrendChart({ data, lines, height = 300 }: TrendChartProp
             <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={formatDate} />
             <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={formatNumber} />
             <Tooltip formatter={(value) => formatNumber(Number(value))} labelFormatter={(label) => formatDate(String(label))} contentStyle={{ fontSize: 12 }} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            {lines.map((line) => (
+            {activeLines.map((line) => (
               <Line
                 key={line.dataKey}
                 type="monotone"
