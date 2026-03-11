@@ -60,8 +60,9 @@ export abstract class BaseCollector {
     // Remove control characters and null bytes that PostgreSQL rejects
     // eslint-disable-next-line no-control-regex
     let clean = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
-    // Remove backslash sequences that break PostgreSQL JSON/text parsing
-    clean = clean.replace(/\\x[0-9a-fA-F]{0,1}(?![0-9a-fA-F])/g, "");
+    // Remove all backslash-x hex escape sequences (complete or incomplete)
+    clean = clean.replace(/\\x[0-9a-fA-F]*/g, "");
+    // Remove any remaining backslashes that break PostgreSQL
     clean = clean.replace(/\\/g, "");
     // Safe truncation: avoid cutting surrogate pairs (emojis)
     if (clean.length > maxLength) {

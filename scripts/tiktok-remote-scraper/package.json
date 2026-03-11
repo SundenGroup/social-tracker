@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "browser": "npx tsx browser-server.ts",
     "scrape": "npx tsx scrape.ts",
     "scrape:setup": "npx tsx scrape.ts --setup",
     "install-browser": "npm install && npx playwright install chromium"

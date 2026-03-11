@@ -2,23 +2,24 @@
 /**
  * TikTok Remote Scraper
  *
- * Runs on a MacBook with residential IP to bypass TikTok's anti-bot.
- * Uses a PERSISTENT browser profile so cookies, session data, and
- * CAPTCHA solutions are saved between runs. First run: you may need
- * to accept cookie consent and solve a CAPTCHA manually. After that,
- * subsequent runs should work automatically.
+ * Connects to a Chrome browser that's already running (started by browser-server.ts).
+ * The browser stays open between runs — no more open/close/CAPTCHA cycles.
  *
- * Setup:
- *   1. npm install (in this directory)
- *   2. Copy .env.example to .env and fill in values
- *   3. npx playwright install chromium
- *   4. npx tsx scrape.ts --setup    (first time — pauses so you can accept cookies / solve CAPTCHA)
- *   5. npx tsx scrape.ts            (subsequent runs — fully automatic)
+ * Flow:
+ *   1. Connect to running Chrome via WebSocket
+ *   2. Load profile page, scroll to collect video IDs
+ *   3. Visit each video page to get full details (title, date, metrics)
+ *   4. Push results to the Clutch Social Tracker API
  *
- * Schedule via launchd or cron for daily runs.
+ * Usage:
+ *   First start the browser:  npx tsx browser-server.ts
+ *   Then run scraper:         npx tsx scrape.ts
+ *
+ * Schedule the scraper via launchd or cron for daily runs.
+ * The browser-server should be started once and left running.
  */
 
-import { chromium, type Page, type BrowserContext } from "playwright";
+import { chromium, type Browser, type Page, type BrowserContext } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
@@ -46,16 +47,16 @@ if (fs.existsSync(envPath)) {
 const API_URL = process.env.API_URL || "https://social.clutch.game";
 const API_TOKEN = process.env.API_TOKEN || "";
 const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || "pubg.esports.official";
-const TIKTOK_COOKIES = process.env.TIKTOK_COOKIES || ""; // "name=value; name2=value2"
 const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "200", 10);
+const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || "3", 10);
+const RETRY_DELAY_MIN = parseInt(process.env.RETRY_DELAY_MIN || "5", 10);
 
-// Persistent browser profile directory — keeps cookies/state between runs
+const WS_FILE = path.join(SCRIPT_DIR, ".browser-ws");
+const CDP_FILE = path.join(SCRIPT_DIR, ".browser-cdp");
 const PROFILE_DIR = path.join(SCRIPT_DIR, "browser-profile");
-
-// --setup flag: pauses at each step so you can interact with the browser
+const TIKTOK_COOKIES = process.env.TIKTOK_COOKIES || "";
 const SETUP_MODE = process.argv.includes("--setup");
 
-/** Pause and wait for user to press Enter in the terminal */
 function waitForEnter(message: string): Promise<void> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -64,6 +65,10 @@ function waitForEnter(message: string): Promise<void> {
       resolve();
     });
   });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 interface ScrapedVideo {
@@ -82,125 +87,305 @@ interface ScrapedVideo {
   };
 }
 
-async function main() {
-  if (!API_TOKEN) {
-    console.error("ERROR: API_TOKEN not set in .env");
-    process.exit(1);
+/**
+ * Connect to the running browser, or launch one if browser-server isn't running.
+ */
+async function getBrowser(): Promise<{ browser: Browser | null; context: BrowserContext; standalone: boolean }> {
+  // Try to connect to running browser-server via CDP
+  const cdpFile = fs.existsSync(CDP_FILE) ? CDP_FILE : fs.existsSync(WS_FILE) ? WS_FILE : null;
+  if (cdpFile) {
+    const endpoint = fs.readFileSync(cdpFile, "utf-8").trim();
+    try {
+      const browser = await chromium.connectOverCDP(endpoint);
+      const contexts = browser.contexts();
+      const context = contexts.length > 0 ? contexts[0] : await browser.newContext();
+      console.log("[Scraper] Connected to running browser.");
+      return { browser, context, standalone: false };
+    } catch {
+      console.log("[Scraper] Browser-server not reachable, launching standalone...");
+    }
+  } else {
+    console.log("[Scraper] No browser-server found, launching standalone...");
   }
 
-  console.log(`[TikTok Scraper] Starting for @${TIKTOK_USERNAME}...`);
-  console.log(`[TikTok Scraper] Target: ${API_URL}/api/sync/ingest`);
-  console.log(`[TikTok Scraper] Browser profile: ${PROFILE_DIR}`);
-
-  const isFirstRun = !fs.existsSync(PROFILE_DIR);
-  const interactive = SETUP_MODE || isFirstRun;
-
-  if (interactive) {
-    console.log("[TikTok Scraper] INTERACTIVE MODE — the script will pause so you can interact with the browser.");
-    console.log("[TikTok Scraper] Accept cookie consent, solve CAPTCHAs, then press Enter in this terminal.");
+  // Fallback: launch standalone (old behavior)
+  let context: BrowserContext;
+  try {
+    context = await chromium.launchPersistentContext(PROFILE_DIR, {
+      channel: "chrome",
+      headless: false,
+      args: ["--disable-blink-features=AutomationControlled"],
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 900 },
+      locale: "en-US",
+    });
+  } catch {
+    context = await chromium.launchPersistentContext(PROFILE_DIR, {
+      headless: false,
+      args: ["--disable-blink-features=AutomationControlled"],
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 900 },
+      locale: "en-US",
+    });
   }
 
-  // Use persistent context — saves cookies, localStorage, session between runs
-  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    headless: false,
-    args: ["--disable-blink-features=AutomationControlled"],
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 900 },
-    locale: "en-US",
-  });
-
-  // Hide webdriver
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => false });
   });
 
-  // Load cookies from .env on first run only
-  if (isFirstRun && TIKTOK_COOKIES) {
-    const cookies = parseCookieString(TIKTOK_COOKIES, ".tiktok.com");
-    await context.addCookies(cookies);
-    console.log(`[TikTok Scraper] Loaded ${cookies.length} cookies from .env`);
-  }
+  return { browser: null, context, standalone: true };
+}
 
-  const page = context.pages()[0] || await context.newPage();
-
-  // Warm up — visit homepage first
-  console.log("[TikTok Scraper] Warming up on homepage...");
-  await page.goto("https://www.tiktok.com/foryou", {
-    waitUntil: "domcontentloaded",
-    timeout: 30000,
-  });
+/**
+ * Single scrape attempt.
+ */
+async function scrape(): Promise<ScrapedVideo[]> {
+  const { browser, context, standalone } = await getBrowser();
+  const interactive = SETUP_MODE;
 
   if (interactive) {
-    await waitForEnter("Homepage loaded. Accept cookie consent / solve CAPTCHA if needed.");
-  } else {
-    await page.waitForTimeout(4000);
-    await waitForCaptcha(page, "homepage");
+    console.log("[Scraper] INTERACTIVE MODE — script will pause so you can interact with the browser.");
   }
 
-  // Navigate to profile
-  console.log(`[TikTok Scraper] Loading @${TIKTOK_USERNAME} profile...`);
-  await page.goto(`https://www.tiktok.com/@${TIKTOK_USERNAME}`, {
-    waitUntil: "domcontentloaded",
-    timeout: 30000,
-  });
+  try {
+    // Get or create a page
+    const pages = context.pages();
+    const page = pages.length > 0 ? pages[0] : await context.newPage();
 
-  if (interactive) {
-    await waitForEnter("Profile loaded. Solve CAPTCHA if needed, make sure you see the video grid.");
-  } else {
-    await page.waitForTimeout(6000);
-    await waitForCaptcha(page, "profile");
-  }
+    // --- Step 1: Collect video IDs from profile ---
+    console.log("[Scraper] Warming up on homepage...");
+    await page.goto("https://www.tiktok.com/foryou", {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
 
-  // Scroll to load more videos
-  console.log("[TikTok Scraper] Scrolling to load videos...");
-  let prevVideoCount = 0;
-  let staleScrolls = 0;
-
-  for (let i = 0; i < 40; i++) {
-    await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
-    await page.waitForTimeout(1500 + Math.random() * 1000);
-
-    const currentCount = await page.$$eval(
-      'a[href*="/video/"]',
-      (els) => new Set(els.map((e) => e.getAttribute("href"))).size
-    );
-
-    if (currentCount >= MAX_VIDEOS) break;
-    if (currentCount === prevVideoCount) {
-      staleScrolls++;
-      if (staleScrolls >= 5) break;
+    if (interactive) {
+      await waitForEnter("Homepage loaded. Accept cookie consent / solve CAPTCHA if needed.");
     } else {
-      staleScrolls = 0;
-      if (i % 5 === 0) console.log(`[TikTok Scraper] ... ${currentCount} videos loaded`);
+      await page.waitForTimeout(4000);
+      await waitForCaptcha(page, "homepage");
     }
-    prevVideoCount = currentCount;
+
+    console.log(`[Scraper] Loading @${TIKTOK_USERNAME} profile...`);
+    await page.goto(`https://www.tiktok.com/@${TIKTOK_USERNAME}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+
+    if (interactive) {
+      await waitForEnter("Profile loaded. Solve CAPTCHA if needed, make sure you see the video grid.");
+    } else {
+      await page.waitForTimeout(6000);
+      await waitForCaptcha(page, "profile");
+    }
+
+    console.log("[Scraper] Scrolling to load videos...");
+    let prevVideoCount = 0;
+    let staleScrolls = 0;
+
+    for (let i = 0; i < 40; i++) {
+      await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
+      await page.waitForTimeout(1500 + Math.random() * 1000);
+
+      const currentCount = await page.$$eval(
+        'a[href*="/video/"]',
+        (els) => new Set(els.map((e) => e.getAttribute("href"))).size
+      );
+
+      if (currentCount >= MAX_VIDEOS) break;
+      if (currentCount === prevVideoCount) {
+        staleScrolls++;
+        if (staleScrolls >= 5) break;
+      } else {
+        staleScrolls = 0;
+        if (i % 5 === 0) console.log(`[Scraper] ... ${currentCount} videos loaded`);
+      }
+      prevVideoCount = currentCount;
+    }
+
+    // Get unique video IDs
+    const videoIds: string[] = await page.$$eval('a[href*="/video/"]', (els) => {
+      const seen: Record<string, boolean> = {};
+      const ids: string[] = [];
+      for (const el of els) {
+        const href = el.getAttribute("href") || "";
+        const m = href.match(/\/video\/(\d+)/);
+        if (m && !seen[m[1]]) {
+          seen[m[1]] = true;
+          ids.push(m[1]);
+        }
+      }
+      return ids;
+    });
+
+    console.log(`[Scraper] Found ${videoIds.length} video IDs on profile`);
+
+    if (videoIds.length === 0) {
+      await page.screenshot({ path: path.join(SCRIPT_DIR, "debug-screenshot.png") });
+      throw new Error("No videos found on profile (CAPTCHA or page load issue)");
+    }
+
+    // --- Step 2: Visit each video page to get full details ---
+    console.log(`[Scraper] Scraping details for ${videoIds.length} videos (this takes a few minutes)...`);
+    const videos: ScrapedVideo[] = [];
+    let failures = 0;
+
+    for (let i = 0; i < videoIds.length; i++) {
+      const videoId = videoIds[i];
+      const videoUrl = `https://www.tiktok.com/@${TIKTOK_USERNAME}/video/${videoId}`;
+
+      try {
+        await page.goto(videoUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+        await page.waitForTimeout(2000 + Math.random() * 1000);
+
+        // Try hydration JSON first
+        const videoData = await page.evaluate(() => {
+          const el = document.getElementById("__UNIVERSAL_DATA_FOR_REHYDRATION__");
+          if (!el || !el.textContent) return null;
+          const data = JSON.parse(el.textContent);
+          const scope = data["__DEFAULT_SCOPE__"];
+          const detail = scope?.["webapp.video-detail"];
+          const item = detail?.itemInfo?.itemStruct;
+          if (!item) return null;
+          return {
+            id: item.id,
+            desc: item.desc || "",
+            createTime: item.createTime,
+            stats: item.stats,
+            cover: item.video?.cover || item.video?.originCover || null,
+          };
+        });
+
+        if (videoData && videoData.stats) {
+          const createTime = Number(videoData.createTime || 0);
+          videos.push({
+            postId: videoData.id || videoId,
+            title: String(videoData.desc || "").slice(0, 200),
+            description: String(videoData.desc || ""),
+            contentUrl: videoUrl,
+            thumbnailUrl: videoData.cover,
+            publishedAt: createTime > 0 ? new Date(createTime * 1000).toISOString() : new Date().toISOString(),
+            postType: "video",
+            metrics: {
+              views: Number(videoData.stats.playCount || 0),
+              likes: Number(videoData.stats.diggCount || 0),
+              comments: Number(videoData.stats.commentCount || 0),
+              shares: Number(videoData.stats.shareCount || 0),
+            },
+          });
+        } else {
+          // Fallback: extract from DOM
+          const domData = await extractVideoFromDOM(page);
+          if (domData) {
+            videos.push({
+              postId: videoId,
+              title: domData.desc.slice(0, 200),
+              description: domData.desc,
+              contentUrl: videoUrl,
+              thumbnailUrl: null,
+              publishedAt: domData.date || new Date().toISOString(),
+              postType: "video",
+              metrics: {
+                views: domData.views,
+                likes: domData.likes,
+                comments: domData.comments,
+                shares: domData.shares,
+              },
+            });
+          } else {
+            failures++;
+          }
+        }
+
+        if ((i + 1) % 20 === 0) {
+          console.log(`[Scraper] ... ${i + 1}/${videoIds.length} videos scraped (${videos.length} successful)`);
+        }
+      } catch {
+        failures++;
+        if (failures > 10) {
+          console.log(`[Scraper] Too many failures (${failures}), stopping early`);
+          break;
+        }
+      }
+    }
+
+    console.log(`[Scraper] Scraped ${videos.length} videos with full details (${failures} failures)`);
+
+    if (videos.length === 0) {
+      throw new Error("Failed to scrape any video details");
+    }
+
+    // Navigate to a neutral page so browser isn't sitting on TikTok between runs
+    await page.goto("about:blank").catch(() => {});
+
+    return videos;
+  } finally {
+    // Only close if we launched standalone — don't kill the shared browser
+    if (standalone) {
+      await context.close();
+    }
   }
+}
 
-  // Extract data from hydration JSON
-  console.log("[TikTok Scraper] Extracting hydration data...");
-  const videos = await extractVideos(page, TIKTOK_USERNAME);
+/**
+ * Extract video data from DOM as fallback.
+ */
+async function extractVideoFromDOM(page: Page): Promise<{
+  desc: string;
+  date: string | null;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+} | null> {
+  return page.evaluate(() => {
+    const descEl = document.querySelector(
+      '[data-e2e="browse-video-desc"], [data-e2e="video-desc"], [class*="DivVideoInfoContainer"] span'
+    );
+    const likesEl = document.querySelector('[data-e2e="like-count"], [data-e2e="browse-like-count"]');
+    const commentsEl = document.querySelector('[data-e2e="comment-count"], [data-e2e="browse-comment-count"]');
+    const sharesEl = document.querySelector('[data-e2e="share-count"], [data-e2e="browse-share-count"]');
+    const viewsEl = document.querySelector('[data-e2e="video-views"], [data-e2e="browse-video-views"]');
+    const dateEl = document.querySelector('time, [class*="SpanOtherInfos"] span');
 
-  // Also try DOM fallback for video IDs + view counts
-  if (videos.length === 0) {
-    console.log("[TikTok Scraper] Hydration empty, trying DOM extraction...");
-    const domVideos = await extractFromDOM(page, TIKTOK_USERNAME);
-    videos.push(...domVideos);
-  }
+    const pc = (text: string | null | undefined): number => {
+      if (!text) return 0;
+      const cleaned = text.replace(/[^0-9.KMBkmb]/g, "");
+      const m = cleaned.match(/([\d.]+)\s*([KMBkmb])?/);
+      if (!m) return 0;
+      const num = parseFloat(m[1]);
+      const suffix = (m[2] || "").toUpperCase();
+      if (suffix === "K") return Math.round(num * 1000);
+      if (suffix === "M") return Math.round(num * 1000000);
+      if (suffix === "B") return Math.round(num * 1000000000);
+      return Math.round(num);
+    };
 
-  console.log(`[TikTok Scraper] Extracted ${videos.length} videos`);
+    const likes = pc(likesEl?.textContent);
+    const comments = pc(commentsEl?.textContent);
+    const shares = pc(sharesEl?.textContent);
+    const views = pc(viewsEl?.textContent);
 
-  if (videos.length === 0) {
-    await page.screenshot({ path: path.join(SCRIPT_DIR, "debug-screenshot.png") });
-    console.log("[TikTok Scraper] No videos found. Debug screenshot saved.");
-    await context.close();
-    process.exit(1);
-  }
+    if (likes === 0 && comments === 0 && shares === 0 && views === 0) return null;
 
-  await context.close();
+    return {
+      desc: descEl?.textContent?.slice(0, 500) || "",
+      date: dateEl?.getAttribute("datetime") || dateEl?.textContent || null,
+      views,
+      likes,
+      comments,
+      shares,
+    };
+  });
+}
 
-  // Push to production API
-  console.log(`[TikTok Scraper] Pushing ${videos.length} videos to ${API_URL}...`);
+/**
+ * Push scraped videos to the production API.
+ */
+async function pushToAPI(videos: ScrapedVideo[]): Promise<void> {
+  console.log(`[Scraper] Pushing ${videos.length} videos to ${API_URL}...`);
 
   const response = await fetch(`${API_URL}/api/sync/ingest`, {
     method: "POST",
@@ -220,22 +405,49 @@ async function main() {
   try {
     result = JSON.parse(responseText);
   } catch {
-    console.error(`[TikTok Scraper] API returned non-JSON (${response.status}): ${responseText.slice(0, 200)}`);
-    process.exit(1);
+    throw new Error(`API returned non-JSON (${response.status}): ${responseText.slice(0, 200)}`);
   }
 
   if (response.ok) {
-    console.log(`[TikTok Scraper] Success! Posts: ${result.postsSynced}, Metrics: ${result.metricsSynced}`);
+    console.log(`[Scraper] Success! Posts: ${result.postsSynced}, Metrics: ${result.metricsSynced}`);
   } else {
-    console.error(`[TikTok Scraper] API error ${response.status}:`, result);
-    process.exit(1);
+    throw new Error(`API error ${response.status}: ${JSON.stringify(result)}`);
   }
 }
 
 /**
- * Wait for CAPTCHA to be solved manually.
- * Polls every 3s for up to 60s, checking if CAPTCHA text disappears.
+ * Main entry point with retry logic.
  */
+async function main() {
+  if (!API_TOKEN) {
+    console.error("ERROR: API_TOKEN not set in .env");
+    process.exit(1);
+  }
+
+  console.log(`[Scraper] TikTok scraper for @${TIKTOK_USERNAME}`);
+  console.log(`[Scraper] Target: ${API_URL}/api/sync/ingest`);
+  console.log(`[Scraper] Max videos: ${MAX_VIDEOS} | Retries: ${MAX_RETRIES} | Delay: ${RETRY_DELAY_MIN}min`);
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`\n[Scraper] === Attempt ${attempt}/${MAX_RETRIES} ===`);
+      const videos = await scrape();
+      await pushToAPI(videos);
+      console.log(`[Scraper] Completed successfully on attempt ${attempt}.`);
+      return;
+    } catch (err) {
+      console.error(`[Scraper] Attempt ${attempt} failed:`, err instanceof Error ? err.message : err);
+      if (attempt < MAX_RETRIES) {
+        console.log(`[Scraper] Waiting ${RETRY_DELAY_MIN} minutes before retry...`);
+        await sleep(RETRY_DELAY_MIN * 60 * 1000);
+      } else {
+        console.error(`[Scraper] All ${MAX_RETRIES} attempts failed.`);
+        process.exit(1);
+      }
+    }
+  }
+}
+
 async function waitForCaptcha(page: Page, location: string) {
   const hasCaptcha = await page.evaluate(() =>
     document.body.innerText.includes("Drag the slider") ||
@@ -244,8 +456,7 @@ async function waitForCaptcha(page: Page, location: string) {
   );
 
   if (!hasCaptcha) return;
-
-  console.log(`[TikTok Scraper] CAPTCHA detected on ${location} — please solve it manually...`);
+  console.log(`[Scraper] CAPTCHA detected on ${location} — waiting for it to clear...`);
 
   for (let i = 0; i < 20; i++) {
     await page.waitForTimeout(3000);
@@ -255,121 +466,16 @@ async function waitForCaptcha(page: Page, location: string) {
       document.body.innerText.includes("Select 2 objects")
     );
     if (!stillCaptcha) {
-      console.log(`[TikTok Scraper] CAPTCHA solved! Continuing...`);
+      console.log(`[Scraper] CAPTCHA cleared!`);
       await page.waitForTimeout(2000);
       return;
     }
   }
 
-  console.log("[TikTok Scraper] CAPTCHA timeout (60s) — continuing anyway...");
-}
-
-async function extractVideos(page: Page, username: string): Promise<ScrapedVideo[]> {
-  const data = await page.evaluate(() => {
-    const el = document.getElementById("__UNIVERSAL_DATA_FOR_REHYDRATION__");
-    if (!el?.textContent) return null;
-    return JSON.parse(el.textContent);
-  });
-
-  if (!data) return [];
-
-  const userDetail = data?.__DEFAULT_SCOPE__?.["webapp.user-detail"];
-  const items = userDetail?.itemList;
-  if (!Array.isArray(items)) return [];
-
-  return items.map((item: Record<string, unknown>) => {
-    const stats = item.stats as Record<string, number> | undefined;
-    const video = item.video as Record<string, unknown> | undefined;
-    const createTime = Number(item.createTime || 0);
-
-    return {
-      postId: String(item.id),
-      title: String(item.desc || "").slice(0, 200),
-      description: String(item.desc || ""),
-      contentUrl: `https://www.tiktok.com/@${username}/video/${item.id}`,
-      thumbnailUrl: (video?.cover as string) || (video?.originCover as string) || null,
-      publishedAt: createTime > 0 ? new Date(createTime * 1000).toISOString() : new Date().toISOString(),
-      postType: "video",
-      metrics: {
-        views: Number(stats?.playCount || 0),
-        likes: Number(stats?.diggCount || 0),
-        comments: Number(stats?.commentCount || 0),
-        shares: Number(stats?.shareCount || 0),
-      },
-    };
-  });
-}
-
-async function extractFromDOM(page: Page, username: string): Promise<ScrapedVideo[]> {
-  // Extract raw data from browser, process in Node.js to avoid tsx/esbuild __name issues
-  const rawItems: { videoId: string; viewText: string }[] = await page.$$eval(
-    'a[href*="/video/"]',
-    (els) => {
-      const seen: Record<string, boolean> = {};
-      const items: { videoId: string; viewText: string }[] = [];
-      for (const el of els) {
-        const href = el.getAttribute("href") || "";
-        const m = href.match(/\/video\/(\d+)/);
-        if (!m) continue;
-        const vid = m[1];
-        if (seen[vid]) continue;
-        seen[vid] = true;
-        const card = el.closest('[class*="DivItemContainer"], [data-e2e="user-post-item"]') || el.parentElement;
-        const viewEl = card?.querySelector('strong[data-e2e="video-views"], [class*="video-count"]');
-        items.push({ videoId: vid, viewText: viewEl?.textContent || "0" });
-      }
-      return items;
-    }
-  );
-
-  return rawItems.map((item) => ({
-    postId: item.videoId,
-    title: "",
-    description: "",
-    contentUrl: `https://www.tiktok.com/@${username}/video/${item.videoId}`,
-    thumbnailUrl: null,
-    publishedAt: new Date().toISOString(),
-    postType: "video",
-    metrics: {
-      views: parseCompact(item.viewText),
-      likes: 0,
-      comments: 0,
-      shares: 0,
-    },
-  }));
-}
-
-function parseCompact(text: string): number {
-  const cleaned = text.replace(/[^0-9.KMBkmb]/g, "");
-  const m = cleaned.match(/([\d.]+)\s*([KMBkmb])?/);
-  if (!m) return 0;
-  const num = parseFloat(m[1]);
-  const suffix = (m[2] || "").toUpperCase();
-  if (suffix === "K") return Math.round(num * 1000);
-  if (suffix === "M") return Math.round(num * 1000000);
-  if (suffix === "B") return Math.round(num * 1000000000);
-  return Math.round(num);
-}
-
-function parseCookieString(cookieStr: string, domain: string) {
-  return cookieStr
-    .split(";")
-    .map((pair) => pair.trim())
-    .filter(Boolean)
-    .map((pair) => {
-      const eq = pair.indexOf("=");
-      if (eq === -1) return null;
-      return {
-        name: pair.slice(0, eq).trim(),
-        value: pair.slice(eq + 1).trim(),
-        domain,
-        path: "/",
-      };
-    })
-    .filter(Boolean) as { name: string; value: string; domain: string; path: string }[];
+  throw new Error(`CAPTCHA on ${location} did not clear after 60s`);
 }
 
 main().catch((err) => {
-  console.error("[TikTok Scraper] Fatal error:", err);
+  console.error("[Scraper] Fatal error:", err);
   process.exit(1);
 });
