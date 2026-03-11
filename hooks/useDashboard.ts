@@ -20,6 +20,12 @@ interface AccountHealth {
   lastSyncedAt: string | null;
 }
 
+interface Comparison {
+  views: number;
+  engagements: number;
+  engagementRate: number;
+}
+
 interface DashboardSummary {
   totalViews: number;
   totalEngagements: number;
@@ -27,6 +33,7 @@ interface DashboardSummary {
   totalImpressions: number;
   totalFollowers: number;
   totalFollowerGrowth: number;
+  comparison: Comparison;
 }
 
 interface TrendPoint {

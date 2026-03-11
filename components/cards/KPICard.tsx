@@ -19,8 +19,9 @@ export default function KPICard({ label, value, subtitle, trend }: KPICardProps)
             trend.isPositive ? "text-green-600" : "text-red-500"
           }`}
         >
-          {trend.isPositive ? "+" : ""}
+          {trend.isPositive ? "\u25B2 +" : "\u25BC "}
           {trend.value}%
+          <span className="ml-1 font-normal text-clutch-grey/40">vs prev</span>
         </p>
       )}
       {subtitle && (

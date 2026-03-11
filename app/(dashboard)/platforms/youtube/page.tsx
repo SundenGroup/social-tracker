@@ -105,11 +105,16 @@ export default function YouTubeDashboardPage() {
 
       {/* KPI Cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-5">
-        <KPICard label="Total Views" value={formatCompact(data.summary.totalViews)} subtitle={rangeLabel} />
-        <KPICard label="Total Likes" value={formatCompact(data.summary.totalLikes)} subtitle={rangeLabel} />
-        <KPICard label="Comments" value={formatCompact(data.summary.totalComments)} subtitle={rangeLabel} />
-        <KPICard label="Engagement Rate" value={`${data.summary.avgEngagementRate}%`} subtitle={rangeLabel} />
-        <KPICard label="Total Posts" value={String(data.summary.totalPosts)} subtitle={rangeLabel} />
+        <KPICard label="Total Views" value={formatCompact(data.summary.totalViews)} subtitle={rangeLabel}
+          trend={data.summary.comparison?.views != null ? { value: data.summary.comparison.views, isPositive: data.summary.comparison.views >= 0 } : undefined} />
+        <KPICard label="Total Likes" value={formatCompact(data.summary.totalLikes)} subtitle={rangeLabel}
+          trend={data.summary.comparison?.likes != null ? { value: data.summary.comparison.likes, isPositive: data.summary.comparison.likes >= 0 } : undefined} />
+        <KPICard label="Comments" value={formatCompact(data.summary.totalComments)} subtitle={rangeLabel}
+          trend={data.summary.comparison?.comments != null ? { value: data.summary.comparison.comments, isPositive: data.summary.comparison.comments >= 0 } : undefined} />
+        <KPICard label="Engagement Rate" value={`${data.summary.avgEngagementRate}%`} subtitle={rangeLabel}
+          trend={data.summary.comparison?.engagementRate != null ? { value: data.summary.comparison.engagementRate, isPositive: data.summary.comparison.engagementRate >= 0 } : undefined} />
+        <KPICard label="Total Posts" value={String(data.summary.totalPosts)} subtitle={rangeLabel}
+          trend={data.summary.comparison?.posts != null ? { value: data.summary.comparison.posts, isPositive: data.summary.comparison.posts >= 0 } : undefined} />
       </div>
 
       {/* Account Stats */}

@@ -21,6 +21,15 @@ interface PostItem {
   engagementRate: number;
 }
 
+interface PlatformComparison {
+  views: number;
+  likes: number;
+  comments: number;
+  engagements: number;
+  engagementRate: number;
+  posts: number;
+}
+
 interface PlatformSummary {
   totalViews: number;
   totalLikes: number;
@@ -30,6 +39,7 @@ interface PlatformSummary {
   totalReach: number;
   avgEngagementRate: number;
   totalPosts: number;
+  comparison?: PlatformComparison;
 }
 
 interface PieSlice {

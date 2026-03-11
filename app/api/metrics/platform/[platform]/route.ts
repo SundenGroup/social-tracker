@@ -152,6 +152,75 @@ export const GET = apiHandler(
     const totalEngagements = totalLikes + totalComments + totalShares;
     const engBase = totalViews || totalImpressions || 0;
 
+    // Previous period comparison
+    const rangeDuration = end.getTime() - start.getTime();
+    const prevEnd = new Date(start.getTime() - 1);
+    const prevStart = new Date(prevEnd.getTime() - rangeDuration);
+
+    const prevPostWhere: Record<string, unknown> = {
+      socialAccountId: { in: accountIds },
+      publishedAt: { gte: prevStart, lte: prevEnd },
+      isDeleted: false,
+    };
+    if (contentType && contentType !== "all") {
+      prevPostWhere.postType = contentType;
+    }
+
+    const prevPosts = await prisma.post.findMany({
+      where: prevPostWhere,
+      select: { id: true },
+    });
+
+    const prevPostIds = prevPosts.map((p) => p.id);
+    let prevViews = 0, prevLikes = 0, prevComments = 0, prevShares = 0, prevImpressions = 0;
+
+    if (prevPostIds.length > 0) {
+      const prevLatestMetric = await prisma.postMetric.findFirst({
+        where: { postId: { in: prevPostIds } },
+        orderBy: { metricDate: "desc" },
+        select: { metricDate: true },
+      });
+
+      if (prevLatestMetric) {
+        const prevAgg = await prisma.postMetric.groupBy({
+          by: ["metricType"],
+          where: {
+            postId: { in: prevPostIds },
+            metricDate: prevLatestMetric.metricDate,
+          },
+          _sum: { metricValue: true },
+        });
+
+        for (const m of prevAgg) {
+          const val = Number(m._sum.metricValue ?? 0);
+          switch (m.metricType) {
+            case "views": prevViews = val; break;
+            case "likes": prevLikes = val; break;
+            case "comments": prevComments = val; break;
+            case "shares": prevShares = val; break;
+            case "impressions": prevImpressions = val; break;
+          }
+        }
+      }
+    }
+
+    const prevEngagements = prevLikes + prevComments + prevShares;
+    const prevEngBase = prevViews || prevImpressions || 0;
+    const pctChange = (curr: number, prev: number) =>
+      prev > 0 ? Number((((curr - prev) / prev) * 100).toFixed(1)) : curr > 0 ? 100 : 0;
+
+    const comparison = {
+      views: pctChange(totalViews, prevViews),
+      likes: pctChange(totalLikes, prevLikes),
+      comments: pctChange(totalComments, prevComments),
+      engagements: pctChange(totalEngagements, prevEngagements),
+      engagementRate: pctChange(
+        engBase > 0 ? Number(((totalEngagements / engBase) * 100).toFixed(2)) : 0,
+        prevEngBase > 0 ? Number(((prevEngagements / prevEngBase) * 100).toFixed(2)) : 0,
+      ),
+      posts: pctChange(posts.length, prevPosts.length),
+    };
+
     // Daily trend data — compute day-over-day DELTAS instead of cumulative totals
     // Fetch one extra day before start so we can compute the delta for the first day
     const dayBeforeStart = new Date(start.getTime() - 86400000);
@@ -250,6 +319,7 @@ export const GET = apiHandler(
           totalReach,
           avgEngagementRate: engBase > 0 ? Number(((totalEngagements / engBase) * 100).toFixed(2)) : 0,
           totalPosts: posts.length,
+          comparison,
         },
         accountStats: {
           totalFollowers,

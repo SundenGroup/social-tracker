@@ -84,16 +84,28 @@ export default function DashboardPage() {
           label="Total Views"
           value={formatCompact(data.summary.totalViews)}
           subtitle={rangeLabel}
+          trend={data.summary.comparison?.views != null ? {
+            value: data.summary.comparison.views,
+            isPositive: data.summary.comparison.views >= 0,
+          } : undefined}
         />
         <KPICard
           label="Total Engagements"
           value={formatCompact(data.summary.totalEngagements)}
           subtitle={rangeLabel}
+          trend={data.summary.comparison?.engagements != null ? {
+            value: data.summary.comparison.engagements,
+            isPositive: data.summary.comparison.engagements >= 0,
+          } : undefined}
         />
         <KPICard
           label="Avg Engagement Rate"
           value={`${data.summary.avgEngagementRate}%`}
           subtitle={rangeLabel}
+          trend={data.summary.comparison?.engagementRate != null ? {
+            value: data.summary.comparison.engagementRate,
+            isPositive: data.summary.comparison.engagementRate >= 0,
+          } : undefined}
         />
         <KPICard
           label="Total Followers"

@@ -184,6 +184,72 @@ export const GET = apiHandler(
     const totalEngagements = Number(totalLikes + totalComments + totalShares);
     const base = Number(totalViews) || Number(totalImpressions) || 0;
 
+    // Previous period comparison
+    const rangeDuration = end.getTime() - start.getTime();
+    const prevEnd = new Date(start.getTime() - 1); // day before current start
+    const prevStart = new Date(prevEnd.getTime() - rangeDuration);
+
+    const prevPosts = await prisma.post.findMany({
+      where: {
+        socialAccountId: { in: accountIds },
+        publishedAt: { gte: prevStart, lte: prevEnd },
+        isDeleted: false,
+      },
+      select: { id: true },
+    });
+
+    const prevPostIds = prevPosts.map((p) => p.id);
+    let prevViews = 0;
+    let prevEngagements = 0;
+    let prevEngRate = 0;
+
+    if (prevPostIds.length > 0) {
+      const prevLatestMetric = await prisma.postMetric.findFirst({
+        where: { postId: { in: prevPostIds } },
+        orderBy: { metricDate: "desc" },
+        select: { metricDate: true },
+      });
+
+      if (prevLatestMetric) {
+        const prevAgg = await prisma.postMetric.groupBy({
+          by: ["metricType"],
+          where: {
+            postId: { in: prevPostIds },
+            metricDate: prevLatestMetric.metricDate,
+          },
+          _sum: { metricValue: true },
+        });
+
+        let pv = 0, pl = 0, pc = 0, ps = 0, pi = 0;
+        for (const m of prevAgg) {
+          const val = Number(m._sum.metricValue ?? 0);
+          switch (m.metricType) {
+            case "views": pv = val; break;
+            case "likes": pl = val; break;
+            case "comments": pc = val; break;
+            case "shares": ps = val; break;
+            case "impressions": pi = val; break;
+          }
+        }
+        prevViews = pv;
+        prevEngagements = pl + pc + ps;
+        const prevBase = pv || pi || 0;
+        prevEngRate = prevBase > 0 ? Number(((prevEngagements / prevBase) * 100).toFixed(2)) : 0;
+      }
+    }
+
+    const pctChange = (curr: number, prev: number) =>
+      prev > 0 ? Number((((curr - prev) / prev) * 100).toFixed(1)) : curr > 0 ? 100 : 0;
+
+    const comparison = {
+      views: pctChange(Number(totalViews), prevViews),
+      engagements: pctChange(totalEngagements, prevEngagements),
+      engagementRate: pctChange(
+        base > 0 ? Number(((totalEngagements / base) * 100).toFixed(2)) : 0,
+        prevEngRate
+      ),
+    };
+
     // Account stats from AccountDailyRollup
     const latestRollups = await prisma.accountDailyRollup.findMany({
       where: { socialAccountId: { in: accountIds } },
@@ -263,6 +329,7 @@ export const GET = apiHandler(
           totalImpressions: Number(totalImpressions),
           totalFollowers,
           totalFollowerGrowth,
+          comparison,
         },
         platforms: platformSummaries,
         posts: postPerformance,
