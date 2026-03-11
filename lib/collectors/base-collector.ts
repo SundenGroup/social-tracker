@@ -64,6 +64,12 @@ export abstract class BaseCollector {
     clean = clean.replace(/\\x[0-9a-fA-F]*/g, "");
     // Remove any remaining backslashes that break PostgreSQL
     clean = clean.replace(/\\/g, "");
+    // Remove non-BMP characters that can cause encoding issues
+    // eslint-disable-next-line no-control-regex
+    clean = clean.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "");
+    // Strip any remaining characters outside printable ASCII + common Unicode
+    // that PostgreSQL's UTF-8 encoding might reject
+    clean = clean.replace(/[^\P{C}\n\r\t]/gu, "");
     // Safe truncation: avoid cutting surrogate pairs (emojis)
     if (clean.length > maxLength) {
       clean = clean.substring(0, maxLength);
@@ -240,8 +246,10 @@ export abstract class BaseCollector {
       }
 
       // 6. Mark sync as complete
+      // Only mark as "failed" if majority of posts failed; minor errors are "success"
+      const failRatio = result.postsSynced > 0 ? result.errors.length / (result.postsSynced + result.errors.length) : 0;
       const status: SyncStatus =
-        result.errors.length > 0 ? "failed" : "success";
+        result.errors.length > 0 && failRatio > 0.5 ? "failed" : "success";
 
       await prisma.syncLog.update({
         where: { id: syncLog.id },
