@@ -38,7 +38,6 @@ export const GET = apiHandler(
         },
       },
       orderBy: { publishedAt: "desc" },
-      take: 100,
     });
 
     const postDbIds = topPosts.map((p) => p.id);

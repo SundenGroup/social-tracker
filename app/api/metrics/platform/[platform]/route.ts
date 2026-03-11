@@ -64,7 +64,6 @@ export const GET = apiHandler(
         },
       },
       orderBy: { publishedAt: "desc" },
-      take: 200,
     });
 
     // Build post performance list — use LATEST metric snapshot, not sum across dates
