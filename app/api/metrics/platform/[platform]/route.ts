@@ -112,35 +112,40 @@ export const GET = apiHandler(
       };
     });
 
-    // Summary: use the latest date's snapshot (not sum across dates)
-    const latestMetricDate = await prisma.postMetric.findFirst({
-      where: { socialAccountId: { in: accountIds }, metricDate: { gte: start, lte: end } },
-      orderBy: { metricDate: "desc" },
-      select: { metricDate: true },
-    });
+    // Summary: aggregate from the posts already filtered by publishedAt
+    const postDbIds = posts.map((p) => p.id);
 
     let totalViews = 0, totalLikes = 0, totalComments = 0, totalShares = 0;
     let totalImpressions = 0, totalReach = 0;
 
-    if (latestMetricDate) {
-      const metricAgg = await prisma.postMetric.groupBy({
-        by: ["metricType"],
-        where: {
-          socialAccountId: { in: accountIds },
-          metricDate: latestMetricDate.metricDate,
-        },
-        _sum: { metricValue: true },
+    if (postDbIds.length > 0) {
+      // Get latest metric date scoped to these posts only
+      const latestMetricDate = await prisma.postMetric.findFirst({
+        where: { postId: { in: postDbIds }, metricDate: { gte: start, lte: end } },
+        orderBy: { metricDate: "desc" },
+        select: { metricDate: true },
       });
 
-      for (const m of metricAgg) {
-        const val = Number(m._sum.metricValue ?? 0);
-        switch (m.metricType) {
-          case "views": totalViews = val; break;
-          case "likes": totalLikes = val; break;
-          case "comments": totalComments = val; break;
-          case "shares": totalShares = val; break;
-          case "impressions": totalImpressions = val; break;
-          case "reach": totalReach = val; break;
+      if (latestMetricDate) {
+        const metricAgg = await prisma.postMetric.groupBy({
+          by: ["metricType"],
+          where: {
+            postId: { in: postDbIds },
+            metricDate: latestMetricDate.metricDate,
+          },
+          _sum: { metricValue: true },
+        });
+
+        for (const m of metricAgg) {
+          const val = Number(m._sum.metricValue ?? 0);
+          switch (m.metricType) {
+            case "views": totalViews = val; break;
+            case "likes": totalLikes = val; break;
+            case "comments": totalComments = val; break;
+            case "shares": totalShares = val; break;
+            case "impressions": totalImpressions = val; break;
+            case "reach": totalReach = val; break;
+          }
         }
       }
     }
@@ -151,16 +156,16 @@ export const GET = apiHandler(
     // Daily trend data — compute day-over-day DELTAS instead of cumulative totals
     // Fetch one extra day before start so we can compute the delta for the first day
     const dayBeforeStart = new Date(start.getTime() - 86400000);
-    const dailyMetrics = await prisma.postMetric.groupBy({
+    const dailyMetrics = postDbIds.length > 0 ? await prisma.postMetric.groupBy({
       by: ["metricDate", "metricType"],
       where: {
-        socialAccountId: { in: accountIds },
+        postId: { in: postDbIds },
         metricDate: { gte: dayBeforeStart, lte: end },
         metricType: { in: ["views", "likes", "comments", "shares", "impressions", "reach"] },
       },
       _sum: { metricValue: true },
       orderBy: { metricDate: "asc" },
-    });
+    }) : [];
 
     // Group cumulative totals by metric type
     const cumulativeByType: Record<string, { date: string; total: number }[]> = {};

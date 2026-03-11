@@ -25,14 +25,25 @@ export const GET = apiHandler(
 
     const accountIds = accounts.map((a) => a.id);
 
-    // Get the latest metric date in range for accurate snapshot
-    const latestMetricDate = await prisma.postMetric.findFirst({
-      where: { socialAccountId: { in: accountIds }, metricDate: { gte: start, lte: end } },
-      orderBy: { metricDate: "desc" },
-      select: { metricDate: true },
+    // Get posts filtered by publishedAt date range
+    const topPosts = await prisma.post.findMany({
+      where: {
+        socialAccountId: { in: accountIds },
+        publishedAt: { gte: start, lte: end },
+        isDeleted: false,
+      },
+      include: {
+        metrics: {
+          where: { metricDate: { gte: start, lte: end } },
+        },
+      },
+      orderBy: { publishedAt: "desc" },
+      take: 100,
     });
 
-    // Build per-platform summaries using latest date snapshot only
+    const postDbIds = topPosts.map((p) => p.id);
+
+    // Build per-platform summaries scoped to posts published in the date range
     const platformMap = new Map<string, { views: bigint; likes: bigint; comments: bigint; shares: bigint; impressions: bigint }>();
 
     for (const account of accounts) {
@@ -43,47 +54,40 @@ export const GET = apiHandler(
       }
     }
 
-    if (latestMetricDate) {
-      const metrics = await prisma.postMetric.groupBy({
-        by: ["socialAccountId", "metricType"],
-        where: {
-          socialAccountId: { in: accountIds },
-          metricDate: latestMetricDate.metricDate,
-        },
-        _sum: { metricValue: true },
+    if (postDbIds.length > 0) {
+      const latestMetricDate = await prisma.postMetric.findFirst({
+        where: { postId: { in: postDbIds }, metricDate: { gte: start, lte: end } },
+        orderBy: { metricDate: "desc" },
+        select: { metricDate: true },
       });
 
-      for (const m of metrics) {
-        const account = accounts.find((a) => a.id === m.socialAccountId);
-        if (!account) continue;
-        const platform = platformMap.get(account.platform);
-        if (!platform) continue;
+      if (latestMetricDate) {
+        const metrics = await prisma.postMetric.groupBy({
+          by: ["socialAccountId", "metricType"],
+          where: {
+            postId: { in: postDbIds },
+            metricDate: latestMetricDate.metricDate,
+          },
+          _sum: { metricValue: true },
+        });
 
-        const val = m._sum.metricValue ?? 0n;
-        switch (m.metricType) {
-          case "views": platform.views += val; break;
-          case "likes": platform.likes += val; break;
-          case "comments": platform.comments += val; break;
-          case "shares": platform.shares += val; break;
-          case "impressions": platform.impressions += val; break;
+        for (const m of metrics) {
+          const account = accounts.find((a) => a.id === m.socialAccountId);
+          if (!account) continue;
+          const platform = platformMap.get(account.platform);
+          if (!platform) continue;
+
+          const val = m._sum.metricValue ?? 0n;
+          switch (m.metricType) {
+            case "views": platform.views += val; break;
+            case "likes": platform.likes += val; break;
+            case "comments": platform.comments += val; break;
+            case "shares": platform.shares += val; break;
+            case "impressions": platform.impressions += val; break;
+          }
         }
       }
     }
-
-    // Get top posts per platform
-    const topPosts = await prisma.post.findMany({
-      where: {
-        socialAccountId: { in: accountIds },
-        publishedAt: { gte: start, lte: end },
-      },
-      include: {
-        metrics: {
-          where: { metricDate: { gte: start, lte: end } },
-        },
-      },
-      orderBy: { publishedAt: "desc" },
-      take: 100,
-    });
 
     // Build post performance list — use LATEST metric snapshot, not sum across dates
     const postPerformance = topPosts.map((post) => {
@@ -125,16 +129,16 @@ export const GET = apiHandler(
 
     // Build daily trend data — compute day-over-day DELTAS per platform
     const dayBeforeStart = new Date(start.getTime() - 86400000);
-    const dailyMetrics = await prisma.postMetric.groupBy({
+    const dailyMetrics = postDbIds.length > 0 ? await prisma.postMetric.groupBy({
       by: ["metricDate", "platform"],
       where: {
-        socialAccountId: { in: accountIds },
+        postId: { in: postDbIds },
         metricDate: { gte: dayBeforeStart, lte: end },
         metricType: "views",
       },
       _sum: { metricValue: true },
       orderBy: { metricDate: "asc" },
-    });
+    }) : [];
 
     // Group cumulative totals by platform
     const cumulativeByPlatform: Record<string, { date: string; total: number }[]> = {};
