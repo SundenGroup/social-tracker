@@ -34,9 +34,25 @@ export const GET = apiHandler(
     const accountIds = accounts.map((a) => a.id);
 
     // Build optional postType filter
-    const postTypeFilter = contentType && contentType !== "all"
-      ? { postType: contentType as import("@prisma/client").PostType }
-      : {};
+    // "short-form" = YouTube shorts + TikTok videos + Instagram reels (video)
+    // "long-form" = YouTube long-form videos only
+    let postTypeFilter: Record<string, unknown> = {};
+    if (contentType === "short-form") {
+      postTypeFilter = {
+        OR: [
+          { postType: "short" as import("@prisma/client").PostType },
+          { platform: "tiktok" as import("@prisma/client").Platform, postType: "video" as import("@prisma/client").PostType },
+          { platform: "instagram" as import("@prisma/client").Platform, postType: "video" as import("@prisma/client").PostType },
+        ],
+      };
+    } else if (contentType === "long-form") {
+      postTypeFilter = {
+        platform: "youtube" as import("@prisma/client").Platform,
+        postType: "video" as import("@prisma/client").PostType,
+      };
+    } else if (contentType && contentType !== "all") {
+      postTypeFilter = { postType: contentType as import("@prisma/client").PostType };
+    }
 
     // Build sponsored filter for aggregation queries
     const sponsoredFilter = hideSponsored ? { isSponsored: false } : {};

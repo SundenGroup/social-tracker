@@ -83,8 +83,8 @@ export default function DashboardPage() {
       <div className="mb-6 flex gap-2">
         {[
           { label: "All", value: "all" },
-          { label: "Video", value: "video" },
-          { label: "Short", value: "short" },
+          { label: "Short-form", value: "short-form" },
+          { label: "Long-form", value: "long-form" },
           { label: "Image", value: "image" },
           { label: "Carousel", value: "carousel" },
         ].map((ct) => (
