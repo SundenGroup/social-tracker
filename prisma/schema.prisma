@@ -74,12 +74,13 @@ enum MetricType {
 // ============ MODELS ============
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  ownerId   String?
-  owner     User?    @relation("OrganizationOwner", fields: [ownerId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String
+  ownerId        String?
+  owner          User?    @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  hideSponsored  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   users          User[]
   socialAccounts SocialAccount[]

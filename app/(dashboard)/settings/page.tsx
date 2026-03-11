@@ -38,6 +38,7 @@ export default function SettingsPage() {
   const [accounts, setAccounts] = useState<AccountStatus[]>([]);
   const [syncLogs, setSyncLogs] = useState<SyncLogEntry[]>([]);
   const [health, setHealth] = useState<HealthData | null>(null);
+  const [hideSponsored, setHideSponsored] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
@@ -45,10 +46,11 @@ export default function SettingsPage() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [accountsRes, logsRes, healthRes] = await Promise.all([
+      const [accountsRes, logsRes, healthRes, settingsRes] = await Promise.all([
         fetch("/api/accounts"),
         fetch("/api/sync-logs?limit=50"),
         fetch("/api/health"),
+        fetch("/api/settings"),
       ]);
 
       if (accountsRes.ok) {
@@ -61,6 +63,10 @@ export default function SettingsPage() {
       }
       if (healthRes.ok) {
         setHealth(await healthRes.json());
+      }
+      if (settingsRes.ok) {
+        const json = await settingsRes.json();
+        setHideSponsored(json.data?.hideSponsored ?? false);
       }
     } catch {
       // Silently handle errors
@@ -83,6 +89,20 @@ export default function SettingsPage() {
       // Handle silently
     } finally {
       setSyncingId(null);
+    }
+  };
+
+  const handleToggleSponsored = async () => {
+    const newValue = !hideSponsored;
+    setHideSponsored(newValue);
+    try {
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hideSponsored: newValue }),
+      });
+    } catch {
+      setHideSponsored(!newValue); // revert on error
     }
   };
 
@@ -144,6 +164,31 @@ export default function SettingsPage() {
           {syncingAll ? "Syncing..." : "Sync All"}
         </button>
       </Header>
+
+      {/* Display Preferences */}
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-sm font-bold text-clutch-black">Display Preferences</h2>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-clutch-black">Hide sponsored posts from stats & charts</p>
+            <p className="text-[10px] text-clutch-grey/50">
+              Sponsored posts will still appear in tables but won&apos;t affect KPIs, charts, or comparisons
+            </p>
+          </div>
+          <button
+            onClick={handleToggleSponsored}
+            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors ${
+              hideSponsored ? "bg-clutch-red" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                hideSponsored ? "translate-x-4.5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
 
       {/* Health Status */}
       {health && (

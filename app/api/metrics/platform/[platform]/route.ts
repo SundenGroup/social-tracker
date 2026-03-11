@@ -25,6 +25,13 @@ export const GET = apiHandler(
       ? new Date(startDate)
       : new Date(end.getTime() - 30 * 86400000);
 
+    // Check hideSponsored setting
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { hideSponsored: true },
+    });
+    const hideSponsored = org?.hideSponsored ?? false;
+
     // Get accounts for this platform
     const accounts = await prisma.socialAccount.findMany({
       where: { organizationId: orgId, platform: platform as Platform, isActive: true },
@@ -114,14 +121,18 @@ export const GET = apiHandler(
 
     // Summary: aggregate from the posts already filtered by publishedAt
     const postDbIds = posts.map((p) => p.id);
+    // IDs for aggregation (excludes sponsored if hideSponsored)
+    const aggPostIds = hideSponsored
+      ? posts.filter((p) => !p.isSponsored).map((p) => p.id)
+      : postDbIds;
 
     let totalViews = 0, totalLikes = 0, totalComments = 0, totalShares = 0;
     let totalImpressions = 0, totalReach = 0;
 
-    if (postDbIds.length > 0) {
+    if (aggPostIds.length > 0) {
       // Get latest metric date scoped to these posts only
       const latestMetricDate = await prisma.postMetric.findFirst({
-        where: { postId: { in: postDbIds }, metricDate: { gte: start, lte: end } },
+        where: { postId: { in: aggPostIds }, metricDate: { gte: start, lte: end } },
         orderBy: { metricDate: "desc" },
         select: { metricDate: true },
       });
@@ -130,7 +141,7 @@ export const GET = apiHandler(
         const metricAgg = await prisma.postMetric.groupBy({
           by: ["metricType"],
           where: {
-            postId: { in: postDbIds },
+            postId: { in: aggPostIds },
             metricDate: latestMetricDate.metricDate,
           },
           _sum: { metricValue: true },
@@ -165,6 +176,9 @@ export const GET = apiHandler(
     };
     if (contentType && contentType !== "all") {
       prevPostWhere.postType = contentType;
+    }
+    if (hideSponsored) {
+      prevPostWhere.isSponsored = false;
     }
 
     const prevPosts = await prisma.post.findMany({
@@ -223,8 +237,12 @@ export const GET = apiHandler(
     };
 
     // Build trend data: aggregate metrics by publish date
+    // Exclude sponsored posts from trends when hideSponsored is on
+    const trendPosts = hideSponsored
+      ? postPerformance.filter((p) => !p.isSponsored)
+      : postPerformance;
     const trendMap = new Map<string, Record<string, number>>();
-    for (const post of postPerformance) {
+    for (const post of trendPosts) {
       const date = post.publishedAt.split("T")[0];
       if (!trendMap.has(date)) {
         trendMap.set(date, { date } as unknown as Record<string, number>);
@@ -294,7 +312,7 @@ export const GET = apiHandler(
           totalImpressions,
           totalReach,
           avgEngagementRate: engBase > 0 ? Number(((totalEngagements / engBase) * 100).toFixed(2)) : 0,
-          totalPosts: posts.length,
+          totalPosts: aggPostIds.length,
           comparison,
         },
         accountStats: {

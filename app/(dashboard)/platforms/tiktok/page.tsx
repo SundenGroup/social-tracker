@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import KPICard from "@/components/cards/KPICard";
@@ -25,6 +25,10 @@ export default function TikTokDashboardPage() {
   const [startDate, setStartDate] = useState(thirtyDaysAgo);
   const [endDate, setEndDate] = useState(today);
   const [gallerySortBy, setGallerySortBy] = useState<"views" | "engagements" | "likes">("views");
+  const [sortKey, setSortKey] = useState<string>("publishedAt");
+  const [sortAsc, setSortAsc] = useState(false);
+  const [tablePage, setTablePage] = useState(0);
+  const pageSize = 25;
   const { data, isLoading, error, refetch } = usePlatformDashboard("tiktok", startDate, endDate);
 
   if (isLoading) {
@@ -45,6 +49,44 @@ export default function TikTokDashboardPage() {
     (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000
   );
   const rangeLabel = `from content posted in last ${daysDiff} days`;
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortKey(key);
+      setSortAsc(false);
+    }
+    setTablePage(0);
+  };
+
+  const tableSortedPosts = useMemo(() => {
+    return [...data.posts].sort((a, b) => {
+      let aVal: number | string, bVal: number | string;
+      if (sortKey === "publishedAt") {
+        aVal = new Date(a.publishedAt).getTime();
+        bVal = new Date(b.publishedAt).getTime();
+      } else {
+        aVal = (a as unknown as Record<string, number>)[sortKey];
+        bVal = (b as unknown as Record<string, number>)[sortKey];
+      }
+      if (aVal < bVal) return sortAsc ? -1 : 1;
+      if (aVal > bVal) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }, [data.posts, sortKey, sortAsc]);
+
+  const totalPages = Math.ceil(tableSortedPosts.length / pageSize);
+  const paginatedPosts = tableSortedPosts.slice(tablePage * pageSize, (tablePage + 1) * pageSize);
+
+  const SortHeader = ({ label, sortField, align }: { label: string; sortField: string; align?: string }) => (
+    <th
+      className={`cursor-pointer select-none pb-2 pr-4 font-medium hover:text-clutch-black ${align === "right" ? "text-right" : ""}`}
+      onClick={() => handleSort(sortField)}
+    >
+      {label} {sortKey === sortField ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+    </th>
+  );
 
   const trendLines = [
     { dataKey: "views", name: "Views", color: "#000000" },
@@ -158,16 +200,16 @@ export default function TikTokDashboardPage() {
               <tr className="border-b border-gray-100 text-clutch-grey/50">
                 <th className="pb-2 pr-4 font-medium">Title</th>
                 <th className="pb-2 pr-1 font-medium" title="Sponsored">Sp.</th>
-                <th className="pb-2 pr-4 font-medium text-right">Views</th>
-                <th className="pb-2 pr-4 font-medium text-right">Likes</th>
-                <th className="pb-2 pr-4 font-medium text-right">Comments</th>
-                <th className="pb-2 pr-4 font-medium text-right">Shares</th>
-                <th className="pb-2 pr-4 font-medium text-right">Eng. Rate</th>
-                <th className="pb-2 font-medium text-right">Published</th>
+                <SortHeader label="Views" sortField="views" align="right" />
+                <SortHeader label="Likes" sortField="likes" align="right" />
+                <SortHeader label="Comments" sortField="comments" align="right" />
+                <SortHeader label="Shares" sortField="shares" align="right" />
+                <SortHeader label="Eng. Rate" sortField="engagementRate" align="right" />
+                <SortHeader label="Published" sortField="publishedAt" align="right" />
               </tr>
             </thead>
             <tbody>
-              {data.posts.slice(0, 50).map((post) => (
+              {paginatedPosts.map((post) => (
                 <tr key={post.id} className={`border-b border-gray-50 ${post.isSponsored ? "bg-amber-50/40" : ""}`}>
                   <td className="max-w-[200px] truncate py-2 pr-4 font-medium text-clutch-black">
                     <a href={post.contentUrl} target="_blank" rel="noopener noreferrer" className="hover:text-clutch-grey">
@@ -193,6 +235,15 @@ export default function TikTokDashboardPage() {
             <p className="py-8 text-center text-sm text-clutch-grey/50">No videos found</p>
           )}
         </div>
+        {tableSortedPosts.length > pageSize && (
+          <div className="mt-3 flex items-center justify-between text-xs text-clutch-grey/50">
+            <span>{tablePage * pageSize + 1}-{Math.min((tablePage + 1) * pageSize, tableSortedPosts.length)} of {tableSortedPosts.length}</span>
+            <div className="flex gap-2">
+              <button onClick={() => setTablePage(tablePage - 1)} disabled={tablePage === 0} className="rounded border border-gray-300 px-2 py-1 disabled:opacity-30">Prev</button>
+              <button onClick={() => setTablePage(tablePage + 1)} disabled={tablePage >= totalPages - 1} className="rounded border border-gray-300 px-2 py-1 disabled:opacity-30">Next</button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

@@ -18,6 +18,13 @@ export const GET = apiHandler(
       ? new Date(startDate)
       : new Date(end.getTime() - 30 * 86400000);
 
+    // Check hideSponsored setting
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { hideSponsored: true },
+    });
+    const hideSponsored = org?.hideSponsored ?? false;
+
     // Get all accounts for org
     const accounts = await prisma.socialAccount.findMany({
       where: { organizationId: orgId, isActive: true },
@@ -31,7 +38,10 @@ export const GET = apiHandler(
       ? { postType: contentType as import("@prisma/client").PostType }
       : {};
 
-    // Get posts filtered by publishedAt date range
+    // Build sponsored filter for aggregation queries
+    const sponsoredFilter = hideSponsored ? { isSponsored: false } : {};
+
+    // Get ALL posts (including sponsored) for the table
     const topPosts = await prisma.post.findMany({
       where: {
         socialAccountId: { in: accountIds },
@@ -48,6 +58,10 @@ export const GET = apiHandler(
     });
 
     const postDbIds = topPosts.map((p) => p.id);
+    // IDs for aggregation (excludes sponsored if hideSponsored)
+    const aggPostIds = hideSponsored
+      ? topPosts.filter((p) => !p.isSponsored).map((p) => p.id)
+      : postDbIds;
 
     // Build per-platform summaries scoped to posts published in the date range
     const platformMap = new Map<string, { views: bigint; likes: bigint; comments: bigint; shares: bigint; impressions: bigint }>();
@@ -60,9 +74,9 @@ export const GET = apiHandler(
       }
     }
 
-    if (postDbIds.length > 0) {
+    if (aggPostIds.length > 0) {
       const latestMetricDate = await prisma.postMetric.findFirst({
-        where: { postId: { in: postDbIds }, metricDate: { gte: start, lte: end } },
+        where: { postId: { in: aggPostIds }, metricDate: { gte: start, lte: end } },
         orderBy: { metricDate: "desc" },
         select: { metricDate: true },
       });
@@ -71,7 +85,7 @@ export const GET = apiHandler(
         const metrics = await prisma.postMetric.groupBy({
           by: ["socialAccountId", "metricType"],
           where: {
-            postId: { in: postDbIds },
+            postId: { in: aggPostIds },
             metricDate: latestMetricDate.metricDate,
           },
           _sum: { metricValue: true },
@@ -135,8 +149,12 @@ export const GET = apiHandler(
     });
 
     // Build trend data: aggregate views by publish date, grouped by platform
+    // Exclude sponsored posts from trends when hideSponsored is on
+    const trendPosts = hideSponsored
+      ? postPerformance.filter((p) => !p.isSponsored)
+      : postPerformance;
     const trendMap = new Map<string, Record<string, number>>();
-    for (const post of postPerformance) {
+    for (const post of trendPosts) {
       const date = post.publishedAt.split("T")[0];
       if (!trendMap.has(date)) {
         trendMap.set(date, { date } as unknown as Record<string, number>);
@@ -174,6 +192,7 @@ export const GET = apiHandler(
         publishedAt: { gte: prevStart, lte: prevEnd },
         isDeleted: false,
         ...postTypeFilter,
+        ...sponsoredFilter,
       },
       select: { id: true },
     });

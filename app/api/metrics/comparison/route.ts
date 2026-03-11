@@ -18,6 +18,13 @@ export const GET = apiHandler(
       ? new Date(startDate)
       : new Date(end.getTime() - 30 * 86400000);
 
+    // Check hideSponsored setting
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { hideSponsored: true },
+    });
+    const hideSponsored = org?.hideSponsored ?? false;
+
     // Get all active accounts grouped by platform
     const accounts = await prisma.socialAccount.findMany({
       where: { organizationId: orgId, isActive: true },
@@ -56,38 +63,50 @@ export const GET = apiHandler(
         continue;
       }
 
-      // Aggregate metrics
-      const metricAgg = await prisma.postMetric.groupBy({
-        by: ["metricType"],
-        where: {
-          socialAccountId: { in: accountIds },
-          metricDate: { gte: start, lte: end },
-        },
-        _sum: { metricValue: true },
-      });
-
-      const totals: Record<string, number> = {};
-      for (const m of metricAgg) {
-        totals[m.metricType] = Number(m._sum.metricValue ?? 0);
+      // Build post filter
+      const postWhere: Record<string, unknown> = {
+        socialAccountId: { in: accountIds },
+        publishedAt: { gte: start, lte: end },
+        isDeleted: false,
+      };
+      if (hideSponsored) {
+        postWhere.isSponsored = false;
       }
 
-      const views = totals["views"] ?? 0;
-      const likes = totals["likes"] ?? 0;
-      const comments = totals["comments"] ?? 0;
-      const shares = totals["shares"] ?? 0;
-      const impressions = totals["impressions"] ?? 0;
-      const reach = totals["reach"] ?? 0;
-      const engagements = likes + comments + shares;
-      const base = views || impressions || reach || 1;
-
-      // Post count
-      const postCount = await prisma.post.count({
-        where: {
-          socialAccountId: { in: accountIds },
-          publishedAt: { gte: start, lte: end },
-          isDeleted: false,
+      // Get posts with metrics — use latest snapshot per post (not sum across dates)
+      const posts = await prisma.post.findMany({
+        where: postWhere,
+        include: {
+          metrics: {
+            where: { metricDate: { gte: start, lte: end } },
+          },
         },
       });
+
+      // For each post, extract latest snapshot per metric type
+      let totalViews = 0, totalLikes = 0, totalComments = 0, totalShares = 0;
+      let totalImpressions = 0, totalReach = 0;
+
+      for (const post of posts) {
+        const latestOf = (type: string) => {
+          const records = post.metrics.filter((m) => m.metricType === type);
+          if (records.length === 0) return 0;
+          const latest = records.reduce((a, b) =>
+            a.metricDate.getTime() > b.metricDate.getTime() ? a : b
+          );
+          return Number(latest.metricValue);
+        };
+
+        totalViews += latestOf("views");
+        totalLikes += latestOf("likes");
+        totalComments += latestOf("comments");
+        totalShares += latestOf("shares");
+        totalImpressions += latestOf("impressions");
+        totalReach += latestOf("reach");
+      }
+
+      const engagements = totalLikes + totalComments + totalShares;
+      const base = totalViews || totalImpressions || totalReach || 1;
 
       // Follower data from daily rollups
       const latestRollup = await prisma.accountDailyRollup.findFirst({
@@ -116,41 +135,57 @@ export const GET = apiHandler(
 
       platformRows.push({
         platform,
-        views,
-        impressions,
-        reach,
-        likes,
-        comments,
-        shares,
+        views: totalViews,
+        impressions: totalImpressions,
+        reach: totalReach,
+        likes: totalLikes,
+        comments: totalComments,
+        shares: totalShares,
         engagements,
         engagementRate: Number(((engagements / base) * 100).toFixed(2)),
         followers: currentFollowers,
         followerGrowth,
-        totalPosts: postCount,
+        totalPosts: posts.length,
         accountName,
       });
     }
 
-    // Daily trends per platform (views/impressions)
-    const allAccountIds = accounts.map((a) => a.id);
-    const dailyMetrics = await prisma.postMetric.groupBy({
-      by: ["metricDate", "platform"],
-      where: {
-        socialAccountId: { in: allAccountIds },
-        metricDate: { gte: start, lte: end },
-        metricType: "views",
+    // Daily trends per platform — aggregate latest snapshots grouped by publish date
+    const trendPostWhere: Record<string, unknown> = {
+      socialAccountId: { in: accounts.map((a) => a.id) },
+      publishedAt: { gte: start, lte: end },
+      isDeleted: false,
+    };
+    if (hideSponsored) {
+      trendPostWhere.isSponsored = false;
+    }
+
+    const trendPosts = await prisma.post.findMany({
+      where: trendPostWhere,
+      select: {
+        platform: true,
+        publishedAt: true,
+        metrics: {
+          where: { metricDate: { gte: start, lte: end }, metricType: "views" },
+        },
       },
-      _sum: { metricValue: true },
-      orderBy: { metricDate: "asc" },
     });
 
     const trendMap = new Map<string, Record<string, unknown>>();
-    for (const dm of dailyMetrics) {
-      const dateKey = dm.metricDate.toISOString().split("T")[0];
+    for (const post of trendPosts) {
+      const dateKey = post.publishedAt.toISOString().split("T")[0];
       if (!trendMap.has(dateKey)) {
         trendMap.set(dateKey, { date: dateKey });
       }
-      trendMap.get(dateKey)![dm.platform] = Number(dm._sum.metricValue ?? 0);
+      // Get latest views snapshot for this post
+      const viewRecords = post.metrics;
+      if (viewRecords.length > 0) {
+        const latest = viewRecords.reduce((a, b) =>
+          a.metricDate.getTime() > b.metricDate.getTime() ? a : b
+        );
+        const entry = trendMap.get(dateKey)!;
+        entry[post.platform] = ((entry[post.platform] as number) || 0) + Number(latest.metricValue);
+      }
     }
 
     // Engagement distribution for pie chart
