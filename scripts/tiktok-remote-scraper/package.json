@@ -1,0 +1,14 @@
+{
+  "name": "tiktok-remote-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scrape": "npx tsx scrape.ts",
+    "setup": "npm install && npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "tsx": "^4.21.0"
+  }
+}
