@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import KPICard from "@/components/cards/KPICard";
@@ -67,22 +67,19 @@ export default function YouTubeDashboardPage() {
     setPage(0);
   };
 
-  const sortedPosts = useMemo(() => {
-    const sorted = [...data.posts].sort((a, b) => {
-      let aVal: number | string, bVal: number | string;
-      if (sortKey === "publishedAt") {
-        aVal = new Date(a.publishedAt).getTime();
-        bVal = new Date(b.publishedAt).getTime();
-      } else {
-        aVal = (a as unknown as Record<string, number>)[sortKey];
-        bVal = (b as unknown as Record<string, number>)[sortKey];
-      }
-      if (aVal < bVal) return sortAsc ? -1 : 1;
-      if (aVal > bVal) return sortAsc ? 1 : -1;
-      return 0;
-    });
-    return sorted;
-  }, [data.posts, sortKey, sortAsc]);
+  const sortedPosts = [...data.posts].sort((a, b) => {
+    let aVal: number | string, bVal: number | string;
+    if (sortKey === "publishedAt") {
+      aVal = new Date(a.publishedAt).getTime();
+      bVal = new Date(b.publishedAt).getTime();
+    } else {
+      aVal = (a as unknown as Record<string, number>)[sortKey];
+      bVal = (b as unknown as Record<string, number>)[sortKey];
+    }
+    if (aVal < bVal) return sortAsc ? -1 : 1;
+    if (aVal > bVal) return sortAsc ? 1 : -1;
+    return 0;
+  });
 
   const totalPages = Math.ceil(sortedPosts.length / pageSize);
   const paginatedPosts = sortedPosts.slice(page * pageSize, (page + 1) * pageSize);
