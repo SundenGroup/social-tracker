@@ -221,45 +221,20 @@ export const GET = apiHandler(
       posts: pctChange(posts.length, prevPosts.length),
     };
 
-    // Daily trend data — compute day-over-day DELTAS instead of cumulative totals
-    // Fetch one extra day before start so we can compute the delta for the first day
-    const dayBeforeStart = new Date(start.getTime() - 86400000);
-    const dailyMetrics = postDbIds.length > 0 ? await prisma.postMetric.groupBy({
-      by: ["metricDate", "metricType"],
-      where: {
-        postId: { in: postDbIds },
-        metricDate: { gte: dayBeforeStart, lte: end },
-        metricType: { in: ["views", "likes", "comments", "shares", "impressions", "reach"] },
-      },
-      _sum: { metricValue: true },
-      orderBy: { metricDate: "asc" },
-    }) : [];
-
-    // Group cumulative totals by metric type
-    const cumulativeByType: Record<string, { date: string; total: number }[]> = {};
-    for (const dm of dailyMetrics) {
-      const type = dm.metricType;
-      if (!cumulativeByType[type]) cumulativeByType[type] = [];
-      cumulativeByType[type].push({
-        date: dm.metricDate.toISOString().split("T")[0],
-        total: Number(dm._sum.metricValue ?? 0),
-      });
-    }
-
-    // Compute daily deltas
-    const startStr = start.toISOString().split("T")[0];
+    // Build trend data: aggregate metrics by publish date
     const trendMap = new Map<string, Record<string, number>>();
-    for (const [type, entries] of Object.entries(cumulativeByType)) {
-      entries.sort((a, b) => a.date.localeCompare(b.date));
-      for (let i = 1; i < entries.length; i++) {
-        const date = entries[i].date;
-        if (date < startStr) continue; // skip the extra baseline day
-        const delta = Math.max(0, entries[i].total - entries[i - 1].total);
-        if (!trendMap.has(date)) {
-          trendMap.set(date, { date } as unknown as Record<string, number>);
-        }
-        trendMap.get(date)![type] = delta;
+    for (const post of postPerformance) {
+      const date = post.publishedAt.split("T")[0];
+      if (!trendMap.has(date)) {
+        trendMap.set(date, { date } as unknown as Record<string, number>);
       }
+      const entry = trendMap.get(date)!;
+      entry.views = (entry.views || 0) + post.views;
+      entry.likes = (entry.likes || 0) + post.likes;
+      entry.comments = (entry.comments || 0) + post.comments;
+      entry.shares = (entry.shares || 0) + post.shares;
+      entry.impressions = (entry.impressions || 0) + post.impressions;
+      entry.reach = (entry.reach || 0) + post.reach;
     }
 
     // Engagement breakdown for pie chart
@@ -326,7 +301,7 @@ export const GET = apiHandler(
           followerGrowth,
         },
         posts: postPerformance,
-        trends: Array.from(trendMap.values()),
+        trends: Array.from(trendMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date))),
         engagementBreakdown,
         topPosts,
         accounts: accounts.map((a) => ({

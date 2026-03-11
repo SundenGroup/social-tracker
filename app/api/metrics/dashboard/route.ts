@@ -126,44 +126,15 @@ export const GET = apiHandler(
       };
     });
 
-    // Build daily trend data — compute day-over-day DELTAS per platform
-    const dayBeforeStart = new Date(start.getTime() - 86400000);
-    const dailyMetrics = postDbIds.length > 0 ? await prisma.postMetric.groupBy({
-      by: ["metricDate", "platform"],
-      where: {
-        postId: { in: postDbIds },
-        metricDate: { gte: dayBeforeStart, lte: end },
-        metricType: "views",
-      },
-      _sum: { metricValue: true },
-      orderBy: { metricDate: "asc" },
-    }) : [];
-
-    // Group cumulative totals by platform
-    const cumulativeByPlatform: Record<string, { date: string; total: number }[]> = {};
-    for (const dm of dailyMetrics) {
-      const plat = dm.platform;
-      if (!cumulativeByPlatform[plat]) cumulativeByPlatform[plat] = [];
-      cumulativeByPlatform[plat].push({
-        date: dm.metricDate.toISOString().split("T")[0],
-        total: Number(dm._sum.metricValue ?? 0),
-      });
-    }
-
-    // Compute daily deltas per platform
-    const startStr = start.toISOString().split("T")[0];
+    // Build trend data: aggregate views by publish date, grouped by platform
     const trendMap = new Map<string, Record<string, number>>();
-    for (const [plat, entries] of Object.entries(cumulativeByPlatform)) {
-      entries.sort((a, b) => a.date.localeCompare(b.date));
-      for (let i = 1; i < entries.length; i++) {
-        const date = entries[i].date;
-        if (date < startStr) continue;
-        const delta = Math.max(0, entries[i].total - entries[i - 1].total);
-        if (!trendMap.has(date)) {
-          trendMap.set(date, { date } as unknown as Record<string, number>);
-        }
-        trendMap.get(date)![plat] = delta;
+    for (const post of postPerformance) {
+      const date = post.publishedAt.split("T")[0];
+      if (!trendMap.has(date)) {
+        trendMap.set(date, { date } as unknown as Record<string, number>);
       }
+      const entry = trendMap.get(date)!;
+      entry[post.platform] = (entry[post.platform] || 0) + post.views;
     }
 
     // Build totals
@@ -333,7 +304,7 @@ export const GET = apiHandler(
         },
         platforms: platformSummaries,
         posts: postPerformance,
-        trends: Array.from(trendMap.values()),
+        trends: Array.from(trendMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date))),
         accounts: accounts.map((a) => ({
           id: a.id,
           platform: a.platform,
