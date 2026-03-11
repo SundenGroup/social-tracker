@@ -8,6 +8,8 @@ interface PlatformSummary {
   views: number;
   engagements: number;
   topPost: string | null;
+  followers: number;
+  followerGrowth: number;
 }
 
 interface AccountHealth {
@@ -23,6 +25,8 @@ interface DashboardSummary {
   totalEngagements: number;
   avgEngagementRate: number;
   totalImpressions: number;
+  totalFollowers: number;
+  totalFollowerGrowth: number;
 }
 
 interface TrendPoint {

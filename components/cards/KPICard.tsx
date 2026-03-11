@@ -1,13 +1,14 @@
 interface KPICardProps {
   label: string;
   value: string | number;
+  subtitle?: string;
   trend?: {
     value: number;
     isPositive: boolean;
   };
 }
 
-export default function KPICard({ label, value, trend }: KPICardProps) {
+export default function KPICard({ label, value, subtitle, trend }: KPICardProps) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5">
       <p className="mb-1 text-xs font-medium text-clutch-grey/60">{label}</p>
@@ -21,6 +22,9 @@ export default function KPICard({ label, value, trend }: KPICardProps) {
           {trend.isPositive ? "+" : ""}
           {trend.value}%
         </p>
+      )}
+      {subtitle && (
+        <p className="mt-1 text-[10px] text-clutch-grey/40">{subtitle}</p>
       )}
     </div>
   );

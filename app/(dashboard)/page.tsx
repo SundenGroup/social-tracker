@@ -44,6 +44,12 @@ export default function DashboardPage() {
 
   if (!data) return null;
 
+  // Compute range label for KPI subtitles
+  const daysDiff = Math.round(
+    (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000
+  );
+  const rangeLabel = `from content posted in last ${daysDiff} days`;
+
   const syncStatusColor = (status: string) => {
     switch (status) {
       case "success": return "text-green-600 bg-green-50";
@@ -77,18 +83,27 @@ export default function DashboardPage() {
         <KPICard
           label="Total Views"
           value={formatCompact(data.summary.totalViews)}
+          subtitle={rangeLabel}
         />
         <KPICard
           label="Total Engagements"
           value={formatCompact(data.summary.totalEngagements)}
+          subtitle={rangeLabel}
         />
         <KPICard
           label="Avg Engagement Rate"
           value={`${data.summary.avgEngagementRate}%`}
+          subtitle={rangeLabel}
         />
         <KPICard
-          label="Impressions"
-          value={formatCompact(data.summary.totalImpressions)}
+          label="Total Followers"
+          value={formatCompact(data.summary.totalFollowers)}
+          trend={data.summary.totalFollowerGrowth !== 0 ? {
+            value: data.summary.totalFollowers > 0
+              ? Number(((data.summary.totalFollowerGrowth / (data.summary.totalFollowers - data.summary.totalFollowerGrowth)) * 100).toFixed(1))
+              : 0,
+            isPositive: data.summary.totalFollowerGrowth > 0,
+          } : undefined}
         />
       </div>
 
@@ -101,6 +116,8 @@ export default function DashboardPage() {
             views={p.views}
             engagements={p.engagements}
             topPost={p.topPost}
+            followers={p.followers}
+            followerGrowth={p.followerGrowth}
           />
         ))}
       </div>

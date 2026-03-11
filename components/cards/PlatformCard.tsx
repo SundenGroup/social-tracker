@@ -31,6 +31,8 @@ interface PlatformCardProps {
   views: number;
   engagements: number;
   topPost: string | null;
+  followers?: number;
+  followerGrowth?: number;
 }
 
 function formatCompact(n: number): string {
@@ -44,6 +46,8 @@ export default function PlatformCard({
   views,
   engagements,
   topPost,
+  followers,
+  followerGrowth,
 }: PlatformCardProps) {
   const config = PLATFORM_CONFIG[platform] ?? {
     label: platform,
@@ -72,6 +76,21 @@ export default function PlatformCard({
             </p>
             <p className="text-xs text-clutch-grey/50">Engagements</p>
           </div>
+          {followers != null && followers > 0 && (
+            <div>
+              <p className="text-lg font-bold text-clutch-black">
+                {formatCompact(followers)}
+              </p>
+              <p className="text-xs text-clutch-grey/50">
+                Followers
+                {followerGrowth != null && followerGrowth !== 0 && (
+                  <span className={`ml-1 ${followerGrowth > 0 ? "text-green-600" : "text-red-500"}`}>
+                    {followerGrowth > 0 ? "+" : ""}{formatCompact(followerGrowth)}
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
         </div>
         {topPost && (
           <p className="truncate text-xs text-clutch-grey/60">

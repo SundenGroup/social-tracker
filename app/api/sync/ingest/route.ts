@@ -168,6 +168,53 @@ export async function POST(req: Request) {
       }
     }
 
+    // Persist account stats to AccountDailyRollup if provided
+    if (stats?.followers) {
+      try {
+        const rollupDate = new Date();
+        rollupDate.setUTCHours(0, 0, 0, 0);
+
+        // Get yesterday's rollup for newFollowers delta
+        const yesterday = new Date(rollupDate.getTime() - 86400000);
+        const prevRollup = await prisma.accountDailyRollup.findUnique({
+          where: {
+            socialAccountId_rollupDate: {
+              socialAccountId: account.id,
+              rollupDate: yesterday,
+            },
+          },
+          select: { totalFollowers: true },
+        });
+
+        const prevFollowers = prevRollup ? Number(prevRollup.totalFollowers) : 0;
+        const newFollowers = prevFollowers > 0 ? stats.followers - prevFollowers : 0;
+
+        await prisma.accountDailyRollup.upsert({
+          where: {
+            socialAccountId_rollupDate: {
+              socialAccountId: account.id,
+              rollupDate: rollupDate,
+            },
+          },
+          create: {
+            socialAccountId: account.id,
+            platform: platform as "tiktok",
+            rollupDate: rollupDate,
+            totalFollowers: BigInt(stats.followers),
+            newFollowers: BigInt(Math.max(0, newFollowers)),
+            postsPublished: postsSynced,
+          },
+          update: {
+            totalFollowers: BigInt(stats.followers),
+            newFollowers: BigInt(Math.max(0, newFollowers)),
+            postsPublished: postsSynced,
+          },
+        });
+      } catch (err) {
+        console.error("[Ingest] Failed to persist account stats:", err);
+      }
+    }
+
     // Update sync log
     const status = errors.length > 0 ? "failed" : "success";
     await prisma.syncLog.update({

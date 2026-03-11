@@ -206,6 +206,35 @@ export const GET = apiHandler(
         id: p.id,
       }));
 
+    // Account stats from AccountDailyRollup
+    const latestRollups = await prisma.accountDailyRollup.findMany({
+      where: { socialAccountId: { in: accountIds } },
+      orderBy: { rollupDate: "desc" },
+      distinct: ["socialAccountId"],
+      select: { totalFollowers: true, socialAccountId: true },
+    });
+
+    const earliestRollups = await prisma.accountDailyRollup.findMany({
+      where: {
+        socialAccountId: { in: accountIds },
+        rollupDate: { gte: start, lte: end },
+      },
+      orderBy: { rollupDate: "asc" },
+      distinct: ["socialAccountId"],
+      select: { totalFollowers: true, socialAccountId: true },
+    });
+
+    let totalFollowers = 0;
+    let followerGrowth = 0;
+
+    for (const latest of latestRollups) {
+      totalFollowers += Number(latest.totalFollowers);
+      const earliest = earliestRollups.find((e) => e.socialAccountId === latest.socialAccountId);
+      if (earliest && Number(earliest.totalFollowers) > 0) {
+        followerGrowth += Number(latest.totalFollowers) - Number(earliest.totalFollowers);
+      }
+    }
+
     return NextResponse.json({
       data: {
         summary: {
@@ -217,6 +246,10 @@ export const GET = apiHandler(
           totalReach,
           avgEngagementRate: engBase > 0 ? Number(((totalEngagements / engBase) * 100).toFixed(2)) : 0,
           totalPosts: posts.length,
+        },
+        accountStats: {
+          totalFollowers,
+          followerGrowth,
         },
         posts: postPerformance,
         trends: Array.from(trendMap.values()),

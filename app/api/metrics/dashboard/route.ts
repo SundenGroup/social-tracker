@@ -181,18 +181,70 @@ export const GET = apiHandler(
     const totalEngagements = Number(totalLikes + totalComments + totalShares);
     const base = Number(totalViews) || Number(totalImpressions) || 0;
 
+    // Account stats from AccountDailyRollup
+    const latestRollups = await prisma.accountDailyRollup.findMany({
+      where: { socialAccountId: { in: accountIds } },
+      orderBy: { rollupDate: "desc" },
+      distinct: ["socialAccountId"],
+      select: { totalFollowers: true, socialAccountId: true },
+    });
+
+    const earliestRollups = await prisma.accountDailyRollup.findMany({
+      where: {
+        socialAccountId: { in: accountIds },
+        rollupDate: { gte: start, lte: end },
+      },
+      orderBy: { rollupDate: "asc" },
+      distinct: ["socialAccountId"],
+      select: { totalFollowers: true, socialAccountId: true },
+    });
+
+    // Build per-account follower map
+    const followersByAccount = new Map<string, { total: number; growth: number }>();
+    for (const latest of latestRollups) {
+      const earliest = earliestRollups.find((e) => e.socialAccountId === latest.socialAccountId);
+      const growth = earliest && Number(earliest.totalFollowers) > 0
+        ? Number(latest.totalFollowers) - Number(earliest.totalFollowers)
+        : 0;
+      followersByAccount.set(latest.socialAccountId, {
+        total: Number(latest.totalFollowers),
+        growth,
+      });
+    }
+
+    let totalFollowers = 0;
+    let totalFollowerGrowth = 0;
+    for (const f of followersByAccount.values()) {
+      totalFollowers += f.total;
+      totalFollowerGrowth += f.growth;
+    }
+
     // Platform summaries for cards
     const platformSummaries = Array.from(platformMap.entries()).map(
       ([platform, m]) => {
         const topPost = postPerformance
           .filter((p) => p.platform === platform)
           .sort((a, b) => b.views - a.views)[0];
+
+        // Sum followers for accounts on this platform
+        let platFollowers = 0;
+        let platFollowerGrowth = 0;
+        for (const account of accounts.filter((a) => a.platform === platform)) {
+          const f = followersByAccount.get(account.id);
+          if (f) {
+            platFollowers += f.total;
+            platFollowerGrowth += f.growth;
+          }
+        }
+
         return {
           platform,
           views: Number(m.views),
           engagements:
             Number(m.likes) + Number(m.comments) + Number(m.shares),
           topPost: topPost?.title ?? null,
+          followers: platFollowers,
+          followerGrowth: platFollowerGrowth,
         };
       }
     );
@@ -206,6 +258,8 @@ export const GET = apiHandler(
             ((totalEngagements / base) * 100).toFixed(2)
           ) : 0,
           totalImpressions: Number(totalImpressions),
+          totalFollowers,
+          totalFollowerGrowth,
         },
         platforms: platformSummaries,
         posts: postPerformance,

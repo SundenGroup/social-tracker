@@ -47,6 +47,11 @@ export default function InstagramDashboardPage() {
 
   if (!data) return null;
 
+  const daysDiff = Math.round(
+    (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000
+  );
+  const rangeLabel = `from content posted in last ${daysDiff} days`;
+
   const trendLines = [
     { dataKey: "views", name: "Views", color: "#E4405F" },
     { dataKey: "likes", name: "Likes", color: "#FF154D" },
@@ -103,11 +108,24 @@ export default function InstagramDashboardPage() {
 
       {/* KPI Cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <KPICard label="Total Views" value={formatCompact(data.summary.totalViews)} />
-        <KPICard label="Engagement Rate" value={`${data.summary.avgEngagementRate}%`} />
-        <KPICard label="Total Likes" value={formatCompact(data.summary.totalLikes)} />
-        <KPICard label="Total Posts" value={String(data.summary.totalPosts)} />
+        <KPICard label="Total Views" value={formatCompact(data.summary.totalViews)} subtitle={rangeLabel} />
+        <KPICard label="Engagement Rate" value={`${data.summary.avgEngagementRate}%`} subtitle={rangeLabel} />
+        <KPICard label="Total Likes" value={formatCompact(data.summary.totalLikes)} subtitle={rangeLabel} />
+        <KPICard label="Total Posts" value={String(data.summary.totalPosts)} subtitle={rangeLabel} />
       </div>
+
+      {/* Account Stats */}
+      {data.accountStats && data.accountStats.totalFollowers > 0 && (
+        <div className="mb-6 flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3">
+          <span className="text-xs font-medium text-clutch-grey/60">Followers</span>
+          <span className="text-lg font-bold text-clutch-black">{formatCompact(data.accountStats.totalFollowers)}</span>
+          {data.accountStats.followerGrowth !== 0 && (
+            <span className={`text-xs font-medium ${data.accountStats.followerGrowth > 0 ? "text-green-600" : "text-red-500"}`}>
+              {data.accountStats.followerGrowth > 0 ? "+" : ""}{formatCompact(data.accountStats.followerGrowth)} in period
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Reach vs Impressions Trend */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">

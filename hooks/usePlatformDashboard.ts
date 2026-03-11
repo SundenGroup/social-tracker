@@ -51,8 +51,14 @@ interface AccountInfo {
   lastSyncedAt: string | null;
 }
 
+interface AccountStats {
+  totalFollowers: number;
+  followerGrowth: number;
+}
+
 export interface PlatformDashboardData {
   summary: PlatformSummary;
+  accountStats?: AccountStats;
   posts: PostItem[];
   trends: Record<string, unknown>[];
   engagementBreakdown: PieSlice[];
