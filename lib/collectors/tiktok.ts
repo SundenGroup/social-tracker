@@ -19,12 +19,14 @@ import {
 } from "@/lib/utils/browser-cookies";
 import type { SocialAccount } from "@prisma/client";
 
-const MAX_VIDEOS_PER_SYNC = 50;
+const MAX_VIDEOS_PER_SYNC = 100;
 const PAGE_LOAD_DELAY = 3000;
 
 export class TikTokCollector extends BaseCollector {
   private username: string;
   private hasCookies: boolean;
+  // Cache metrics from hydration data during fetchPosts to avoid per-video page loads
+  private metricsCache = new Map<string, { views: number; likes: number; comments: number; shares: number }>();
 
   constructor(account: SocialAccount) {
     super(account);
@@ -35,11 +37,25 @@ export class TikTokCollector extends BaseCollector {
   private async withBrowser<T>(
     fn: (page: Page, browser: Browser) => Promise<T>
   ): Promise<T> {
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+      ],
+    });
     try {
       const context = await browser.newContext({
         userAgent: getRandomUserAgent(),
         viewport: { width: 1280, height: 800 },
+        locale: "en-US",
+        timezoneId: "America/New_York",
+      });
+
+      // Remove navigator.webdriver fingerprint
+      await context.addInitScript(() => {
+        Object.defineProperty(navigator, "webdriver", { get: () => false });
       });
 
       // Load session cookies if available
@@ -70,6 +86,20 @@ export class TikTokCollector extends BaseCollector {
       }
 
       const page = await context.newPage();
+
+      // Warm up session by visiting homepage first (helps avoid CAPTCHA)
+      if (this.hasCookies) {
+        try {
+          await page.goto("https://www.tiktok.com/foryou", {
+            waitUntil: "domcontentloaded",
+            timeout: 15000,
+          });
+          await page.waitForTimeout(3000 + Math.random() * 2000);
+        } catch {
+          // Homepage warm-up failed, continue anyway
+        }
+      }
+
       return await fn(page, browser);
     } finally {
       await browser.close();
@@ -85,7 +115,22 @@ export class TikTokCollector extends BaseCollector {
         timeout: 30000,
       });
 
-      await page.waitForTimeout(3000);
+      // Wait for React hydration
+      await page.waitForTimeout(5000);
+
+      // Scroll to load more videos (TikTok lazy-loads video cards)
+      let prevCount = 0;
+      for (let scroll = 0; scroll < 20; scroll++) {
+        await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
+        await page.waitForTimeout(2000 + Math.random() * 1000);
+
+        const currentCount = await page.$$eval(
+          'a[href*="/video/"]',
+          (els) => new Set(els.map((e) => e.getAttribute("href"))).size
+        );
+        if (currentCount === prevCount && scroll > 3) break;
+        prevCount = currentCount;
+      }
 
       const videos = await extractVideosFromDOM(
         page,
@@ -95,12 +140,26 @@ export class TikTokCollector extends BaseCollector {
 
       this.logger(`Scraped ${videos.length} videos from profile`);
 
+      // Cache metrics from hydration data to avoid per-video page loads
+      for (const video of videos) {
+        if (video.views > 0 || video.likes || video.comments || video.shares) {
+          this.metricsCache.set(video.videoId, {
+            views: video.views,
+            likes: video.likes ?? 0,
+            comments: video.comments ?? 0,
+            shares: video.shares ?? 0,
+          });
+        }
+      }
+
+      this.logger(`Cached metrics for ${this.metricsCache.size} videos from hydration data`);
+
       return videos.map((video) => ({
         postId: video.videoId,
         platform: "tiktok" as const,
         postType: "video" as const,
-        title: video.description.substring(0, 200) || null,
-        description: video.description || null,
+        title: this.sanitizeText(video.description.substring(0, 200)) || null,
+        description: this.sanitizeText(video.description) || null,
         contentUrl: video.permalink,
         thumbnailUrl: video.coverUrl,
         publishedAt: video.createTime
@@ -111,63 +170,49 @@ export class TikTokCollector extends BaseCollector {
   }
 
   async fetchMetrics(postIds: string[]): Promise<MetricData[]> {
-    return this.withBrowser(async (page) => {
-      const metrics: MetricData[] = [];
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    const metrics: MetricData[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-      this.logger(`Fetching metrics for ${postIds.length} videos...`);
+    // Use cached metrics from hydration data (collected during fetchPosts)
+    const uncachedIds: string[] = [];
 
-      for (const videoId of postIds) {
-        try {
-          const videoUrl = `https://www.tiktok.com/@${this.username}/video/${videoId}`;
-          const scraped = await extractMetricsFromPage(page, videoUrl);
-
-          if (scraped.views !== undefined) {
-            metrics.push({
-              postId: videoId,
-              metricType: "views",
-              metricDate: today,
-              metricValue: BigInt(scraped.views),
-            });
-          }
-
-          if (scraped.likes !== undefined) {
-            metrics.push({
-              postId: videoId,
-              metricType: "likes",
-              metricDate: today,
-              metricValue: BigInt(scraped.likes),
-            });
-          }
-
-          if (scraped.comments !== undefined) {
-            metrics.push({
-              postId: videoId,
-              metricType: "comments",
-              metricDate: today,
-              metricValue: BigInt(scraped.comments),
-            });
-          }
-
-          if (scraped.shares !== undefined) {
-            metrics.push({
-              postId: videoId,
-              metricType: "shares",
-              metricDate: today,
-              metricValue: BigInt(scraped.shares),
-            });
-          }
-
-          // Rate limiting: 3-5s between page loads
-          await this.delay(PAGE_LOAD_DELAY + Math.random() * 2000);
-        } catch (err) {
-          this.logger(`Failed to scrape metrics for video ${videoId}: ${err}`);
-        }
+    for (const videoId of postIds) {
+      const cached = this.metricsCache.get(videoId);
+      if (cached) {
+        if (cached.views > 0) metrics.push({ postId: videoId, metricType: "views", metricDate: today, metricValue: BigInt(cached.views) });
+        if (cached.likes > 0) metrics.push({ postId: videoId, metricType: "likes", metricDate: today, metricValue: BigInt(cached.likes) });
+        if (cached.comments > 0) metrics.push({ postId: videoId, metricType: "comments", metricDate: today, metricValue: BigInt(cached.comments) });
+        if (cached.shares > 0) metrics.push({ postId: videoId, metricType: "shares", metricDate: today, metricValue: BigInt(cached.shares) });
+      } else {
+        uncachedIds.push(videoId);
       }
+    }
 
-      return metrics;
-    });
+    this.logger(`Metrics from cache: ${postIds.length - uncachedIds.length}, need scraping: ${uncachedIds.length}`);
+
+    // Fall back to per-video page loads for uncached videos
+    if (uncachedIds.length > 0) {
+      await this.withBrowser(async (page) => {
+        for (const videoId of uncachedIds) {
+          try {
+            const videoUrl = `https://www.tiktok.com/@${this.username}/video/${videoId}`;
+            const scraped = await extractMetricsFromPage(page, videoUrl);
+
+            if (scraped.views !== undefined) metrics.push({ postId: videoId, metricType: "views", metricDate: today, metricValue: BigInt(scraped.views) });
+            if (scraped.likes !== undefined) metrics.push({ postId: videoId, metricType: "likes", metricDate: today, metricValue: BigInt(scraped.likes) });
+            if (scraped.comments !== undefined) metrics.push({ postId: videoId, metricType: "comments", metricDate: today, metricValue: BigInt(scraped.comments) });
+            if (scraped.shares !== undefined) metrics.push({ postId: videoId, metricType: "shares", metricDate: today, metricValue: BigInt(scraped.shares) });
+
+            await this.delay(PAGE_LOAD_DELAY + Math.random() * 2000);
+          } catch (err) {
+            this.logger(`Failed to scrape metrics for video ${videoId}: ${err}`);
+          }
+        }
+      });
+    }
+
+    return metrics;
   }
 
   async getAccountStats(): Promise<AccountStats> {
