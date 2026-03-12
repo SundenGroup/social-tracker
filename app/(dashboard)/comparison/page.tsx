@@ -54,6 +54,7 @@ export default function ComparisonPage() {
   );
   const totalEngagements = data.platforms.reduce((s, p) => s + p.engagements, 0);
   const totalFollowers = data.platforms.reduce((s, p) => s + p.followers, 0);
+  const totalFollowerGrowth = data.platforms.reduce((s, p) => s + p.followerGrowth, 0);
   const totalPosts = data.platforms.reduce((s, p) => s + p.totalPosts, 0);
   const activePlatforms = data.platforms.filter((p) => p.totalPosts > 0);
   const avgEngRate =
@@ -84,7 +85,13 @@ export default function ComparisonPage() {
         <KPICard label="Total Reach" value={formatCompact(totalReach)} />
         <KPICard label="Engagements" value={formatCompact(totalEngagements)} />
         <KPICard label="Avg Eng. Rate" value={`${avgEngRate}%`} />
-        <KPICard label="Total Followers" value={formatCompact(totalFollowers)} />
+        <KPICard label="Total Followers" value={formatCompact(totalFollowers)}
+          trend={totalFollowerGrowth !== 0 ? {
+            value: totalFollowerGrowth,
+            isPositive: totalFollowerGrowth > 0,
+            isAbsolute: true,
+          } : undefined}
+        />
         <KPICard label="Posts Published" value={String(totalPosts)} />
       </div>
 

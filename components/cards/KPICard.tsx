@@ -1,3 +1,10 @@
+function formatCompactTrend(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(abs / 1_000).toFixed(1)}K`;
+  return String(abs);
+}
+
 interface KPICardProps {
   label: string;
   value: string | number;
@@ -5,6 +12,7 @@ interface KPICardProps {
   trend?: {
     value: number;
     isPositive: boolean;
+    isAbsolute?: boolean;
   };
 }
 
@@ -19,9 +27,11 @@ export default function KPICard({ label, value, subtitle, trend }: KPICardProps)
             trend.isPositive ? "text-green-600" : "text-red-500"
           }`}
         >
-          {trend.isPositive ? "\u25B2 +" : "\u25BC "}
-          {trend.value}%
-          <span className="ml-1 font-normal text-clutch-grey/40">vs prev</span>
+          {trend.isPositive ? "\u25B2 +" : "\u25BC -"}
+          {trend.isAbsolute ? formatCompactTrend(trend.value) : `${trend.value}%`}
+          <span className="ml-1 font-normal text-clutch-grey/40">
+            {trend.isAbsolute ? "in period" : "vs prev"}
+          </span>
         </p>
       )}
       {subtitle && (

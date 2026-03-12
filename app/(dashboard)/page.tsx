@@ -135,10 +135,9 @@ export default function DashboardPage() {
           label="Total Followers"
           value={formatCompact(data.summary.totalFollowers)}
           trend={data.summary.totalFollowerGrowth !== 0 ? {
-            value: data.summary.totalFollowers > 0
-              ? Number(((data.summary.totalFollowerGrowth / (data.summary.totalFollowers - data.summary.totalFollowerGrowth)) * 100).toFixed(1))
-              : 0,
+            value: data.summary.totalFollowerGrowth,
             isPositive: data.summary.totalFollowerGrowth > 0,
+            isAbsolute: true,
           } : undefined}
         />
       </div>
