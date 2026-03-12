@@ -79,53 +79,7 @@ export const GET = apiHandler(
       ? topPosts.filter((p) => !p.isSponsored).map((p) => p.id)
       : postDbIds;
 
-    // Build per-platform summaries scoped to posts published in the date range
-    const platformMap = new Map<string, { views: bigint; likes: bigint; comments: bigint; shares: bigint; impressions: bigint }>();
-
-    for (const account of accounts) {
-      if (!platformMap.has(account.platform)) {
-        platformMap.set(account.platform, {
-          views: 0n, likes: 0n, comments: 0n, shares: 0n, impressions: 0n,
-        });
-      }
-    }
-
-    if (aggPostIds.length > 0) {
-      const latestMetricDate = await prisma.postMetric.findFirst({
-        where: { postId: { in: aggPostIds }, metricDate: { gte: start, lte: end } },
-        orderBy: { metricDate: "desc" },
-        select: { metricDate: true },
-      });
-
-      if (latestMetricDate) {
-        const metrics = await prisma.postMetric.groupBy({
-          by: ["socialAccountId", "metricType"],
-          where: {
-            postId: { in: aggPostIds },
-            metricDate: latestMetricDate.metricDate,
-          },
-          _sum: { metricValue: true },
-        });
-
-        for (const m of metrics) {
-          const account = accounts.find((a) => a.id === m.socialAccountId);
-          if (!account) continue;
-          const platform = platformMap.get(account.platform);
-          if (!platform) continue;
-
-          const val = m._sum.metricValue ?? 0n;
-          switch (m.metricType) {
-            case "views": platform.views += val; break;
-            case "likes": platform.likes += val; break;
-            case "comments": platform.comments += val; break;
-            case "shares": platform.shares += val; break;
-            case "impressions": platform.impressions += val; break;
-          }
-        }
-      }
-    }
-
-    // Build post performance list — use LATEST metric snapshot, not sum across dates
+    // Build post performance list — use LATEST metric snapshot per post, not sum across dates
     const postPerformance = topPosts.map((post) => {
       const postMetrics = post.metrics;
       const latestOf = (type: string) => {
@@ -179,12 +133,36 @@ export const GET = apiHandler(
       entry[post.platform] = (entry[post.platform] || 0) + post.views;
     }
 
+    // Build per-platform summaries from postPerformance (uses latest snapshot per post)
+    const platformMap = new Map<string, { views: number; likes: number; comments: number; shares: number; impressions: number }>();
+    for (const account of accounts) {
+      if (!platformMap.has(account.platform)) {
+        platformMap.set(account.platform, { views: 0, likes: 0, comments: 0, shares: 0, impressions: 0 });
+      }
+    }
+
+    // Only aggregate non-sponsored posts for KPIs when hideSponsored is on
+    const aggPosts = hideSponsored
+      ? postPerformance.filter((p) => !p.isSponsored)
+      : postPerformance;
+
+    for (const p of aggPosts) {
+      const plat = platformMap.get(p.platform);
+      if (plat) {
+        plat.views += p.views;
+        plat.likes += p.likes;
+        plat.comments += p.comments;
+        plat.shares += p.shares;
+        plat.impressions += p.impressions;
+      }
+    }
+
     // Build totals
-    let totalViews = 0n;
-    let totalLikes = 0n;
-    let totalComments = 0n;
-    let totalShares = 0n;
-    let totalImpressions = 0n;
+    let totalViews = 0;
+    let totalLikes = 0;
+    let totalComments = 0;
+    let totalShares = 0;
+    let totalImpressions = 0;
 
     for (const p of platformMap.values()) {
       totalViews += p.views;
@@ -194,8 +172,8 @@ export const GET = apiHandler(
       totalImpressions += p.impressions;
     }
 
-    const totalEngagements = Number(totalLikes + totalComments + totalShares);
-    const base = Number(totalViews) || Number(totalImpressions) || 0;
+    const totalEngagements = totalLikes + totalComments + totalShares;
+    const base = totalViews || totalImpressions || 0;
 
     // Previous period comparison
     const rangeDuration = end.getTime() - start.getTime();
@@ -210,54 +188,43 @@ export const GET = apiHandler(
         ...postTypeFilter,
         ...sponsoredFilter,
       },
-      select: { id: true },
+      include: {
+        metrics: true,
+      },
     });
 
-    const prevPostIds = prevPosts.map((p) => p.id);
     let prevViews = 0;
     let prevEngagements = 0;
     let prevEngRate = 0;
 
-    if (prevPostIds.length > 0) {
-      const prevLatestMetric = await prisma.postMetric.findFirst({
-        where: { postId: { in: prevPostIds } },
-        orderBy: { metricDate: "desc" },
-        select: { metricDate: true },
-      });
-
-      if (prevLatestMetric) {
-        const prevAgg = await prisma.postMetric.groupBy({
-          by: ["metricType"],
-          where: {
-            postId: { in: prevPostIds },
-            metricDate: prevLatestMetric.metricDate,
-          },
-          _sum: { metricValue: true },
-        });
-
-        let pv = 0, pl = 0, pc = 0, ps = 0, pi = 0;
-        for (const m of prevAgg) {
-          const val = Number(m._sum.metricValue ?? 0);
-          switch (m.metricType) {
-            case "views": pv = val; break;
-            case "likes": pl = val; break;
-            case "comments": pc = val; break;
-            case "shares": ps = val; break;
-            case "impressions": pi = val; break;
-          }
-        }
-        prevViews = pv;
-        prevEngagements = pl + pc + ps;
-        const prevBase = pv || pi || 0;
-        prevEngRate = prevBase > 0 ? Number(((prevEngagements / prevBase) * 100).toFixed(2)) : 0;
+    if (prevPosts.length > 0) {
+      let pv = 0, pl = 0, pc = 0, ps = 0, pi = 0;
+      for (const post of prevPosts) {
+        const latestOf = (type: string) => {
+          const records = post.metrics.filter((m) => m.metricType === type);
+          if (records.length === 0) return 0;
+          const latest = records.reduce((a, b) =>
+            a.metricDate.getTime() > b.metricDate.getTime() ? a : b
+          );
+          return Number(latest.metricValue);
+        };
+        pv += latestOf("views");
+        pl += latestOf("likes");
+        pc += latestOf("comments");
+        ps += latestOf("shares");
+        pi += latestOf("impressions");
       }
+      prevViews = pv;
+      prevEngagements = pl + pc + ps;
+      const prevBase = pv || pi || 0;
+      prevEngRate = prevBase > 0 ? Number(((prevEngagements / prevBase) * 100).toFixed(2)) : 0;
     }
 
     const pctChange = (curr: number, prev: number) =>
       prev > 0 ? Number((((curr - prev) / prev) * 100).toFixed(1)) : curr > 0 ? 100 : 0;
 
     const comparison = {
-      views: pctChange(Number(totalViews), prevViews),
+      views: pctChange(totalViews, prevViews),
       engagements: pctChange(totalEngagements, prevEngagements),
       engagementRate: pctChange(
         base > 0 ? Number(((totalEngagements / base) * 100).toFixed(2)) : 0,
@@ -323,9 +290,8 @@ export const GET = apiHandler(
 
         return {
           platform,
-          views: Number(m.views),
-          engagements:
-            Number(m.likes) + Number(m.comments) + Number(m.shares),
+          views: m.views,
+          engagements: m.likes + m.comments + m.shares,
           topPost: topPost?.title ?? null,
           followers: platFollowers,
           followerGrowth: platFollowerGrowth,
@@ -336,12 +302,12 @@ export const GET = apiHandler(
     return NextResponse.json({
       data: {
         summary: {
-          totalViews: Number(totalViews),
+          totalViews,
           totalEngagements,
           avgEngagementRate: base > 0 ? Number(
             ((totalEngagements / base) * 100).toFixed(2)
           ) : 0,
-          totalImpressions: Number(totalImpressions),
+          totalImpressions,
           totalFollowers,
           totalFollowerGrowth,
           comparison,

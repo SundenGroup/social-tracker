@@ -119,46 +119,22 @@ export const GET = apiHandler(
       };
     });
 
-    // Summary: aggregate from the posts already filtered by publishedAt
-    const postDbIds = posts.map((p) => p.id);
-    // IDs for aggregation (excludes sponsored if hideSponsored)
-    const aggPostIds = hideSponsored
-      ? posts.filter((p) => !p.isSponsored).map((p) => p.id)
-      : postDbIds;
+    // Summary: aggregate from postPerformance using latest snapshot per post
+    // Filter out sponsored posts from aggregation when hideSponsored is on
+    const aggPosts = hideSponsored
+      ? postPerformance.filter((p) => !p.isSponsored)
+      : postPerformance;
 
     let totalViews = 0, totalLikes = 0, totalComments = 0, totalShares = 0;
     let totalImpressions = 0, totalReach = 0;
 
-    if (aggPostIds.length > 0) {
-      // Get latest metric date scoped to these posts only
-      const latestMetricDate = await prisma.postMetric.findFirst({
-        where: { postId: { in: aggPostIds }, metricDate: { gte: start, lte: end } },
-        orderBy: { metricDate: "desc" },
-        select: { metricDate: true },
-      });
-
-      if (latestMetricDate) {
-        const metricAgg = await prisma.postMetric.groupBy({
-          by: ["metricType"],
-          where: {
-            postId: { in: aggPostIds },
-            metricDate: latestMetricDate.metricDate,
-          },
-          _sum: { metricValue: true },
-        });
-
-        for (const m of metricAgg) {
-          const val = Number(m._sum.metricValue ?? 0);
-          switch (m.metricType) {
-            case "views": totalViews = val; break;
-            case "likes": totalLikes = val; break;
-            case "comments": totalComments = val; break;
-            case "shares": totalShares = val; break;
-            case "impressions": totalImpressions = val; break;
-            case "reach": totalReach = val; break;
-          }
-        }
-      }
+    for (const p of aggPosts) {
+      totalViews += p.views;
+      totalLikes += p.likes;
+      totalComments += p.comments;
+      totalShares += p.shares;
+      totalImpressions += p.impressions;
+      totalReach += p.reach;
     }
 
     const totalEngagements = totalLikes + totalComments + totalShares;
@@ -183,40 +159,25 @@ export const GET = apiHandler(
 
     const prevPosts = await prisma.post.findMany({
       where: prevPostWhere,
-      select: { id: true },
+      include: { metrics: true },
     });
 
-    const prevPostIds = prevPosts.map((p) => p.id);
     let prevViews = 0, prevLikes = 0, prevComments = 0, prevShares = 0, prevImpressions = 0;
 
-    if (prevPostIds.length > 0) {
-      const prevLatestMetric = await prisma.postMetric.findFirst({
-        where: { postId: { in: prevPostIds } },
-        orderBy: { metricDate: "desc" },
-        select: { metricDate: true },
-      });
-
-      if (prevLatestMetric) {
-        const prevAgg = await prisma.postMetric.groupBy({
-          by: ["metricType"],
-          where: {
-            postId: { in: prevPostIds },
-            metricDate: prevLatestMetric.metricDate,
-          },
-          _sum: { metricValue: true },
-        });
-
-        for (const m of prevAgg) {
-          const val = Number(m._sum.metricValue ?? 0);
-          switch (m.metricType) {
-            case "views": prevViews = val; break;
-            case "likes": prevLikes = val; break;
-            case "comments": prevComments = val; break;
-            case "shares": prevShares = val; break;
-            case "impressions": prevImpressions = val; break;
-          }
-        }
-      }
+    for (const post of prevPosts) {
+      const latestOf = (type: string) => {
+        const records = post.metrics.filter((m) => m.metricType === type);
+        if (records.length === 0) return 0;
+        const latest = records.reduce((a, b) =>
+          a.metricDate.getTime() > b.metricDate.getTime() ? a : b
+        );
+        return Number(latest.metricValue);
+      };
+      prevViews += latestOf("views");
+      prevLikes += latestOf("likes");
+      prevComments += latestOf("comments");
+      prevShares += latestOf("shares");
+      prevImpressions += latestOf("impressions");
     }
 
     const prevEngagements = prevLikes + prevComments + prevShares;
@@ -312,7 +273,7 @@ export const GET = apiHandler(
           totalImpressions,
           totalReach,
           avgEngagementRate: engBase > 0 ? Number(((totalEngagements / engBase) * 100).toFixed(2)) : 0,
-          totalPosts: aggPostIds.length,
+          totalPosts: aggPosts.length,
           comparison,
         },
         accountStats: {

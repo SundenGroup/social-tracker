@@ -74,7 +74,7 @@ export default function PlatformCard({
             <p className="text-lg font-bold text-clutch-black">
               {formatCompact(engagements)}
             </p>
-            <p className="text-xs text-clutch-grey/50">Engagements</p>
+            <p className="text-xs text-clutch-grey/50">Eng.</p>
           </div>
           {followers != null && followers > 0 && (
             <div>

@@ -114,7 +114,7 @@ export default function DashboardPage() {
           } : undefined}
         />
         <KPICard
-          label="Total Engagements"
+          label="Total Eng."
           value={formatCompact(data.summary.totalEngagements)}
           subtitle={rangeLabel}
           trend={data.summary.comparison?.engagements != null ? {
@@ -123,7 +123,7 @@ export default function DashboardPage() {
           } : undefined}
         />
         <KPICard
-          label="Avg Engagement Rate"
+          label="Avg Eng. Rate"
           value={`${data.summary.avgEngagementRate}%`}
           subtitle={rangeLabel}
           trend={data.summary.comparison?.engagementRate != null ? {
