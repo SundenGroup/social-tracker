@@ -85,16 +85,7 @@ export class TwitterCollector extends BaseCollector {
     return this.withBrowser(async (page) => {
       this.logger(`Fetching posts for @${this.username}...`);
 
-      // Log all GraphQL endpoints and page URL for debugging
-      page.on("response", (response) => {
-        const url = response.url();
-        if (url.includes("/i/api/graphql/") || url.includes("/i/api/2/")) {
-          const endpoint = url.split("/i/api/")[1]?.split("?")[0] ?? url;
-          this.logger(`[DEBUG] API endpoint: ${endpoint}`);
-        }
-      });
-
-      // Set up GraphQL listener BEFORE navigation to catch UserByScreenName
+      // Set up GraphQL listener BEFORE navigation to catch user profile data
       const profilePromise = listenForProfileGraphQL(page);
 
       await page.goto(`https://x.com/${this.username}`, {
@@ -104,11 +95,6 @@ export class TwitterCollector extends BaseCollector {
 
       // Wait for timeline to load
       await page.waitForTimeout(5000);
-
-      // Debug: log current URL and page title
-      this.logger(`[DEBUG] Page URL: ${page.url()}`);
-      const title = await page.title();
-      this.logger(`[DEBUG] Page title: ${title}`);
 
       // Check if GraphQL captured profile stats
       const graphQLProfile = await Promise.race([

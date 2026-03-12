@@ -335,7 +335,11 @@ export function listenForProfileGraphQL(
       json: () => Promise<unknown>;
     }) => {
       const url = response.url();
-      if (!url.includes("/UserByScreenName") && !url.includes("/UserTweets"))
+      if (
+        !url.includes("/UserByScreenName") &&
+        !url.includes("/UserTweets") &&
+        !url.includes("/UsersByRestIds")
+      )
         return;
 
       try {
