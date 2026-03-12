@@ -298,9 +298,9 @@ export async function extractProfileStats(
       const href = await link.getAttribute("href");
       const text = await link.innerText();
 
-      if (href?.includes("/followers")) {
+      if (href?.endsWith("/followers")) {
         followers = parseCompactNumber(text);
-      } else if (href?.includes("/following")) {
+      } else if (href?.endsWith("/following")) {
         following = parseCompactNumber(text);
       }
     }
