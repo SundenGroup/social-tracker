@@ -26,6 +26,8 @@ const PAGE_LOAD_DELAY = 3000; // 3s between page loads
 export class TwitterCollector extends BaseCollector {
   private username: string;
   private hasCookies: boolean;
+  private cachedProfileStats: { followers: number; following?: number } | null =
+    null;
 
   constructor(account: SocialAccount) {
     super(account);
@@ -89,6 +91,18 @@ export class TwitterCollector extends BaseCollector {
 
       // Wait for timeline to load
       await page.waitForTimeout(3000);
+
+      // Extract profile stats while we're already on the profile page
+      const profile = await extractProfileStats(page);
+      if (profile && profile.followers > 0) {
+        this.cachedProfileStats = {
+          followers: profile.followers,
+          following: profile.following,
+        };
+        this.logger(
+          `Captured profile stats: ${profile.followers} followers`
+        );
+      }
 
       const scraped = await extractPostsFromTimeline(
         page,
@@ -191,6 +205,15 @@ export class TwitterCollector extends BaseCollector {
   }
 
   async getAccountStats(): Promise<AccountStats> {
+    // Use cached stats from fetchPosts() to avoid launching another browser
+    if (this.cachedProfileStats) {
+      this.logger(
+        `Using cached profile stats: ${this.cachedProfileStats.followers} followers`
+      );
+      return this.cachedProfileStats;
+    }
+
+    // Fallback: launch a fresh browser if cache is empty
     return this.withBrowser(async (page) => {
       this.logger(`Fetching profile stats for @${this.username}...`);
 
