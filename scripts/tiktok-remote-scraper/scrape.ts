@@ -46,7 +46,12 @@ if (fs.existsSync(envPath)) {
 
 const API_URL = process.env.API_URL || "https://social.clutch.game";
 const API_TOKEN = process.env.API_TOKEN || "";
-const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || "pubg.esports.official";
+// Support multiple accounts via TIKTOK_USERNAMES (comma-separated), fall back to single TIKTOK_USERNAME
+const TIKTOK_USERNAMES: string[] = (
+  process.env.TIKTOK_USERNAMES ||
+  process.env.TIKTOK_USERNAME ||
+  "pubg.esports.official"
+).split(",").map((u) => u.trim()).filter(Boolean);
 const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "200", 10);
 const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || "3", 10);
 const RETRY_DELAY_MIN = parseInt(process.env.RETRY_DELAY_MIN || "5", 10);
@@ -141,7 +146,12 @@ async function getBrowser(): Promise<{ browser: Browser | null; context: Browser
 /**
  * Single scrape attempt.
  */
-async function scrape(): Promise<ScrapedVideo[]> {
+interface ScrapeResult {
+  videos: ScrapedVideo[];
+  profileStats: { followers: number; following: number; videoCount: number } | null;
+}
+
+async function scrape(username: string): Promise<ScrapeResult> {
   const { browser, context, standalone } = await getBrowser();
   const interactive = SETUP_MODE;
 
@@ -168,8 +178,8 @@ async function scrape(): Promise<ScrapedVideo[]> {
       await waitForCaptcha(page, "homepage");
     }
 
-    console.log(`[Scraper] Loading @${TIKTOK_USERNAME} profile...`);
-    await page.goto(`https://www.tiktok.com/@${TIKTOK_USERNAME}`, {
+    console.log(`[Scraper] Loading @${username} profile...`);
+    await page.goto(`https://www.tiktok.com/@${username}`, {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     });
@@ -179,6 +189,30 @@ async function scrape(): Promise<ScrapedVideo[]> {
     } else {
       await page.waitForTimeout(6000);
       await waitForCaptcha(page, "profile");
+    }
+
+    // Extract profile stats from hydration JSON
+    let profileStats: { followers: number; following: number; videoCount: number } | null = null;
+    try {
+      profileStats = await page.evaluate(() => {
+        const el = document.getElementById("__UNIVERSAL_DATA_FOR_REHYDRATION__");
+        if (!el || !el.textContent) return null;
+        const data = JSON.parse(el.textContent);
+        const scope = data["__DEFAULT_SCOPE__"];
+        const userDetail = scope?.["webapp.user-detail"];
+        const userInfo = userDetail?.userInfo;
+        if (!userInfo?.stats) return null;
+        return {
+          followers: Number(userInfo.stats.followerCount || 0),
+          following: Number(userInfo.stats.followingCount || 0),
+          videoCount: Number(userInfo.stats.videoCount || 0),
+        };
+      });
+      if (profileStats) {
+        console.log(`[Scraper] Profile stats: ${profileStats.followers} followers, ${profileStats.videoCount} videos`);
+      }
+    } catch {
+      console.log("[Scraper] Could not extract profile stats from hydration data");
     }
 
     console.log("[Scraper] Scrolling to load videos...");
@@ -234,7 +268,7 @@ async function scrape(): Promise<ScrapedVideo[]> {
 
     for (let i = 0; i < videoIds.length; i++) {
       const videoId = videoIds[i];
-      const videoUrl = `https://www.tiktok.com/@${TIKTOK_USERNAME}/video/${videoId}`;
+      const videoUrl = `https://www.tiktok.com/@${username}/video/${videoId}`;
 
       try {
         await page.goto(videoUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
@@ -320,7 +354,7 @@ async function scrape(): Promise<ScrapedVideo[]> {
     // Navigate to a neutral page so browser isn't sitting on TikTok between runs
     await page.goto("about:blank").catch(() => {});
 
-    return videos;
+    return { videos, profileStats };
   } finally {
     // Only close if we launched standalone — don't kill the shared browser
     if (standalone) {
@@ -384,8 +418,26 @@ async function extractVideoFromDOM(page: Page): Promise<{
 /**
  * Push scraped videos to the production API.
  */
-async function pushToAPI(videos: ScrapedVideo[]): Promise<void> {
-  console.log(`[Scraper] Pushing ${videos.length} videos to ${API_URL}...`);
+async function pushToAPI(
+  username: string,
+  videos: ScrapedVideo[],
+  profileStats?: { followers: number; following: number; videoCount: number } | null
+): Promise<void> {
+  console.log(`[Scraper] Pushing ${videos.length} videos for @${username} to ${API_URL}...`);
+
+  const payload: Record<string, unknown> = {
+    platform: "tiktok",
+    accountId: username,
+    posts: videos,
+  };
+
+  if (profileStats) {
+    payload.stats = {
+      followers: profileStats.followers,
+      following: profileStats.following,
+      videoCount: profileStats.videoCount,
+    };
+  }
 
   const response = await fetch(`${API_URL}/api/sync/ingest`, {
     method: "POST",
@@ -393,11 +445,7 @@ async function pushToAPI(videos: ScrapedVideo[]): Promise<void> {
       "Content-Type": "application/json",
       Authorization: `Bearer ${API_TOKEN}`,
     },
-    body: JSON.stringify({
-      platform: "tiktok",
-      accountId: TIKTOK_USERNAME,
-      posts: videos,
-    }),
+    body: JSON.stringify(payload),
   });
 
   const responseText = await response.text();
@@ -424,28 +472,45 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`[Scraper] TikTok scraper for @${TIKTOK_USERNAME}`);
+  console.log(`[Scraper] TikTok scraper for ${TIKTOK_USERNAMES.length} account(s): ${TIKTOK_USERNAMES.map((u) => `@${u}`).join(", ")}`);
   console.log(`[Scraper] Target: ${API_URL}/api/sync/ingest`);
   console.log(`[Scraper] Max videos: ${MAX_VIDEOS} | Retries: ${MAX_RETRIES} | Delay: ${RETRY_DELAY_MIN}min`);
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      console.log(`\n[Scraper] === Attempt ${attempt}/${MAX_RETRIES} ===`);
-      const videos = await scrape();
-      await pushToAPI(videos);
-      console.log(`[Scraper] Completed successfully on attempt ${attempt}.`);
-      return;
-    } catch (err) {
-      console.error(`[Scraper] Attempt ${attempt} failed:`, err instanceof Error ? err.message : err);
-      if (attempt < MAX_RETRIES) {
-        console.log(`[Scraper] Waiting ${RETRY_DELAY_MIN} minutes before retry...`);
-        await sleep(RETRY_DELAY_MIN * 60 * 1000);
-      } else {
-        console.error(`[Scraper] All ${MAX_RETRIES} attempts failed.`);
-        process.exit(1);
+  let hasFailure = false;
+
+  for (const username of TIKTOK_USERNAMES) {
+    console.log(`\n[Scraper] ========== @${username} ==========`);
+
+    let success = false;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[Scraper] === Attempt ${attempt}/${MAX_RETRIES} for @${username} ===`);
+        const { videos, profileStats } = await scrape(username);
+        await pushToAPI(username, videos, profileStats);
+        console.log(`[Scraper] @${username} completed successfully on attempt ${attempt}.`);
+        success = true;
+        break;
+      } catch (err) {
+        console.error(`[Scraper] @${username} attempt ${attempt} failed:`, err instanceof Error ? err.message : err);
+        if (attempt < MAX_RETRIES) {
+          console.log(`[Scraper] Waiting ${RETRY_DELAY_MIN} minutes before retry...`);
+          await sleep(RETRY_DELAY_MIN * 60 * 1000);
+        }
       }
     }
+
+    if (!success) {
+      console.error(`[Scraper] All ${MAX_RETRIES} attempts failed for @${username}.`);
+      hasFailure = true;
+    }
   }
+
+  if (hasFailure) {
+    console.error("[Scraper] Some accounts failed to scrape.");
+    process.exit(1);
+  }
+
+  console.log("[Scraper] All accounts scraped successfully!");
 }
 
 async function waitForCaptcha(page: Page, location: string) {

@@ -1,5 +1,7 @@
 "use client";
 
+import ProfileSelector from "@/components/common/ProfileSelector";
+
 interface HeaderProps {
   title: string;
   children?: React.ReactNode;
@@ -8,7 +10,10 @@ interface HeaderProps {
 export default function Header({ title, children }: HeaderProps) {
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-      <h1 className="text-2xl font-bold text-clutch-black">{title}</h1>
+      <div className="flex items-center gap-4">
+        <h1 className="text-2xl font-bold text-clutch-black">{title}</h1>
+        <ProfileSelector />
+      </div>
       {children && <div className="flex items-center gap-3">{children}</div>}
     </div>
   );

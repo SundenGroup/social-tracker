@@ -25,6 +25,8 @@ export const GET = apiHandler(
         isActive: true,
         lastSyncedAt: true,
         syncStatus: true,
+        profileId: true,
+        profile: { select: { name: true } },
         createdAt: true,
       },
     });
@@ -33,7 +35,15 @@ export const GET = apiHandler(
       throw new NotFoundError("Account not found");
     }
 
-    return NextResponse.json({ data: account });
+    return NextResponse.json({
+      data: {
+        ...account,
+        profileName: account.profile?.name ?? null,
+        profile: undefined,
+        lastSyncedAt: account.lastSyncedAt?.toISOString() ?? null,
+        createdAt: account.createdAt.toISOString(),
+      },
+    });
   },
   { requireAuth: true }
 );
@@ -70,7 +80,7 @@ export const PUT = apiHandler(
       );
     }
 
-    const { platform, accountId, accountName, contentFilter, apiKey, refreshToken } =
+    const { platform, accountId, accountName, contentFilter, profileId, apiKey, refreshToken } =
       result.data;
     let { authToken } = result.data;
 
@@ -110,6 +120,7 @@ export const PUT = apiHandler(
         accountId,
         accountName,
         contentFilter,
+        ...(profileId !== undefined ? { profileId: profileId || null } : {}),
         ...(apiKey !== undefined && {
           apiKey: apiKey ? encrypt(apiKey) : null,
         }),
@@ -129,11 +140,21 @@ export const PUT = apiHandler(
         isActive: true,
         lastSyncedAt: true,
         syncStatus: true,
+        profileId: true,
+        profile: { select: { name: true } },
         createdAt: true,
       },
     });
 
-    return NextResponse.json({ data: account });
+    return NextResponse.json({
+      data: {
+        ...account,
+        profileName: account.profile?.name ?? null,
+        profile: undefined,
+        lastSyncedAt: account.lastSyncedAt?.toISOString() ?? null,
+        createdAt: account.createdAt.toISOString(),
+      },
+    });
   },
   { requireAuth: true, requireAdmin: true }
 );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useProfiles } from "@/hooks/useProfiles";
 
 interface PlatformRow {
   platform: string;
@@ -37,6 +38,7 @@ export interface ComparisonData {
 }
 
 export function useComparison(startDate: string, endDate: string) {
+  const { selectedProfileId } = useProfiles();
   const [data, setData] = useState<ComparisonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +48,9 @@ export function useComparison(startDate: string, endDate: string) {
     setError(null);
     try {
       const params = new URLSearchParams({ startDate, endDate });
+      if (selectedProfileId) {
+        params.set("profileId", selectedProfileId);
+      }
       const res = await fetch(`/api/metrics/comparison?${params}`);
       const json = await res.json();
       if (!res.ok) {
@@ -58,7 +63,7 @@ export function useComparison(startDate: string, endDate: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, selectedProfileId]);
 
   useEffect(() => {
     fetchData();

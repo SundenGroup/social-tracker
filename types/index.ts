@@ -38,6 +38,15 @@ export interface UserResponse {
 
 // ============ Social Accounts ============
 
+export interface ProfileResponse {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  organizationId: string;
+  accountCount?: number;
+  createdAt: string;
+}
+
 export interface SocialAccountResponse {
   id: string;
   platform: Platform;
@@ -47,6 +56,8 @@ export interface SocialAccountResponse {
   isActive: boolean;
   lastSyncedAt: string | null;
   syncStatus: SyncStatus;
+  profileId?: string;
+  profileName?: string;
   createdAt: string;
 }
 

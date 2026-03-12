@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { socialAccountSchema } from "@/lib/validators";
 import { useToast } from "@/components/common/Toast";
+import { useProfiles } from "@/hooks/useProfiles";
 import type { SocialAccountResponse } from "@/types";
 
 interface AccountFormProps {
@@ -20,8 +21,10 @@ const PLATFORMS = [
 export default function AccountForm({ account }: AccountFormProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const { profiles } = useProfiles();
   const isEditing = !!account;
 
+  const [profileId, setProfileId] = useState(account?.profileId ?? "");
   const [platform, setPlatform] = useState<string>(account?.platform ?? "youtube");
   const [accountId, setAccountId] = useState(account?.accountId ?? "");
   const [accountName, setAccountName] = useState(account?.accountName ?? "");
@@ -64,6 +67,7 @@ export default function AccountForm({ account }: AccountFormProps) {
       accountId,
       accountName,
       contentFilter,
+      ...(profileId && { profileId }),
       ...(apiKey && { apiKey }),
       ...(authToken && { authToken }),
     };
@@ -197,6 +201,26 @@ export default function AccountForm({ account }: AccountFormProps) {
           </label>
         </div>
       </div>
+
+      {profiles.length > 0 && (
+        <div>
+          <label className="mb-1 block text-sm font-medium text-clutch-black">
+            Profile
+          </label>
+          <select
+            value={profileId}
+            onChange={(e) => setProfileId(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          >
+            <option value="">No Profile</option>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}{p.isDefault ? " (Default)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {needsApiKey && (
         <div>

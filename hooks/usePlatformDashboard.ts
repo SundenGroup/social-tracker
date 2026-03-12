@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useProfiles } from "@/hooks/useProfiles";
 
 interface PostItem {
   id: string;
@@ -83,6 +84,7 @@ export function usePlatformDashboard(
   endDate: string,
   contentType?: string
 ) {
+  const { selectedProfileId } = useProfiles();
   const [data, setData] = useState<PlatformDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +96,9 @@ export function usePlatformDashboard(
       const params = new URLSearchParams({ startDate, endDate });
       if (contentType && contentType !== "all") {
         params.set("contentType", contentType);
+      }
+      if (selectedProfileId) {
+        params.set("profileId", selectedProfileId);
       }
       const res = await fetch(`/api/metrics/platform/${platform}?${params}`);
       const json = await res.json();
@@ -107,7 +112,7 @@ export function usePlatformDashboard(
     } finally {
       setIsLoading(false);
     }
-  }, [platform, startDate, endDate, contentType]);
+  }, [platform, startDate, endDate, contentType, selectedProfileId]);
 
   useEffect(() => {
     fetchData();

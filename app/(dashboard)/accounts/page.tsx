@@ -76,6 +76,7 @@ export default function AccountsPage() {
               <tr>
                 <th className="px-5 py-3 font-medium text-clutch-grey/60">Platform</th>
                 <th className="px-5 py-3 font-medium text-clutch-grey/60">Account Name</th>
+                <th className="px-5 py-3 font-medium text-clutch-grey/60">Profile</th>
                 <th className="px-5 py-3 font-medium text-clutch-grey/60">Content Filter</th>
                 <th className="px-5 py-3 font-medium text-clutch-grey/60">Last Synced</th>
                 <th className="px-5 py-3 font-medium text-clutch-grey/60">Status</th>
@@ -97,6 +98,9 @@ export default function AccountsPage() {
                       {PLATFORM_LABELS[account.platform] ?? account.platform}
                     </td>
                     <td className="px-5 py-3">{account.accountName}</td>
+                    <td className="px-5 py-3 text-clutch-grey/60">
+                      {(account as unknown as { profileName?: string }).profileName ?? "—"}
+                    </td>
                     <td className="px-5 py-3 capitalize">
                       {account.contentFilter.replace("_", " ")}
                     </td>

@@ -84,9 +84,24 @@ model Organization {
 
   users          User[]
   socialAccounts SocialAccount[]
+  profiles       Profile[]
   dataImports    DataImport[]
 
   @@index([ownerId])
+}
+
+model Profile {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  isDefault      Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  socialAccounts SocialAccount[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
 }
 
 model User {
@@ -114,6 +129,8 @@ model SocialAccount {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  profileId      String?
+  profile        Profile?     @relation(fields: [profileId], references: [id], onDelete: SetNull)
   platform       Platform
   accountId      String
   accountName    String
@@ -139,6 +156,7 @@ model SocialAccount {
   @@unique([organizationId, platform, accountId])
   @@index([organizationId, platform])
   @@index([platform, accountId])
+  @@index([profileId])
 }
 
 model Post {

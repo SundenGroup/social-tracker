@@ -21,9 +21,14 @@ export const socialAccountSchema = z.object({
   accountId: z.string().min(1, "Account ID is required"),
   accountName: z.string().min(1, "Account name is required"),
   contentFilter: z.enum(["all", "video_only"]).default("all"),
+  profileId: z.string().optional(),
   apiKey: z.string().optional(),
   authToken: z.string().optional(),
   refreshToken: z.string().optional(),
+});
+
+export const profileSchema = z.object({
+  name: z.string().min(1, "Profile name is required").max(100, "Profile name is too long"),
 });
 
 export const dateRangeSchema = z
@@ -39,4 +44,5 @@ export const dateRangeSchema = z
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type SocialAccountInput = z.infer<typeof socialAccountSchema>;
+export type ProfileInput = z.infer<typeof profileSchema>;
 export type DateRangeInput = z.infer<typeof dateRangeSchema>;

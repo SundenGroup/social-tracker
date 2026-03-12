@@ -19,6 +19,7 @@ export const GET = apiHandler(
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
     const contentType = url.searchParams.get("contentType"); // e.g. "short", "video", "image"
+    const profileId = url.searchParams.get("profileId");
 
     const end = endDate ? new Date(endDate) : new Date();
     const start = startDate
@@ -32,9 +33,9 @@ export const GET = apiHandler(
     });
     const hideSponsored = org?.hideSponsored ?? false;
 
-    // Get accounts for this platform
+    // Get accounts for this platform (optionally filtered by profile)
     const accounts = await prisma.socialAccount.findMany({
-      where: { organizationId: orgId, platform: platform as Platform, isActive: true },
+      where: { organizationId: orgId, platform: platform as Platform, isActive: true, ...(profileId ? { profileId } : {}) },
       select: { id: true, accountName: true, syncStatus: true, lastSyncedAt: true },
     });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useProfiles } from "@/hooks/useProfiles";
 import type { PostPerformance } from "@/types";
 
 interface PlatformSummary {
@@ -53,6 +54,7 @@ interface DashboardData {
 }
 
 export function useDashboard(startDate: string, endDate: string, contentType?: string) {
+  const { selectedProfileId } = useProfiles();
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +66,9 @@ export function useDashboard(startDate: string, endDate: string, contentType?: s
       const params = new URLSearchParams({ startDate, endDate });
       if (contentType && contentType !== "all") {
         params.set("contentType", contentType);
+      }
+      if (selectedProfileId) {
+        params.set("profileId", selectedProfileId);
       }
       const res = await fetch(`/api/metrics/dashboard?${params}`);
       const json = await res.json();
@@ -77,7 +82,7 @@ export function useDashboard(startDate: string, endDate: string, contentType?: s
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, contentType]);
+  }, [startDate, endDate, contentType, selectedProfileId]);
 
   useEffect(() => {
     fetchData();

@@ -20,11 +20,21 @@ export const GET = apiHandler(
         isActive: true,
         lastSyncedAt: true,
         syncStatus: true,
+        profileId: true,
+        profile: { select: { name: true } },
         createdAt: true,
       },
     });
 
-    return NextResponse.json({ data: accounts });
+    const data = accounts.map((a) => ({
+      ...a,
+      profileName: a.profile?.name ?? null,
+      profile: undefined,
+      lastSyncedAt: a.lastSyncedAt?.toISOString() ?? null,
+      createdAt: a.createdAt.toISOString(),
+    }));
+
+    return NextResponse.json({ data });
   },
   { requireAuth: true, requireAdmin: true }
 );
@@ -48,7 +58,7 @@ export const POST = apiHandler(
       );
     }
 
-    const { platform, accountId, accountName, contentFilter, apiKey, refreshToken } =
+    const { platform, accountId, accountName, contentFilter, profileId, apiKey, refreshToken } =
       result.data;
     let { authToken } = result.data;
 
@@ -88,6 +98,7 @@ export const POST = apiHandler(
         accountId,
         accountName,
         contentFilter,
+        ...(profileId ? { profileId } : {}),
         apiKey: apiKey ? encrypt(apiKey) : null,
         authToken: authToken ? encrypt(authToken) : null,
         refreshToken: refreshToken ? encrypt(refreshToken) : null,

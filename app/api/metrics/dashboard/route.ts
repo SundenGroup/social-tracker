@@ -9,6 +9,7 @@ export const GET = apiHandler(
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
     const contentType = url.searchParams.get("contentType");
+    const profileId = url.searchParams.get("profileId");
 
     const orgId = session!.user.organizationId;
 
@@ -25,9 +26,9 @@ export const GET = apiHandler(
     });
     const hideSponsored = org?.hideSponsored ?? false;
 
-    // Get all accounts for org
+    // Get all accounts for org (optionally filtered by profile)
     const accounts = await prisma.socialAccount.findMany({
-      where: { organizationId: orgId, isActive: true },
+      where: { organizationId: orgId, isActive: true, ...(profileId ? { profileId } : {}) },
       select: { id: true, platform: true, accountName: true, syncStatus: true, lastSyncedAt: true },
     });
 

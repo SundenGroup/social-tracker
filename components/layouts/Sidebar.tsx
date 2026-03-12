@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 const NAV_ITEMS = [
   { href: "/", label: "Overview" },
   { href: "/accounts", label: "Accounts" },
+  { href: "/profiles", label: "Profiles" },
   { href: "/platforms/youtube", label: "YouTube", indent: true },
   { href: "/platforms/twitter", label: "X / Twitter", indent: true },
   { href: "/platforms/instagram", label: "Instagram", indent: true },
