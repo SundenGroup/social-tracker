@@ -92,6 +92,11 @@ async function deepScrapeInstagram(account: SocialAccount) {
     for (const post of posts) {
       const postType: PostType = post.isReel ? "video" : post.mediaType === "video" ? "video" : post.mediaType === "carousel" ? "carousel" : "image";
 
+      // Sanitize caption — remove null bytes and broken escape sequences that PostgreSQL rejects
+      const caption = post.caption?.replace(/\x00/g, "").replace(/\\x[0-9a-fA-F]{0,1}(?![0-9a-fA-F])/g, "") || null;
+      const title = caption?.substring(0, 200) || null;
+
+      try {
       const dbPost = await prisma.post.upsert({
         where: {
           socialAccountId_postId: {
@@ -100,8 +105,8 @@ async function deepScrapeInstagram(account: SocialAccount) {
           },
         },
         update: {
-          title: post.caption?.substring(0, 200) || null,
-          description: post.caption || null,
+          title,
+          description: caption,
           thumbnailUrl: post.thumbnailUrl,
         },
         create: {
@@ -109,8 +114,8 @@ async function deepScrapeInstagram(account: SocialAccount) {
           platform: "instagram",
           postId: post.postId,
           postType,
-          title: post.caption?.substring(0, 200) || null,
-          description: post.caption || null,
+          title,
+          description: caption,
           contentUrl: post.permalink,
           thumbnailUrl: post.thumbnailUrl,
           publishedAt: new Date(post.publishedAt * 1000),
@@ -147,6 +152,9 @@ async function deepScrapeInstagram(account: SocialAccount) {
           },
         });
         metricsUpserted++;
+      }
+      } catch (err) {
+        console.log(`[IG] Skipping post ${post.postId}: ${err instanceof Error ? err.message.slice(0, 80) : err}`);
       }
     }
 
