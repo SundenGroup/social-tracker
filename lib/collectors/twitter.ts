@@ -10,6 +10,7 @@ import {
   extractMetricsFromGraphQL,
   extractMetricsFromPost,
   extractProfileStats,
+  listenForProfileGraphQL,
   getRandomUserAgent,
 } from "@/lib/utils/twitter-scraper";
 import {
@@ -84,6 +85,9 @@ export class TwitterCollector extends BaseCollector {
     return this.withBrowser(async (page) => {
       this.logger(`Fetching posts for @${this.username}...`);
 
+      // Set up GraphQL listener BEFORE navigation to catch UserByScreenName
+      const profilePromise = listenForProfileGraphQL(page);
+
       await page.goto(`https://x.com/${this.username}`, {
         waitUntil: "domcontentloaded",
         timeout: 30000,
@@ -92,16 +96,32 @@ export class TwitterCollector extends BaseCollector {
       // Wait for timeline to load
       await page.waitForTimeout(3000);
 
-      // Extract profile stats while we're already on the profile page
-      const profile = await extractProfileStats(page);
-      if (profile && profile.followers > 0) {
+      // Check if GraphQL captured profile stats
+      const graphQLProfile = await Promise.race([
+        profilePromise,
+        new Promise<null>((r) => setTimeout(() => r(null), 1000)),
+      ]);
+
+      if (graphQLProfile && graphQLProfile.followers > 0) {
         this.cachedProfileStats = {
-          followers: profile.followers,
-          following: profile.following,
+          followers: graphQLProfile.followers,
+          following: graphQLProfile.following,
         };
         this.logger(
-          `Captured profile stats: ${profile.followers} followers`
+          `Captured profile stats via GraphQL: ${graphQLProfile.followers} followers`
         );
+      } else {
+        // Fallback to DOM scraping
+        const domProfile = await extractProfileStats(page);
+        if (domProfile && domProfile.followers > 0) {
+          this.cachedProfileStats = {
+            followers: domProfile.followers,
+            following: domProfile.following,
+          };
+          this.logger(
+            `Captured profile stats via DOM: ${domProfile.followers} followers`
+          );
+        }
       }
 
       const scraped = await extractPostsFromTimeline(

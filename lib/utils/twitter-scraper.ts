@@ -275,21 +275,20 @@ function findTweetMetrics(obj: unknown): ScrapedMetrics | null {
 }
 
 /**
- * Extract profile stats from a Twitter/X profile page.
+ * Extract profile stats from a Twitter/X profile page via DOM scraping.
+ * Prefer using listenForProfileGraphQL() for more reliable extraction.
  */
 export async function extractProfileStats(
   page: Page
 ): Promise<ScrapedProfile | null> {
   try {
-    // Wait for profile header
-    await page.waitForSelector('[data-testid="UserName"]', { timeout: 10000 });
+    await page.waitForSelector('[data-testid="UserName"]', { timeout: 5000 });
 
     const displayNameEl = await page.$('[data-testid="UserName"] span');
     const displayName = displayNameEl
       ? await displayNameEl.innerText()
       : "Unknown";
 
-    // Extract follower/following counts
     let followers = 0;
     let following = 0;
 
@@ -314,6 +313,82 @@ export async function extractProfileStats(
   } catch {
     return null;
   }
+}
+
+/**
+ * Set up a passive listener for X's UserByScreenName GraphQL response.
+ * Call this BEFORE navigating to a profile page, then await the returned promise
+ * after navigation to get the result.
+ */
+export function listenForProfileGraphQL(
+  page: Page,
+  timeoutMs = 15000
+): Promise<ScrapedProfile | null> {
+  return new Promise<ScrapedProfile | null>((resolve) => {
+    const timeout = setTimeout(() => {
+      page.removeListener("response", handler);
+      resolve(null);
+    }, timeoutMs);
+
+    const handler = async (response: {
+      url: () => string;
+      json: () => Promise<unknown>;
+    }) => {
+      const url = response.url();
+      if (!url.includes("/UserByScreenName") && !url.includes("/UserTweets"))
+        return;
+
+      try {
+        const json = await response.json();
+        const stats = findUserStats(json);
+        if (stats) {
+          clearTimeout(timeout);
+          page.removeListener("response", handler);
+          resolve(stats);
+        }
+      } catch {
+        // Not JSON or parsing error
+      }
+    };
+
+    page.on("response", handler);
+  });
+}
+
+/**
+ * Recursively search X's GraphQL response for user stats (followers_count, etc.)
+ */
+function findUserStats(obj: unknown): ScrapedProfile | null {
+  if (!obj || typeof obj !== "object") return null;
+
+  const record = obj as Record<string, unknown>;
+
+  // X GraphQL user result: { legacy: { followers_count, friends_count, name, screen_name } }
+  if ("followers_count" in record && "friends_count" in record) {
+    return {
+      username: (record.screen_name as string) ?? "Unknown",
+      displayName: (record.name as string) ?? "Unknown",
+      followers: (record.followers_count as number) ?? 0,
+      following: (record.friends_count as number) ?? 0,
+    };
+  }
+
+  // Recurse into nested objects
+  for (const value of Object.values(record)) {
+    if (typeof value === "object" && value !== null) {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const result = findUserStats(item);
+          if (result) return result;
+        }
+      } else {
+        const result = findUserStats(value);
+        if (result) return result;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
