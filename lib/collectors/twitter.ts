@@ -85,6 +85,15 @@ export class TwitterCollector extends BaseCollector {
     return this.withBrowser(async (page) => {
       this.logger(`Fetching posts for @${this.username}...`);
 
+      // Log all GraphQL endpoints for debugging
+      page.on("response", (response) => {
+        const url = response.url();
+        if (url.includes("/i/api/graphql/")) {
+          const endpoint = url.split("/i/api/graphql/")[1]?.split("?")[0] ?? url;
+          this.logger(`[DEBUG] GraphQL endpoint: ${endpoint}`);
+        }
+      });
+
       // Set up GraphQL listener BEFORE navigation to catch UserByScreenName
       const profilePromise = listenForProfileGraphQL(page);
 
@@ -94,12 +103,12 @@ export class TwitterCollector extends BaseCollector {
       });
 
       // Wait for timeline to load
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(5000);
 
       // Check if GraphQL captured profile stats
       const graphQLProfile = await Promise.race([
         profilePromise,
-        new Promise<null>((r) => setTimeout(() => r(null), 1000)),
+        new Promise<null>((r) => setTimeout(() => r(null), 2000)),
       ]);
 
       if (graphQLProfile && graphQLProfile.followers > 0) {
@@ -112,15 +121,20 @@ export class TwitterCollector extends BaseCollector {
         );
       } else {
         // Fallback to DOM scraping
+        this.logger(`GraphQL profile extraction failed, trying DOM...`);
         const domProfile = await extractProfileStats(page);
-        if (domProfile && domProfile.followers > 0) {
-          this.cachedProfileStats = {
-            followers: domProfile.followers,
-            following: domProfile.following,
-          };
+        if (domProfile) {
           this.logger(
-            `Captured profile stats via DOM: ${domProfile.followers} followers`
+            `DOM extracted: followers=${domProfile.followers}, following=${domProfile.following}`
           );
+          if (domProfile.followers > 0) {
+            this.cachedProfileStats = {
+              followers: domProfile.followers,
+              following: domProfile.following,
+            };
+          }
+        } else {
+          this.logger(`DOM profile extraction also failed`);
         }
       }
 
