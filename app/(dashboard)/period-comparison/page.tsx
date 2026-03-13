@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Header from "@/components/layouts/Header";
 import KPICard from "@/components/cards/KPICard";
+import PlatformCard from "@/components/cards/PlatformCard";
 import PeriodOverlayChart from "@/components/charts/PeriodOverlayChart";
 import PeriodComparisonTable from "@/components/tables/PeriodComparisonTable";
 import PeriodBarChart from "@/components/charts/PeriodBarChart";
@@ -19,6 +20,14 @@ function toDateStr(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
+const CONTENT_TYPES = [
+  { label: "All", value: "all" },
+  { label: "Video", value: "video" },
+  { label: "Short-form", value: "short-form" },
+  { label: "Long-form", value: "long-form" },
+  { label: "Image", value: "image" },
+];
+
 export default function PeriodComparisonPage() {
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
@@ -29,8 +38,9 @@ export default function PeriodComparisonPage() {
   const [endA, setEndA] = useState(toDateStr(now));
   const [startB, setStartB] = useState(toDateStr(lastYearStart));
   const [endB, setEndB] = useState(toDateStr(lastYearEnd));
+  const [contentType, setContentType] = useState("all");
 
-  const { data, isLoading, error, refetch } = usePeriodComparison(startA, endA, startB, endB);
+  const { data, isLoading, error, refetch } = usePeriodComparison(startA, endA, startB, endB, contentType);
 
   function applyPreviousPeriod() {
     const sA = new Date(startA);
@@ -61,6 +71,23 @@ export default function PeriodComparisonPage() {
           Refresh
         </button>
       </Header>
+
+      {/* Content Type Tabs */}
+      <div className="mb-6 flex gap-2">
+        {CONTENT_TYPES.map((ct) => (
+          <button
+            key={ct.value}
+            onClick={() => setContentType(ct.value)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              contentType === ct.value
+                ? "bg-clutch-black text-white"
+                : "border border-gray-300 text-clutch-grey hover:bg-gray-50"
+            }`}
+          >
+            {ct.label}
+          </button>
+        ))}
+      </div>
 
       {/* Period Selection Bar */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
@@ -135,6 +162,19 @@ export default function PeriodComparisonPage() {
 
       {data && !isLoading && (
         <>
+          {/* Platform Cards */}
+          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+            {data.periodA.platforms.map((p) => (
+              <PlatformCard
+                key={p.platform}
+                platform={p.platform}
+                views={p.views}
+                engagements={p.engagements}
+                topPost={null}
+              />
+            ))}
+          </div>
+
           {/* KPI Cards */}
           <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
             <KPICard

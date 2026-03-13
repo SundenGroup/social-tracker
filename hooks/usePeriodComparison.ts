@@ -45,7 +45,8 @@ export function usePeriodComparison(
   startDateA: string,
   endDateA: string,
   startDateB: string,
-  endDateB: string
+  endDateB: string,
+  contentType?: string
 ) {
   const { selectedProfileId } = useProfiles();
   const [data, setData] = useState<PeriodComparisonData | null>(null);
@@ -57,6 +58,9 @@ export function usePeriodComparison(
     setError(null);
     try {
       const params = new URLSearchParams({ startDateA, endDateA, startDateB, endDateB });
+      if (contentType && contentType !== "all") {
+        params.set("contentType", contentType);
+      }
       if (selectedProfileId) {
         params.set("profileId", selectedProfileId);
       }
@@ -72,7 +76,7 @@ export function usePeriodComparison(
     } finally {
       setIsLoading(false);
     }
-  }, [startDateA, endDateA, startDateB, endDateB, selectedProfileId]);
+  }, [startDateA, endDateA, startDateB, endDateB, contentType, selectedProfileId]);
 
   useEffect(() => {
     fetchData();

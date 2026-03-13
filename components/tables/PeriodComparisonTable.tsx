@@ -1,5 +1,7 @@
 "use client";
 
+import { Fragment } from "react";
+
 interface PlatformRow {
   platform: string;
   views: number;
@@ -70,8 +72,7 @@ export default function PeriodComparisonTable({
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-gray-100 text-xs text-clutch-grey/60">
-            <th className="pb-2 pr-4 font-medium">Platform</th>
+          <tr className="border-b border-gray-200 text-xs text-clutch-grey/60">
             <th className="pb-2 pr-4 font-medium">Metric</th>
             <th className="pb-2 pr-4 font-medium text-right">Period A</th>
             <th className="pb-2 pr-4 font-medium text-right">Period B</th>
@@ -84,28 +85,34 @@ export default function PeriodComparisonTable({
             const change = changes.find((c) => c.platform === rowA.platform);
             if (!rowB || !change) return null;
 
-            return METRICS.map((metric, mi) => (
-              <tr
-                key={`${rowA.platform}-${metric.key}`}
-                className={`border-b border-gray-50 ${mi === 0 ? "border-t border-gray-100" : ""}`}
-              >
-                {mi === 0 ? (
-                  <td className="py-2 pr-4 font-medium text-clutch-black" rowSpan={METRICS.length}>
+            return (
+              <Fragment key={rowA.platform}>
+                {/* Platform header row */}
+                <tr className="border-t-2 border-gray-200 bg-gray-50/50">
+                  <td colSpan={4} className="py-2.5 pr-4 text-xs font-bold uppercase tracking-wide text-clutch-black">
                     {platformLabel(rowA.platform)}
                   </td>
-                ) : null}
-                <td className="py-2 pr-4 text-clutch-grey">{metric.label}</td>
-                <td className="py-2 pr-4 text-right font-medium text-clutch-black">
-                  {metric.format(rowA[metric.key])}
-                </td>
-                <td className="py-2 pr-4 text-right text-clutch-grey">
-                  {metric.format(rowB[metric.key])}
-                </td>
-                <td className="py-2 text-right">
-                  <ChangeCell value={change[metric.key]} suffix={metric.suffix} />
-                </td>
-              </tr>
-            ));
+                </tr>
+                {/* Metric rows */}
+                {METRICS.map((metric, mi) => (
+                  <tr
+                    key={metric.key}
+                    className={mi < METRICS.length - 1 ? "border-b border-gray-100" : ""}
+                  >
+                    <td className="py-2 pr-4 pl-4 text-clutch-grey">{metric.label}</td>
+                    <td className="py-2 pr-4 text-right font-medium text-clutch-black">
+                      {metric.format(rowA[metric.key])}
+                    </td>
+                    <td className="py-2 pr-4 text-right text-clutch-grey">
+                      {metric.format(rowB[metric.key])}
+                    </td>
+                    <td className="py-2 text-right">
+                      <ChangeCell value={change[metric.key]} suffix={metric.suffix} />
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
+            );
           })}
         </tbody>
       </table>

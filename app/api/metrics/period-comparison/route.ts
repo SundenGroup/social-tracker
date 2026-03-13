@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
-import type { Platform } from "@prisma/client";
+import type { Platform, PostType } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok"];
 
@@ -31,11 +31,31 @@ function formatLabel(start: Date, end: Date): string {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
+function buildPostTypeFilter(contentType: string | null): Record<string, unknown> {
+  if (contentType === "video") {
+    return { postType: { in: ["video", "short"] as PostType[] } };
+  } else if (contentType === "short-form") {
+    return {
+      OR: [
+        { postType: "short" },
+        { platform: "tiktok", postType: "video" },
+        { platform: "instagram", postType: "video" },
+      ],
+    };
+  } else if (contentType === "long-form") {
+    return { platform: "youtube", postType: "video" };
+  } else if (contentType === "image") {
+    return { postType: "image" };
+  }
+  return {};
+}
+
 async function aggregatePeriod(
   accountIds: string[],
   start: Date,
   end: Date,
-  hideSponsored: boolean
+  hideSponsored: boolean,
+  postTypeFilter: Record<string, unknown>
 ): Promise<PeriodSummary> {
   const accountsByPlatform = new Map<Platform, string[]>();
 
@@ -64,6 +84,7 @@ async function aggregatePeriod(
       socialAccountId: { in: platAccountIds },
       publishedAt: { gte: start, lte: end },
       isDeleted: false,
+      ...postTypeFilter,
     };
     if (hideSponsored) postWhere.isSponsored = false;
 
@@ -111,6 +132,7 @@ async function aggregatePeriod(
     socialAccountId: { in: accountIds },
     publishedAt: { gte: start, lte: end },
     isDeleted: false,
+    ...postTypeFilter,
   };
   if (hideSponsored) allPostWhere.isSponsored = false;
 
@@ -175,6 +197,7 @@ export const GET = apiHandler(
     const url = new URL(req.url);
     const orgId = session!.user.organizationId;
     const profileId = url.searchParams.get("profileId");
+    const contentType = url.searchParams.get("contentType");
     const startDateA = url.searchParams.get("startDateA");
     const endDateA = url.searchParams.get("endDateA");
     const startDateB = url.searchParams.get("startDateB");
@@ -199,11 +222,12 @@ export const GET = apiHandler(
       select: { id: true },
     });
     const accountIds = accounts.map((a) => a.id);
+    const postTypeFilter = buildPostTypeFilter(contentType);
 
     // Aggregate both periods in parallel
     const [periodA, periodB] = await Promise.all([
-      aggregatePeriod(accountIds, startA, endA, hideSponsored),
-      aggregatePeriod(accountIds, startB, endB, hideSponsored),
+      aggregatePeriod(accountIds, startA, endA, hideSponsored, postTypeFilter),
+      aggregatePeriod(accountIds, startB, endB, hideSponsored, postTypeFilter),
     ]);
 
     // Compute changes
