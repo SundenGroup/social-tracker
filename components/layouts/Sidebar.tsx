@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -30,16 +29,14 @@ export default function Sidebar() {
     <aside className="flex w-56 flex-shrink-0 flex-col border-r border-gray-200 bg-white">
       {/* Logo */}
       <div className="flex h-14 items-center border-b border-gray-200 px-4">
-        <Link href="/" className="flex items-center gap-2">
-          <Image
+        <Link href="/" className="flex items-center gap-1.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src="/logos/clutch-black.png"
             alt="Clutch Group"
-            width={120}
-            height={28}
-            className="h-6 w-auto"
-            priority
+            className="h-5 w-auto"
           />
-          <span className="text-sm font-bold uppercase tracking-widest text-clutch-black">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-clutch-black">
             Social
           </span>
         </Link>

@@ -38,7 +38,11 @@ export const GET = apiHandler(
     // "short-form" = YouTube shorts + TikTok videos + Instagram reels (video)
     // "long-form" = YouTube long-form videos only
     let postTypeFilter: Record<string, unknown> = {};
-    if (contentType === "short-form") {
+    if (contentType === "video") {
+      postTypeFilter = {
+        postType: { in: ["video", "short"] as import("@prisma/client").PostType[] },
+      };
+    } else if (contentType === "short-form") {
       postTypeFilter = {
         OR: [
           { postType: "short" as import("@prisma/client").PostType },
