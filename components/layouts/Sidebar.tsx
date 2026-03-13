@@ -34,9 +34,9 @@ export default function Sidebar() {
           <img
             src="/logos/clutch-black.png"
             alt="Clutch Group"
-            className="h-5 w-auto"
+            className="h-7 w-auto"
           />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-clutch-black">
+          <span className="text-[8px] font-bold uppercase tracking-widest text-clutch-black">
             Social
           </span>
         </Link>
