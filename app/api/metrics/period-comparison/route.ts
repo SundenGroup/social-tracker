@@ -91,9 +91,7 @@ async function aggregatePeriod(
     const posts = await prisma.post.findMany({
       where: postWhere,
       include: {
-        metrics: {
-          where: { metricDate: { gte: start, lte: end } },
-        },
+        metrics: true,
       },
     });
 
@@ -141,7 +139,7 @@ async function aggregatePeriod(
     select: {
       publishedAt: true,
       metrics: {
-        where: { metricDate: { gte: start, lte: end }, metricType: "views" },
+        where: { metricType: "views" },
       },
     },
   });

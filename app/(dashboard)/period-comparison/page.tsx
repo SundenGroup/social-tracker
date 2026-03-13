@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Header from "@/components/layouts/Header";
+import Link from "next/link";
 import KPICard from "@/components/cards/KPICard";
-import PlatformCard from "@/components/cards/PlatformCard";
 import PeriodOverlayChart from "@/components/charts/PeriodOverlayChart";
 import PeriodComparisonTable from "@/components/tables/PeriodComparisonTable";
 import PeriodBarChart from "@/components/charts/PeriodBarChart";
@@ -19,6 +19,13 @@ function formatCompact(n: number): string {
 function toDateStr(d: Date): string {
   return d.toISOString().split("T")[0];
 }
+
+const PLATFORM_CONFIG: Record<string, { label: string; color: string; href: string }> = {
+  youtube: { label: "YouTube", color: "border-l-red-500", href: "/platforms/youtube" },
+  twitter: { label: "X / Twitter", color: "border-l-sky-500", href: "/platforms/twitter" },
+  instagram: { label: "Instagram", color: "border-l-pink-500", href: "/platforms/instagram" },
+  tiktok: { label: "TikTok", color: "border-l-gray-800", href: "/platforms/tiktok" },
+};
 
 const CONTENT_TYPES = [
   { label: "All", value: "all" },
@@ -162,19 +169,6 @@ export default function PeriodComparisonPage() {
 
       {data && !isLoading && (
         <>
-          {/* Platform Cards */}
-          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-            {data.periodA.platforms.map((p) => (
-              <PlatformCard
-                key={p.platform}
-                platform={p.platform}
-                views={p.views}
-                engagements={p.engagements}
-                topPost={null}
-              />
-            ))}
-          </div>
-
           {/* KPI Cards */}
           <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
             <KPICard
@@ -213,6 +207,38 @@ export default function PeriodComparisonPage() {
                 isPositive: data.changes.posts > 0,
               } : undefined}
             />
+          </div>
+
+          {/* Platform Cards */}
+          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+            {data.periodA.platforms.map((p) => {
+              const change = data.changes.platforms.find((c) => c.platform === p.platform);
+              const config = PLATFORM_CONFIG[p.platform] ?? { label: p.platform, color: "border-l-gray-400", href: "#" };
+              return (
+                <Link key={p.platform} href={config.href}>
+                  <div className={`rounded-xl border border-gray-200 border-l-4 ${config.color} bg-white p-5 transition-shadow hover:shadow-md`}>
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-clutch-grey/50">
+                      {config.label}
+                    </p>
+                    <div className="mb-1 flex gap-6">
+                      <div>
+                        <p className="text-lg font-bold text-clutch-black">{formatCompact(p.views)}</p>
+                        <p className="text-xs text-clutch-grey/50">Views</p>
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold text-clutch-black">{formatCompact(p.engagements)}</p>
+                        <p className="text-xs text-clutch-grey/50">Eng.</p>
+                      </div>
+                    </div>
+                    {change && change.views !== 0 && (
+                      <p className={`text-xs font-medium ${change.views > 0 ? "text-green-600" : "text-red-500"}`}>
+                        {change.views > 0 ? "\u25B2" : "\u25BC"} {change.views > 0 ? "+" : ""}{change.views}% views vs Period B
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
           </div>
 
           {/* Overlay Trend Chart */}
