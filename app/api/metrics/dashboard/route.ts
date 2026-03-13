@@ -71,9 +71,7 @@ export const GET = apiHandler(
         ...postTypeFilter,
       },
       include: {
-        metrics: {
-          where: { metricDate: { gte: start, lte: end } },
-        },
+        metrics: true,
       },
       orderBy: { publishedAt: "desc" },
     });

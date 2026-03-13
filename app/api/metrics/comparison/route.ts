@@ -78,9 +78,7 @@ export const GET = apiHandler(
       const posts = await prisma.post.findMany({
         where: postWhere,
         include: {
-          metrics: {
-            where: { metricDate: { gte: start, lte: end } },
-          },
+          metrics: true,
         },
       });
 
@@ -167,7 +165,7 @@ export const GET = apiHandler(
         platform: true,
         publishedAt: true,
         metrics: {
-          where: { metricDate: { gte: start, lte: end }, metricType: "views" },
+          where: { metricType: "views" },
         },
       },
     });

@@ -67,9 +67,7 @@ export const GET = apiHandler(
     const posts = await prisma.post.findMany({
       where: postWhere,
       include: {
-        metrics: {
-          where: { metricDate: { gte: start, lte: end } },
-        },
+        metrics: true,
       },
       orderBy: { publishedAt: "desc" },
     });
