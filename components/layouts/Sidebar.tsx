@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -7,13 +8,13 @@ import { useAuth } from "@/hooks/useAuth";
 
 const NAV_ITEMS = [
   { href: "/", label: "Overview" },
-  { href: "/accounts", label: "Accounts" },
-  { href: "/profiles", label: "Profiles" },
   { href: "/platforms/youtube", label: "YouTube", indent: true },
   { href: "/platforms/twitter", label: "X / Twitter", indent: true },
   { href: "/platforms/instagram", label: "Instagram", indent: true },
   { href: "/platforms/tiktok", label: "TikTok", indent: true },
   { href: "/comparison", label: "Comparison" },
+  { href: "/accounts", label: "Accounts" },
+  { href: "/profiles", label: "Profiles" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -28,12 +29,19 @@ export default function Sidebar() {
   return (
     <aside className="flex w-56 flex-shrink-0 flex-col border-r border-gray-200 bg-white">
       {/* Logo */}
-      <div className="flex h-14 items-center border-b border-gray-200 px-5">
-        <Link
-          href="/"
-          className="text-xl font-extrabold tracking-tight text-clutch-blue"
-        >
-          Clutch
+      <div className="flex h-14 items-center border-b border-gray-200 px-4">
+        <Link href="/" className="flex items-center gap-2">
+          <Image
+            src="/logos/clutch-black.png"
+            alt="Clutch Group"
+            width={120}
+            height={28}
+            className="h-6 w-auto"
+            priority
+          />
+          <span className="text-sm font-bold uppercase tracking-widest text-clutch-black">
+            Social
+          </span>
         </Link>
       </div>
 
