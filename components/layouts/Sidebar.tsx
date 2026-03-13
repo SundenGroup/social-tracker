@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/platforms/instagram", label: "Instagram", indent: true },
   { href: "/platforms/tiktok", label: "TikTok", indent: true },
   { href: "/comparison", label: "Comparison" },
+  { href: "/period-comparison", label: "Period Comparison" },
   { href: "/accounts", label: "Accounts" },
   { href: "/profiles", label: "Profiles" },
   { href: "/settings", label: "Settings" },
