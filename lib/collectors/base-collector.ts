@@ -205,42 +205,76 @@ export abstract class BaseCollector {
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0);
 
-        // Get yesterday's rollup for newFollowers delta
-        const yesterday = new Date(today.getTime() - 86400000);
-        const prevRollup = await prisma.accountDailyRollup.findUnique({
-          where: {
-            socialAccountId_rollupDate: {
-              socialAccountId: this.account.id,
-              rollupDate: yesterday,
+        // If follower count is 0, check if we have a previous non-zero value.
+        // If so, skip the update to avoid overwriting good data with a failed extraction.
+        if (stats.followers === 0) {
+          const lastRollup = await prisma.accountDailyRollup.findFirst({
+            where: { socialAccountId: this.account.id, totalFollowers: { gt: 0 } },
+            orderBy: { rollupDate: "desc" },
+            select: { totalFollowers: true },
+          });
+          if (lastRollup) {
+            this.logger(
+              `Follower extraction returned 0 but previous value was ${Number(lastRollup.totalFollowers)} — skipping rollup update to preserve data`
+            );
+            // Still create a rollup for posts count, but carry forward the previous follower value
+            await prisma.accountDailyRollup.upsert({
+              where: {
+                socialAccountId_rollupDate: {
+                  socialAccountId: this.account.id,
+                  rollupDate: today,
+                },
+              },
+              create: {
+                socialAccountId: this.account.id,
+                platform: this.account.platform,
+                rollupDate: today,
+                totalFollowers: lastRollup.totalFollowers,
+                postsPublished: result.postsSynced,
+              },
+              update: {
+                postsPublished: result.postsSynced,
+              },
+            });
+          }
+        } else {
+          // Get yesterday's rollup for newFollowers delta
+          const yesterday = new Date(today.getTime() - 86400000);
+          const prevRollup = await prisma.accountDailyRollup.findUnique({
+            where: {
+              socialAccountId_rollupDate: {
+                socialAccountId: this.account.id,
+                rollupDate: yesterday,
+              },
             },
-          },
-          select: { totalFollowers: true },
-        });
+            select: { totalFollowers: true },
+          });
 
-        const prevFollowers = prevRollup ? Number(prevRollup.totalFollowers) : 0;
-        const newFollowers = prevFollowers > 0 ? stats.followers - prevFollowers : 0;
+          const prevFollowers = prevRollup ? Number(prevRollup.totalFollowers) : 0;
+          const newFollowers = prevFollowers > 0 ? stats.followers - prevFollowers : 0;
 
-        await prisma.accountDailyRollup.upsert({
-          where: {
-            socialAccountId_rollupDate: {
+          await prisma.accountDailyRollup.upsert({
+            where: {
+              socialAccountId_rollupDate: {
+                socialAccountId: this.account.id,
+                rollupDate: today,
+              },
+            },
+            create: {
               socialAccountId: this.account.id,
+              platform: this.account.platform,
               rollupDate: today,
+              totalFollowers: BigInt(stats.followers),
+              newFollowers: BigInt(Math.max(0, newFollowers)),
+              postsPublished: result.postsSynced,
             },
-          },
-          create: {
-            socialAccountId: this.account.id,
-            platform: this.account.platform,
-            rollupDate: today,
-            totalFollowers: BigInt(stats.followers),
-            newFollowers: BigInt(Math.max(0, newFollowers)),
-            postsPublished: result.postsSynced,
-          },
-          update: {
-            totalFollowers: BigInt(stats.followers),
-            newFollowers: BigInt(Math.max(0, newFollowers)),
-            postsPublished: result.postsSynced,
-          },
-        });
+            update: {
+              totalFollowers: BigInt(stats.followers),
+              newFollowers: BigInt(Math.max(0, newFollowers)),
+              postsPublished: result.postsSynced,
+            },
+          });
+        }
       } catch (err) {
         this.logger(`Failed to get/persist account stats: ${err}`);
       }
