@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Header from "@/components/layouts/Header";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 
@@ -34,6 +34,23 @@ interface HealthData {
   version: string;
 }
 
+interface RefreshProgress {
+  isRunning: boolean;
+  startedAt: number | null;
+  totalPosts: number;
+  processedPosts: number;
+  metricsUpdated: number;
+  currentAccount: string;
+  currentPlatform: string;
+  errorCount: number;
+  errors: string[];
+  completedAt: number | null;
+  accountsTotal: number;
+  accountsProcessed: number;
+  elapsedMs: number;
+  estimatedRemainingMs: number;
+}
+
 export default function SettingsPage() {
   const [accounts, setAccounts] = useState<AccountStatus[]>([]);
   const [syncLogs, setSyncLogs] = useState<SyncLogEntry[]>([]);
@@ -42,6 +59,10 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
+  const [refreshProgress, setRefreshProgress] = useState<RefreshProgress | null>(null);
+  const [elapsedDisplay, setElapsedDisplay] = useState(0);
+  const refreshPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -120,6 +141,85 @@ export default function SettingsPage() {
     }
   };
 
+  const pollRefreshStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/full-refresh");
+      if (res.ok) {
+        const json = await res.json();
+        setRefreshProgress(json.data);
+
+        // Stop polling when done
+        if (!json.data.isRunning && refreshPollRef.current) {
+          clearInterval(refreshPollRef.current);
+          refreshPollRef.current = null;
+        }
+        if (!json.data.isRunning && timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+      }
+    } catch {
+      // Silently handle
+    }
+  }, []);
+
+  const handleStartRefresh = async () => {
+    try {
+      const res = await fetch("/api/admin/full-refresh", { method: "POST" });
+      if (!res.ok) {
+        const json = await res.json();
+        alert(json.error || "Failed to start refresh");
+        return;
+      }
+
+      // Start polling every 2 seconds
+      pollRefreshStatus();
+      refreshPollRef.current = setInterval(pollRefreshStatus, 2000);
+
+      // Start local elapsed timer (updates every second for smooth display)
+      setElapsedDisplay(0);
+      const startTime = Date.now();
+      timerRef.current = setInterval(() => {
+        setElapsedDisplay(Date.now() - startTime);
+      }, 1000);
+    } catch {
+      alert("Failed to start refresh");
+    }
+  };
+
+  // Check for in-progress refresh on mount
+  useEffect(() => {
+    pollRefreshStatus().then(() => {
+      // If a refresh is running, start polling
+      setRefreshProgress((prev) => {
+        if (prev?.isRunning) {
+          refreshPollRef.current = setInterval(pollRefreshStatus, 2000);
+          if (prev.startedAt) {
+            setElapsedDisplay(Date.now() - prev.startedAt);
+            timerRef.current = setInterval(() => {
+              setElapsedDisplay(Date.now() - prev.startedAt!);
+            }, 1000);
+          }
+        }
+        return prev;
+      });
+    });
+    return () => {
+      if (refreshPollRef.current) clearInterval(refreshPollRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [pollRefreshStatus]);
+
+  const formatDuration = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+  };
+
   const syncStatusColor = (status: string) => {
     switch (status) {
       case "success": return "bg-green-50 text-green-600";
@@ -188,6 +288,100 @@ export default function SettingsPage() {
             />
           </button>
         </div>
+      </div>
+
+      {/* Full Metric Refresh */}
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-clutch-black">Full Metric Refresh</h2>
+            <p className="text-[10px] text-clutch-grey/50">
+              Update metrics for ALL posts across all platforms. YouTube is fast (API), Twitter/TikTok are slower (per-post scraping).
+            </p>
+          </div>
+          <button
+            onClick={handleStartRefresh}
+            disabled={refreshProgress?.isRunning}
+            className="rounded-lg bg-clutch-blue px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
+          >
+            {refreshProgress?.isRunning ? "Refreshing..." : "Refresh All Metrics"}
+          </button>
+        </div>
+
+        {refreshProgress?.isRunning && (
+          <div className="space-y-3">
+            {/* Progress bar */}
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+              <div
+                className="h-full rounded-full bg-clutch-blue transition-all duration-500"
+                style={{
+                  width: `${refreshProgress.totalPosts > 0 ? (refreshProgress.processedPosts / refreshProgress.totalPosts) * 100 : 0}%`,
+                }}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {/* Elapsed time */}
+              <div className="rounded-lg bg-gray-50 p-3 text-center">
+                <div className="text-lg font-bold text-clutch-black">
+                  {formatDuration(elapsedDisplay)}
+                </div>
+                <p className="text-[10px] text-clutch-grey/50">Elapsed</p>
+              </div>
+
+              {/* ETA */}
+              <div className="rounded-lg bg-gray-50 p-3 text-center">
+                <div className="text-lg font-bold text-clutch-black">
+                  {refreshProgress.estimatedRemainingMs > 0
+                    ? formatDuration(refreshProgress.estimatedRemainingMs)
+                    : "Calculating..."}
+                </div>
+                <p className="text-[10px] text-clutch-grey/50">Estimated Remaining</p>
+              </div>
+
+              {/* Posts progress */}
+              <div className="rounded-lg bg-gray-50 p-3 text-center">
+                <div className="text-lg font-bold text-clutch-black">
+                  {refreshProgress.processedPosts} / {refreshProgress.totalPosts}
+                </div>
+                <p className="text-[10px] text-clutch-grey/50">Posts Processed</p>
+              </div>
+
+              {/* Metrics updated */}
+              <div className="rounded-lg bg-gray-50 p-3 text-center">
+                <div className="text-lg font-bold text-clutch-black">
+                  {refreshProgress.metricsUpdated.toLocaleString()}
+                </div>
+                <p className="text-[10px] text-clutch-grey/50">Metrics Updated</p>
+              </div>
+            </div>
+
+            {/* Current account */}
+            <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-clutch-blue">
+              Processing: <span className="font-medium capitalize">{refreshProgress.currentPlatform}</span> / {refreshProgress.currentAccount}
+              <span className="ml-2 text-clutch-grey/50">
+                (Account {refreshProgress.accountsProcessed + 1} of {refreshProgress.accountsTotal})
+              </span>
+            </div>
+
+            {/* Errors */}
+            {refreshProgress.errorCount > 0 && (
+              <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                {refreshProgress.errorCount} error{refreshProgress.errorCount !== 1 ? "s" : ""} — latest: {refreshProgress.errors[refreshProgress.errors.length - 1]}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Show last completed refresh */}
+        {refreshProgress && !refreshProgress.isRunning && refreshProgress.completedAt && (
+          <div className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+            Last refresh completed in {formatDuration(refreshProgress.elapsedMs)} — {refreshProgress.processedPosts} posts processed, {refreshProgress.metricsUpdated.toLocaleString()} metrics updated
+            {refreshProgress.errorCount > 0 && (
+              <span className="text-red-600"> ({refreshProgress.errorCount} errors)</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Health Status */}
