@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
+import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 
 // GET /api/metrics/dashboard - Aggregated dashboard data
 export const GET = apiHandler(
@@ -70,35 +71,21 @@ export const GET = apiHandler(
         isDeleted: false,
         ...postTypeFilter,
       },
-      include: {
-        metrics: true,
-      },
       orderBy: { publishedAt: "desc" },
     });
 
     const postDbIds = topPosts.map((p) => p.id);
-    // IDs for aggregation (excludes sponsored if hideSponsored)
-    const aggPostIds = hideSponsored
-      ? topPosts.filter((p) => !p.isSponsored).map((p) => p.id)
-      : postDbIds;
 
-    // Build post performance list — use LATEST metric snapshot per post, not sum across dates
+    // Fetch only latest metric per post per type (single efficient query)
+    const metricsMap = await getLatestMetrics(postDbIds);
+
+    // Build post performance list
     const postPerformance = topPosts.map((post) => {
-      const postMetrics = post.metrics;
-      const latestOf = (type: string) => {
-        const records = postMetrics.filter((m) => m.metricType === type);
-        if (records.length === 0) return 0;
-        const latest = records.reduce((a, b) =>
-          a.metricDate.getTime() > b.metricDate.getTime() ? a : b
-        );
-        return Number(latest.metricValue);
-      };
-
-      const views = latestOf("views");
-      const likes = latestOf("likes");
-      const comments = latestOf("comments");
-      const shares = latestOf("shares");
-      const impressions = latestOf("impressions");
+      const views = metricValue(metricsMap, post.id, "views");
+      const likes = metricValue(metricsMap, post.id, "likes");
+      const comments = metricValue(metricsMap, post.id, "comments");
+      const shares = metricValue(metricsMap, post.id, "shares");
+      const impressions = metricValue(metricsMap, post.id, "impressions");
       const base = views || impressions || 0;
       const engagements = likes + comments + shares;
 
@@ -191,9 +178,7 @@ export const GET = apiHandler(
         ...postTypeFilter,
         ...sponsoredFilter,
       },
-      include: {
-        metrics: true,
-      },
+      select: { id: true },
     });
 
     let prevViews = 0;
@@ -201,21 +186,14 @@ export const GET = apiHandler(
     let prevEngRate = 0;
 
     if (prevPosts.length > 0) {
+      const prevMetrics = await getLatestMetrics(prevPosts.map((p) => p.id));
       let pv = 0, pl = 0, pc = 0, ps = 0, pi = 0;
       for (const post of prevPosts) {
-        const latestOf = (type: string) => {
-          const records = post.metrics.filter((m) => m.metricType === type);
-          if (records.length === 0) return 0;
-          const latest = records.reduce((a, b) =>
-            a.metricDate.getTime() > b.metricDate.getTime() ? a : b
-          );
-          return Number(latest.metricValue);
-        };
-        pv += latestOf("views");
-        pl += latestOf("likes");
-        pc += latestOf("comments");
-        ps += latestOf("shares");
-        pi += latestOf("impressions");
+        pv += metricValue(prevMetrics, post.id, "views");
+        pl += metricValue(prevMetrics, post.id, "likes");
+        pc += metricValue(prevMetrics, post.id, "comments");
+        ps += metricValue(prevMetrics, post.id, "shares");
+        pi += metricValue(prevMetrics, post.id, "impressions");
       }
       prevViews = pv;
       prevEngagements = pl + pc + ps;

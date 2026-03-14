@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
+import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import type { Platform, PostType } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok"];
@@ -90,27 +91,18 @@ async function aggregatePeriod(
 
     const posts = await prisma.post.findMany({
       where: postWhere,
-      include: {
-        metrics: true,
-      },
+      select: { id: true },
     });
+
+    const metricsMap = await getLatestMetrics(posts.map((p) => p.id));
 
     let totalViews = 0, totalLikes = 0, totalComments = 0, totalShares = 0;
 
     for (const post of posts) {
-      const latestOf = (type: string) => {
-        const records = post.metrics.filter((m) => m.metricType === type);
-        if (records.length === 0) return 0;
-        const latest = records.reduce((a, b) =>
-          a.metricDate.getTime() > b.metricDate.getTime() ? a : b
-        );
-        return Number(latest.metricValue);
-      };
-
-      totalViews += latestOf("views");
-      totalLikes += latestOf("likes");
-      totalComments += latestOf("comments");
-      totalShares += latestOf("shares");
+      totalViews += metricValue(metricsMap, post.id, "views");
+      totalLikes += metricValue(metricsMap, post.id, "likes");
+      totalComments += metricValue(metricsMap, post.id, "comments");
+      totalShares += metricValue(metricsMap, post.id, "shares");
     }
 
     const engagements = totalLikes + totalComments + totalShares;
@@ -137,24 +129,21 @@ async function aggregatePeriod(
   const trendPosts = await prisma.post.findMany({
     where: allPostWhere,
     select: {
+      id: true,
       publishedAt: true,
-      metrics: {
-        where: { metricType: "views" },
-      },
     },
   });
+
+  const trendMetrics = await getLatestMetrics(trendPosts.map((p) => p.id));
 
   const startTime = start.getTime();
   const dayMap = new Map<number, number>();
 
   for (const post of trendPosts) {
     const dayOffset = Math.floor((post.publishedAt.getTime() - startTime) / 86400000);
-    const viewRecords = post.metrics;
-    if (viewRecords.length > 0) {
-      const latest = viewRecords.reduce((a, b) =>
-        a.metricDate.getTime() > b.metricDate.getTime() ? a : b
-      );
-      dayMap.set(dayOffset, (dayMap.get(dayOffset) ?? 0) + Number(latest.metricValue));
+    const views = metricValue(trendMetrics, post.id, "views");
+    if (views > 0) {
+      dayMap.set(dayOffset, (dayMap.get(dayOffset) ?? 0) + views);
     }
   }
 

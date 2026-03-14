@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
+import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import type { Platform } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok"];
@@ -74,34 +75,24 @@ export const GET = apiHandler(
         postWhere.isSponsored = false;
       }
 
-      // Get posts with metrics — use latest snapshot per post (not sum across dates)
+      // Get posts and latest metrics efficiently
       const posts = await prisma.post.findMany({
         where: postWhere,
-        include: {
-          metrics: true,
-        },
+        select: { id: true },
       });
 
-      // For each post, extract latest snapshot per metric type
+      const metricsMap = await getLatestMetrics(posts.map((p) => p.id));
+
       let totalViews = 0, totalLikes = 0, totalComments = 0, totalShares = 0;
       let totalImpressions = 0, totalReach = 0;
 
       for (const post of posts) {
-        const latestOf = (type: string) => {
-          const records = post.metrics.filter((m) => m.metricType === type);
-          if (records.length === 0) return 0;
-          const latest = records.reduce((a, b) =>
-            a.metricDate.getTime() > b.metricDate.getTime() ? a : b
-          );
-          return Number(latest.metricValue);
-        };
-
-        totalViews += latestOf("views");
-        totalLikes += latestOf("likes");
-        totalComments += latestOf("comments");
-        totalShares += latestOf("shares");
-        totalImpressions += latestOf("impressions");
-        totalReach += latestOf("reach");
+        totalViews += metricValue(metricsMap, post.id, "views");
+        totalLikes += metricValue(metricsMap, post.id, "likes");
+        totalComments += metricValue(metricsMap, post.id, "comments");
+        totalShares += metricValue(metricsMap, post.id, "shares");
+        totalImpressions += metricValue(metricsMap, post.id, "impressions");
+        totalReach += metricValue(metricsMap, post.id, "reach");
       }
 
       const engagements = totalLikes + totalComments + totalShares;
@@ -162,13 +153,13 @@ export const GET = apiHandler(
     const trendPosts = await prisma.post.findMany({
       where: trendPostWhere,
       select: {
+        id: true,
         platform: true,
         publishedAt: true,
-        metrics: {
-          where: { metricType: "views" },
-        },
       },
     });
+
+    const trendMetrics = await getLatestMetrics(trendPosts.map((p) => p.id));
 
     const trendMap = new Map<string, Record<string, unknown>>();
     for (const post of trendPosts) {
@@ -176,14 +167,10 @@ export const GET = apiHandler(
       if (!trendMap.has(dateKey)) {
         trendMap.set(dateKey, { date: dateKey });
       }
-      // Get latest views snapshot for this post
-      const viewRecords = post.metrics;
-      if (viewRecords.length > 0) {
-        const latest = viewRecords.reduce((a, b) =>
-          a.metricDate.getTime() > b.metricDate.getTime() ? a : b
-        );
+      const views = metricValue(trendMetrics, post.id, "views");
+      if (views > 0) {
         const entry = trendMap.get(dateKey)!;
-        entry[post.platform] = ((entry[post.platform] as number) || 0) + Number(latest.metricValue);
+        entry[post.platform] = ((entry[post.platform] as number) || 0) + views;
       }
     }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
+import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import type { Platform } from "@prisma/client";
 
 const VALID_PLATFORMS = ["youtube", "twitter", "instagram", "tiktok"] as const;
@@ -63,34 +64,23 @@ export const GET = apiHandler(
       postWhere.postType = contentType;
     }
 
-    // Get posts with metrics
+    // Get posts and latest metrics efficiently
     const posts = await prisma.post.findMany({
       where: postWhere,
-      include: {
-        metrics: true,
-      },
       orderBy: { publishedAt: "desc" },
     });
 
-    // Build post performance list — use LATEST metric snapshot, not sum across dates
-    const postPerformance = posts.map((post) => {
-      const pm = post.metrics;
-      const latestOf = (type: string) => {
-        const records = pm.filter((m) => m.metricType === type);
-        if (records.length === 0) return 0;
-        const latest = records.reduce((a, b) =>
-          a.metricDate.getTime() > b.metricDate.getTime() ? a : b
-        );
-        return Number(latest.metricValue);
-      };
+    const metricsMap = await getLatestMetrics(posts.map((p) => p.id));
 
-      const views = latestOf("views");
-      const likes = latestOf("likes");
-      const comments = latestOf("comments");
-      const shares = latestOf("shares");
-      const impressions = latestOf("impressions");
-      const reach = latestOf("reach");
-      const watchDuration = latestOf("watch_duration");
+    // Build post performance list
+    const postPerformance = posts.map((post) => {
+      const views = metricValue(metricsMap, post.id, "views");
+      const likes = metricValue(metricsMap, post.id, "likes");
+      const comments = metricValue(metricsMap, post.id, "comments");
+      const shares = metricValue(metricsMap, post.id, "shares");
+      const impressions = metricValue(metricsMap, post.id, "impressions");
+      const reach = metricValue(metricsMap, post.id, "reach");
+      const watchDuration = metricValue(metricsMap, post.id, "watch_duration");
       const engagements = likes + comments + shares;
       // Only compute engagement rate when we have a meaningful denominator
       // (Instagram images have no views — showing 0% instead of absurd 1000%+)
@@ -158,25 +148,20 @@ export const GET = apiHandler(
 
     const prevPosts = await prisma.post.findMany({
       where: prevPostWhere,
-      include: { metrics: true },
+      select: { id: true },
     });
 
     let prevViews = 0, prevLikes = 0, prevComments = 0, prevShares = 0, prevImpressions = 0;
 
-    for (const post of prevPosts) {
-      const latestOf = (type: string) => {
-        const records = post.metrics.filter((m) => m.metricType === type);
-        if (records.length === 0) return 0;
-        const latest = records.reduce((a, b) =>
-          a.metricDate.getTime() > b.metricDate.getTime() ? a : b
-        );
-        return Number(latest.metricValue);
-      };
-      prevViews += latestOf("views");
-      prevLikes += latestOf("likes");
-      prevComments += latestOf("comments");
-      prevShares += latestOf("shares");
-      prevImpressions += latestOf("impressions");
+    if (prevPosts.length > 0) {
+      const prevMetrics = await getLatestMetrics(prevPosts.map((p) => p.id));
+      for (const post of prevPosts) {
+        prevViews += metricValue(prevMetrics, post.id, "views");
+        prevLikes += metricValue(prevMetrics, post.id, "likes");
+        prevComments += metricValue(prevMetrics, post.id, "comments");
+        prevShares += metricValue(prevMetrics, post.id, "shares");
+        prevImpressions += metricValue(prevMetrics, post.id, "impressions");
+      }
     }
 
     const prevEngagements = prevLikes + prevComments + prevShares;
