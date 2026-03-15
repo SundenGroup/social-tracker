@@ -28,7 +28,7 @@ export default function KPICard({ label, value, subtitle, trend }: KPICardProps)
           }`}
         >
           {trend.isPositive ? "\u25B2 +" : "\u25BC -"}
-          {trend.isAbsolute ? formatCompactTrend(trend.value) : `${trend.value}%`}
+          {trend.isAbsolute ? formatCompactTrend(trend.value) : `${Math.abs(trend.value)}%`}
           <span className="ml-1 font-normal text-clutch-grey/40">
             {trend.isAbsolute ? "in period" : "vs prev"}
           </span>
