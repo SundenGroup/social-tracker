@@ -6,6 +6,7 @@ import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 // GET /api/metrics/dashboard - Aggregated dashboard data
 export const GET = apiHandler(
   async (req, session) => {
+    const t0 = Date.now();
     const url = new URL(req.url);
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
@@ -20,18 +21,18 @@ export const GET = apiHandler(
       ? new Date(startDate)
       : new Date(end.getTime() - 30 * 86400000);
 
-    // Check hideSponsored setting
-    const org = await prisma.organization.findUnique({
-      where: { id: orgId },
-      select: { hideSponsored: true },
-    });
+    // Check hideSponsored setting + get accounts in parallel
+    const [org, accounts] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { hideSponsored: true },
+      }),
+      prisma.socialAccount.findMany({
+        where: { organizationId: orgId, isActive: true, ...(profileId ? { profileId } : {}) },
+        select: { id: true, platform: true, accountName: true, syncStatus: true, lastSyncedAt: true },
+      }),
+    ]);
     const hideSponsored = org?.hideSponsored ?? false;
-
-    // Get all accounts for org (optionally filtered by profile)
-    const accounts = await prisma.socialAccount.findMany({
-      where: { organizationId: orgId, isActive: true, ...(profileId ? { profileId } : {}) },
-      select: { id: true, platform: true, accountName: true, syncStatus: true, lastSyncedAt: true },
-    });
 
     const accountIds = accounts.map((a) => a.id);
 
@@ -63,21 +64,62 @@ export const GET = apiHandler(
     // Build sponsored filter for aggregation queries
     const sponsoredFilter = hideSponsored ? { isSponsored: false } : {};
 
-    // Get ALL posts (including sponsored) for the table
-    const topPosts = await prisma.post.findMany({
-      where: {
-        socialAccountId: { in: accountIds },
-        publishedAt: { gte: start, lte: end },
-        isDeleted: false,
-        ...postTypeFilter,
-      },
-      orderBy: { publishedAt: "desc" },
-    });
+    // Previous period dates (needed for parallel query)
+    const rangeDuration = end.getTime() - start.getTime();
+    const prevEnd = new Date(start.getTime() - 1);
+    const prevStart = new Date(prevEnd.getTime() - rangeDuration);
 
+    const t1 = Date.now();
+
+    // Run current posts, previous posts, and rollup queries in parallel
+    const [topPosts, prevPosts, latestRollups, earliestRollups] = await Promise.all([
+      prisma.post.findMany({
+        where: {
+          socialAccountId: { in: accountIds },
+          publishedAt: { gte: start, lte: end },
+          isDeleted: false,
+          ...postTypeFilter,
+        },
+        orderBy: { publishedAt: "desc" },
+      }),
+      prisma.post.findMany({
+        where: {
+          socialAccountId: { in: accountIds },
+          publishedAt: { gte: prevStart, lte: prevEnd },
+          isDeleted: false,
+          ...postTypeFilter,
+          ...sponsoredFilter,
+        },
+        select: { id: true },
+      }),
+      prisma.accountDailyRollup.findMany({
+        where: { socialAccountId: { in: accountIds } },
+        orderBy: { rollupDate: "desc" },
+        distinct: ["socialAccountId"],
+        select: { totalFollowers: true, socialAccountId: true },
+      }),
+      prisma.accountDailyRollup.findMany({
+        where: {
+          socialAccountId: { in: accountIds },
+          rollupDate: { gte: start, lte: end },
+        },
+        orderBy: { rollupDate: "asc" },
+        distinct: ["socialAccountId"],
+        select: { totalFollowers: true, socialAccountId: true },
+      }),
+    ]);
+
+    const t2 = Date.now();
+
+    // Fetch metrics for current and previous periods in parallel
     const postDbIds = topPosts.map((p) => p.id);
+    const [metricsMap, prevMetrics] = await Promise.all([
+      getLatestMetrics(postDbIds),
+      prevPosts.length > 0 ? getLatestMetrics(prevPosts.map((p) => p.id)) : Promise.resolve(new Map()),
+    ]);
 
-    // Fetch only latest metric per post per type (single efficient query)
-    const metricsMap = await getLatestMetrics(postDbIds);
+    const t3 = Date.now();
+    console.log(`[Dashboard] ${topPosts.length} posts, ${prevPosts.length} prev | queries: ${t2 - t1}ms, metrics: ${t3 - t2}ms, total: ${t3 - t0}ms`);
 
     // Build post performance list
     const postPerformance = topPosts.map((post) => {
@@ -165,28 +207,12 @@ export const GET = apiHandler(
     const totalEngagements = totalLikes + totalComments + totalShares;
     const base = totalViews || totalImpressions || 0;
 
-    // Previous period comparison
-    const rangeDuration = end.getTime() - start.getTime();
-    const prevEnd = new Date(start.getTime() - 1); // day before current start
-    const prevStart = new Date(prevEnd.getTime() - rangeDuration);
-
-    const prevPosts = await prisma.post.findMany({
-      where: {
-        socialAccountId: { in: accountIds },
-        publishedAt: { gte: prevStart, lte: prevEnd },
-        isDeleted: false,
-        ...postTypeFilter,
-        ...sponsoredFilter,
-      },
-      select: { id: true },
-    });
-
+    // Previous period comparison (data already fetched in parallel above)
     let prevViews = 0;
     let prevEngagements = 0;
     let prevEngRate = 0;
 
     if (prevPosts.length > 0) {
-      const prevMetrics = await getLatestMetrics(prevPosts.map((p) => p.id));
       let pv = 0, pl = 0, pc = 0, ps = 0, pi = 0;
       for (const post of prevPosts) {
         pv += metricValue(prevMetrics, post.id, "views");
@@ -212,24 +238,6 @@ export const GET = apiHandler(
         prevEngRate
       ),
     };
-
-    // Account stats from AccountDailyRollup
-    const latestRollups = await prisma.accountDailyRollup.findMany({
-      where: { socialAccountId: { in: accountIds } },
-      orderBy: { rollupDate: "desc" },
-      distinct: ["socialAccountId"],
-      select: { totalFollowers: true, socialAccountId: true },
-    });
-
-    const earliestRollups = await prisma.accountDailyRollup.findMany({
-      where: {
-        socialAccountId: { in: accountIds },
-        rollupDate: { gte: start, lte: end },
-      },
-      orderBy: { rollupDate: "asc" },
-      distinct: ["socialAccountId"],
-      select: { totalFollowers: true, socialAccountId: true },
-    });
 
     // Build per-account follower map
     const followersByAccount = new Map<string, { total: number; growth: number }>();
