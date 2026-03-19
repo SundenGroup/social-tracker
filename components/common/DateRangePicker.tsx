@@ -25,8 +25,8 @@ export default function DateRangePicker({
 
   // Detect active preset on mount based on current dates
   const detectPreset = useCallback(() => {
-    const today = new Date().toISOString().split("T")[0];
-    if (end !== today) return null;
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+    if (end !== yesterday) return null;
     for (const p of PRESETS) {
       const from = new Date(Date.now() - p.days * 86400000).toISOString().split("T")[0];
       if (start === from) return p.days;
@@ -40,7 +40,8 @@ export default function DateRangePicker({
   }
 
   function applyPreset(days: number) {
-    const to = new Date().toISOString().split("T")[0];
+    // Last N complete days (not including today)
+    const to = new Date(Date.now() - 86400000).toISOString().split("T")[0];
     const from = new Date(Date.now() - days * 86400000)
       .toISOString()
       .split("T")[0];

@@ -192,8 +192,10 @@ export const GET = apiHandler(
 
     const now = new Date();
     const endA = endDateA ? new Date(endDateA) : now;
+    endA.setHours(23, 59, 59, 999);
     const startA = startDateA ? new Date(startDateA) : new Date(endA.getTime() - 30 * 86400000);
     const endB = endDateB ? new Date(endDateB) : new Date(endA.getTime() - 365 * 86400000);
+    endB.setHours(23, 59, 59, 999);
     const startB = startDateB ? new Date(startDateB) : new Date(startA.getTime() - 365 * 86400000);
 
     // Check hideSponsored setting

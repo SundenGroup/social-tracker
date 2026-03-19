@@ -16,7 +16,9 @@ export const GET = apiHandler(
     const orgId = session!.user.organizationId;
 
     // Default: last 30 days
+    // Set end date to end-of-day so the full day is included in queries
     const end = endDate ? new Date(endDate) : new Date();
+    end.setHours(23, 59, 59, 999);
     const start = startDate
       ? new Date(startDate)
       : new Date(end.getTime() - 30 * 86400000);

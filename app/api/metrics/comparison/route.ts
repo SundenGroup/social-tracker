@@ -16,6 +16,7 @@ export const GET = apiHandler(
     const profileId = url.searchParams.get("profileId");
 
     const end = endDate ? new Date(endDate) : new Date();
+    end.setHours(23, 59, 59, 999);
     const start = startDate
       ? new Date(startDate)
       : new Date(end.getTime() - 30 * 86400000);

@@ -10,7 +10,7 @@ function defaultStart(): string {
 }
 
 function defaultEnd(): string {
-  return new Date().toISOString().split("T")[0];
+  return new Date(Date.now() - 86400000).toISOString().split("T")[0];
 }
 
 /**
