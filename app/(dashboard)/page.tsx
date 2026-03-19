@@ -105,24 +105,21 @@ export default function DashboardPage() {
             isPositive: data.summary.comparison.views >= 0,
           } : undefined}
         />
-        <KPICard
-          label="Total Eng."
-          value={formatCompact(data.summary.totalEngagements)}
-          subtitle={rangeLabel}
-          trend={data.summary.comparison?.engagements != null ? {
-            value: data.summary.comparison.engagements,
-            isPositive: data.summary.comparison.engagements >= 0,
-          } : undefined}
-        />
-        <KPICard
-          label="Avg Eng. Rate"
-          value={`${data.summary.avgEngagementRate}%`}
-          subtitle={rangeLabel}
-          trend={data.summary.comparison?.engagementRate != null ? {
-            value: data.summary.comparison.engagementRate,
-            isPositive: data.summary.comparison.engagementRate >= 0,
-          } : undefined}
-        />
+        {/* Combined Engagement + Rate card */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="mb-1 text-xs font-medium text-clutch-grey/60">Engagements</p>
+          <div className="flex items-baseline gap-2">
+            <p className="text-2xl font-bold text-clutch-black">{formatCompact(data.summary.totalEngagements)}</p>
+            <p className="text-sm font-medium text-clutch-grey/60">({data.summary.avgEngagementRate}%)</p>
+          </div>
+          {data.summary.comparison?.engagements != null && (
+            <p className={`mt-1 text-xs font-medium ${data.summary.comparison.engagements >= 0 ? "text-green-600" : "text-red-500"}`}>
+              {data.summary.comparison.engagements >= 0 ? "\u25B2 +" : "\u25BC -"}{Math.abs(data.summary.comparison.engagements)}%
+              <span className="ml-1 font-normal text-clutch-grey/40">vs prev</span>
+            </p>
+          )}
+          <p className="mt-1 text-[10px] text-clutch-grey/40">{rangeLabel}</p>
+        </div>
         <KPICard
           label="Total Posts"
           value={String(data.summary.totalPosts)}
@@ -130,6 +127,15 @@ export default function DashboardPage() {
           trend={data.summary.comparison?.posts != null ? {
             value: data.summary.comparison.posts,
             isPositive: data.summary.comparison.posts >= 0,
+          } : undefined}
+        />
+        <KPICard
+          label="Total Followers"
+          value={formatCompact(data.summary.totalFollowers)}
+          trend={data.summary.totalFollowerGrowth !== 0 ? {
+            value: data.summary.totalFollowerGrowth,
+            isPositive: data.summary.totalFollowerGrowth > 0,
+            isAbsolute: true,
           } : undefined}
         />
       </div>
@@ -148,19 +154,6 @@ export default function DashboardPage() {
           />
         ))}
       </div>
-
-      {/* Followers */}
-      {data.summary.totalFollowers > 0 && (
-        <div className="mb-6 flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3">
-          <span className="text-xs font-medium text-clutch-grey/60">Total Followers</span>
-          <span className="text-lg font-bold text-clutch-black">{formatCompact(data.summary.totalFollowers)}</span>
-          {data.summary.totalFollowerGrowth !== 0 && (
-            <span className={`text-xs font-medium ${data.summary.totalFollowerGrowth > 0 ? "text-green-600" : "text-red-500"}`}>
-              {data.summary.totalFollowerGrowth > 0 ? "+" : ""}{formatCompact(data.summary.totalFollowerGrowth)} in period
-            </span>
-          )}
-        </div>
-      )}
 
       {/* Weekly Trend Chart */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
