@@ -36,10 +36,15 @@ export default function Sidebar() {
   const profileParam = searchParams.get("profile");
 
   function buildHref(href: string): string {
-    if (profileParam && PROFILE_PAGES.has(href)) {
-      return `${href}?profile=${profileParam}`;
-    }
-    return href;
+    if (!PROFILE_PAGES.has(href)) return href;
+    const params = new URLSearchParams();
+    if (profileParam) params.set("profile", profileParam);
+    const sd = searchParams.get("startDate");
+    const ed = searchParams.get("endDate");
+    if (sd) params.set("startDate", sd);
+    if (ed) params.set("endDate", ed);
+    const qs = params.toString();
+    return qs ? `${href}?${qs}` : href;
   }
 
   return (

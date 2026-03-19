@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
+import { useDateRange } from "@/hooks/useDateRange";
 import KPICard from "@/components/cards/KPICard";
 import PlatformHealthCard from "@/components/cards/PlatformHealthCard";
 import PlatformComparisonTable from "@/components/tables/PlatformComparisonTable";
@@ -26,11 +27,7 @@ const TREND_LINES = [
 ];
 
 export default function ComparisonPage() {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
-  const today = new Date().toISOString().split("T")[0];
-
-  const [startDate, setStartDate] = useState(thirtyDaysAgo);
-  const [endDate, setEndDate] = useState(today);
+  const { startDate, endDate, setDateRange } = useDateRange();
   const { data, isLoading, error, refetch } = useComparison(startDate, endDate);
 
   if (isLoading) {
@@ -70,7 +67,7 @@ export default function ComparisonPage() {
         <DateRangePicker
           startDate={startDate}
           endDate={endDate}
-          onChange={(s, e) => { setStartDate(s); setEndDate(e); }}
+          onChange={(s, e) => setDateRange(s, e)}
         />
         <button
           onClick={() => refetch()}

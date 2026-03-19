@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
+import { useDateRange } from "@/hooks/useDateRange";
 import KPICard from "@/components/cards/KPICard";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import TrendChart from "@/components/charts/TrendChart";
@@ -25,11 +26,7 @@ const CONTENT_TYPES = [
 ];
 
 export default function InstagramDashboardPage() {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
-  const today = new Date().toISOString().split("T")[0];
-
-  const [startDate, setStartDate] = useState(thirtyDaysAgo);
-  const [endDate, setEndDate] = useState(today);
+  const { startDate, endDate, setDateRange } = useDateRange();
   const [contentType, setContentType] = useState("all");
   const [gallerySortBy, setGallerySortBy] = useState<"views" | "engagements" | "likes">("views");
   const [sortKey, setSortKey] = useState<string>("publishedAt");
@@ -120,7 +117,7 @@ export default function InstagramDashboardPage() {
         <DateRangePicker
           startDate={startDate}
           endDate={endDate}
-          onChange={(s, e) => { setStartDate(s); setEndDate(e); }}
+          onChange={(s, e) => setDateRange(s, e)}
         />
         <button
           onClick={() => refetch()}
