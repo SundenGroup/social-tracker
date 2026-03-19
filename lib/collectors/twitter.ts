@@ -1,265 +1,243 @@
-import { chromium, type Browser, type Page } from "playwright";
+import { decrypt } from "@/lib/api-keys";
 import {
   BaseCollector,
   type PostData,
   type MetricData,
   type AccountStats,
 } from "./base-collector";
-import {
-  extractPostsFromTimeline,
-  extractMetricsFromGraphQL,
-  extractMetricsFromPost,
-  extractProfileStats,
-  listenForProfileGraphQL,
-  getRandomUserAgent,
-} from "@/lib/utils/twitter-scraper";
-import {
-  parseCookieData,
-  loadCookiesIntoContext,
-  validateCookiesForPlatform,
-  areCookiesExpired,
-} from "@/lib/utils/browser-cookies";
 import type { SocialAccount } from "@prisma/client";
 
-const MAX_POSTS_PER_SYNC = 100;
-const PAGE_LOAD_DELAY = 3000; // 3s between page loads
+const BATCH_SIZE = 100; // X API max per request
+const MAX_POSTS_PER_SYNC = 200;
+
+interface XTweet {
+  id: string;
+  text: string;
+  created_at?: string;
+  public_metrics?: {
+    retweet_count: number;
+    reply_count: number;
+    like_count: number;
+    quote_count: number;
+    bookmark_count: number;
+    impression_count: number;
+  };
+  attachments?: {
+    media_keys?: string[];
+  };
+}
+
+interface XMedia {
+  media_key: string;
+  type: "photo" | "video" | "animated_gif";
+  url?: string;
+  preview_image_url?: string;
+}
 
 export class TwitterCollector extends BaseCollector {
   private username: string;
-  private hasCookies: boolean;
-  private cachedProfileStats: { followers: number; following?: number } | null =
-    null;
+  private bearerToken: string;
+  private userId: string | null = null;
+  private cachedAccountStats: AccountStats | null = null;
 
   constructor(account: SocialAccount) {
     super(account);
-    // accountId is the handle (e.g., "PUBGEsports")
     this.username = account.accountId.replace(/^@/, "");
-    this.hasCookies = !!account.authToken;
+
+    const token = account.apiKey
+      ? decrypt(account.apiKey)
+      : process.env.TWITTER_BEARER_TOKEN;
+
+    if (!token) {
+      throw new Error(
+        "X API bearer token not found. Set TWITTER_BEARER_TOKEN in .env or add it to the account."
+      );
+    }
+
+    this.bearerToken = token;
   }
 
-  private async withBrowser<T>(
-    fn: (page: Page, browser: Browser) => Promise<T>
-  ): Promise<T> {
-    const browser = await chromium.launch({ headless: true });
-    try {
-      const context = await browser.newContext({
-        userAgent: getRandomUserAgent(),
-        viewport: { width: 1280, height: 800 },
-      });
+  private async xFetch<T>(url: string): Promise<T> {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${this.bearerToken}` },
+    });
 
-      // Load session cookies if available
-      if (this.hasCookies) {
-        try {
-          const cookieData = parseCookieData(this.account.authToken!);
-
-          const validation = validateCookiesForPlatform(cookieData, "twitter");
-          if (!validation.valid) {
-            this.logger(
-              `Warning: X cookies missing: ${validation.missing.join(", ")}. Scraping may fail.`
-            );
-          } else if (areCookiesExpired(cookieData, "twitter")) {
-            this.logger(
-              "Warning: X session cookies have expired. Scraping may fail."
-            );
-          } else {
-            const loaded = await loadCookiesIntoContext(context, cookieData);
-            this.logger(`Loaded ${loaded} cookies into browser context`);
-          }
-        } catch (err) {
-          this.logger(`Warning: Failed to load X cookies: ${err}`);
-        }
-      } else {
-        this.logger(
-          "Warning: No session cookies configured. X may block unauthenticated scraping."
-        );
-      }
-
-      const page = await context.newPage();
-      return await fn(page, browser);
-    } finally {
-      await browser.close();
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`X API ${res.status}: ${body}`);
     }
+
+    return res.json() as Promise<T>;
+  }
+
+  /** Resolve username → numeric user ID (cached for the sync session) */
+  private async getUserId(): Promise<string> {
+    if (this.userId) return this.userId;
+
+    const data = await this.xFetch<{
+      data: { id: string; public_metrics: { followers_count: number; following_count: number; tweet_count: number } };
+    }>(
+      `https://api.x.com/2/users/by/username/${this.username}?user.fields=public_metrics`
+    );
+
+    this.userId = data.data.id;
+
+    // Cache account stats so getAccountStats() doesn't need another call
+    this.cachedAccountStats = {
+      followers: data.data.public_metrics.followers_count,
+      following: data.data.public_metrics.following_count,
+      totalPosts: data.data.public_metrics.tweet_count,
+    };
+
+    this.logger(`Resolved @${this.username} → ID ${this.userId} (${this.cachedAccountStats.followers} followers)`);
+    return this.userId;
   }
 
   async fetchPosts(): Promise<PostData[]> {
-    return this.withBrowser(async (page) => {
-      this.logger(`Fetching posts for @${this.username}...`);
+    const userId = await this.getUserId();
+    const posts: PostData[] = [];
+    let paginationToken: string | undefined;
 
-      // Set up GraphQL listener BEFORE navigation to catch user profile data
-      const profilePromise = listenForProfileGraphQL(page);
+    this.logger(`Fetching posts for @${this.username} via API...`);
 
-      await page.goto(`https://x.com/${this.username}`, {
-        waitUntil: "domcontentloaded",
-        timeout: 30000,
+    do {
+      const params = new URLSearchParams({
+        max_results: String(BATCH_SIZE),
+        "tweet.fields": "created_at,public_metrics,attachments",
+        "media.fields": "type,url,preview_image_url",
+        expansions: "attachments.media_keys",
+        exclude: "retweets,replies",
       });
-
-      // Wait for timeline to load
-      await page.waitForTimeout(5000);
-
-      // Check if GraphQL captured profile stats
-      const graphQLProfile = await Promise.race([
-        profilePromise,
-        new Promise<null>((r) => setTimeout(() => r(null), 2000)),
-      ]);
-
-      if (graphQLProfile && graphQLProfile.followers > 0) {
-        this.cachedProfileStats = {
-          followers: graphQLProfile.followers,
-          following: graphQLProfile.following,
-        };
-        this.logger(
-          `Captured profile stats via GraphQL: ${graphQLProfile.followers} followers`
-        );
-      } else {
-        // Fallback to DOM scraping
-        this.logger(`GraphQL profile extraction failed, trying DOM...`);
-        const domProfile = await extractProfileStats(page);
-        if (domProfile) {
-          this.logger(
-            `DOM extracted: followers=${domProfile.followers}, following=${domProfile.following}`
-          );
-          if (domProfile.followers > 0) {
-            this.cachedProfileStats = {
-              followers: domProfile.followers,
-              following: domProfile.following,
-            };
-          }
-        } else {
-          this.logger(`DOM profile extraction also failed`);
-        }
+      if (paginationToken) {
+        params.set("pagination_token", paginationToken);
       }
 
-      const scraped = await extractPostsFromTimeline(
-        page,
-        this.username,
-        MAX_POSTS_PER_SYNC
-      );
+      const res = await this.xFetch<{
+        data?: XTweet[];
+        includes?: { media?: XMedia[] };
+        meta: { result_count: number; next_token?: string };
+      }>(`https://api.x.com/2/users/${userId}/tweets?${params}`);
 
-      this.logger(`Scraped ${scraped.length} posts from timeline`);
+      if (!res.data || res.data.length === 0) break;
 
-      return scraped.map((post) => ({
-        postId: post.postId,
-        platform: "twitter" as const,
-        postType: post.hasVideo ? ("video" as const) : post.hasImage ? ("image" as const) : ("text" as const),
-        title: post.text.substring(0, 200) || null,
-        description: post.text || null,
-        contentUrl: post.permalink,
-        thumbnailUrl: null,
-        publishedAt: new Date(post.publishedAt),
-      }));
-    });
+      // Build media lookup from includes
+      const mediaMap = new Map<string, XMedia>();
+      for (const m of res.includes?.media ?? []) {
+        mediaMap.set(m.media_key, m);
+      }
+
+      for (const tweet of res.data) {
+        // Determine post type from attached media
+        const mediaKeys = tweet.attachments?.media_keys ?? [];
+        const mediaItems = mediaKeys.map((k) => mediaMap.get(k)).filter(Boolean) as XMedia[];
+        const hasVideo = mediaItems.some((m) => m.type === "video" || m.type === "animated_gif");
+        const hasImage = mediaItems.some((m) => m.type === "photo");
+        const postType = hasVideo ? "video" as const : hasImage ? "image" as const : "text" as const;
+
+        // Get thumbnail from first media item
+        const thumbnail = mediaItems[0]?.preview_image_url ?? mediaItems[0]?.url ?? null;
+
+        posts.push({
+          postId: tweet.id,
+          platform: "twitter",
+          postType,
+          title: this.sanitizeText(tweet.text.substring(0, 200)) || null,
+          description: this.sanitizeText(tweet.text) || null,
+          contentUrl: `https://x.com/${this.username}/status/${tweet.id}`,
+          thumbnailUrl: thumbnail,
+          publishedAt: new Date(tweet.created_at ?? Date.now()),
+        });
+      }
+
+      paginationToken = res.meta.next_token;
+
+      // Stop if we have enough posts
+      if (posts.length >= MAX_POSTS_PER_SYNC) break;
+    } while (paginationToken);
+
+    this.logger(`Fetched ${posts.length} posts via API`);
+    return posts;
   }
 
   async fetchMetrics(postIds: string[]): Promise<MetricData[]> {
-    return this.withBrowser(async (page) => {
-      const metrics: MetricData[] = [];
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    const metrics: MetricData[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-      this.logger(`Fetching metrics for ${postIds.length} posts...`);
+    this.logger(`Fetching metrics for ${postIds.length} posts via API...`);
 
-      for (const postId of postIds) {
-        try {
-          const postUrl = `https://x.com/${this.username}/status/${postId}`;
-          let scraped = await extractMetricsFromGraphQL(page, postUrl);
+    // Batch tweet IDs into groups of 100
+    for (let i = 0; i < postIds.length; i += BATCH_SIZE) {
+      const batch = postIds.slice(i, i + BATCH_SIZE);
 
-          // Fall back to DOM scraping if GraphQL returned nothing
-          if (
-            scraped.views === undefined &&
-            scraped.likes === undefined &&
-            scraped.retweets === undefined
-          ) {
-            this.logger(`GraphQL empty for ${postId}, trying DOM fallback`);
-            scraped = await extractMetricsFromPost(page, postUrl);
-          }
+      const res = await this.xFetch<{
+        data?: XTweet[];
+      }>(
+        `https://api.x.com/2/tweets?ids=${batch.join(",")}&tweet.fields=public_metrics`
+      );
 
-          if (scraped.views !== undefined) {
-            metrics.push({
-              postId,
-              metricType: "views",
-              metricDate: today,
-              metricValue: BigInt(scraped.views),
-            });
-          }
+      for (const tweet of res.data ?? []) {
+        const pm = tweet.public_metrics;
+        if (!pm) continue;
 
-          if (scraped.likes !== undefined) {
-            metrics.push({
-              postId,
-              metricType: "likes",
-              metricDate: today,
-              metricValue: BigInt(scraped.likes),
-            });
-          }
+        if (pm.impression_count > 0) {
+          metrics.push({
+            postId: tweet.id,
+            metricType: "impressions",
+            metricDate: today,
+            metricValue: BigInt(pm.impression_count),
+          });
+        }
 
-          if (scraped.retweets !== undefined) {
-            metrics.push({
-              postId,
-              metricType: "shares",
-              metricDate: today,
-              metricValue: BigInt(scraped.retweets),
-            });
-          }
+        if (pm.like_count > 0) {
+          metrics.push({
+            postId: tweet.id,
+            metricType: "likes",
+            metricDate: today,
+            metricValue: BigInt(pm.like_count),
+          });
+        }
 
-          if (scraped.replies !== undefined) {
-            metrics.push({
-              postId,
-              metricType: "comments",
-              metricDate: today,
-              metricValue: BigInt(scraped.replies),
-            });
-          }
+        if (pm.retweet_count > 0) {
+          metrics.push({
+            postId: tweet.id,
+            metricType: "shares",
+            metricDate: today,
+            metricValue: BigInt(pm.retweet_count),
+          });
+        }
 
-          if (scraped.bookmarks !== undefined) {
-            metrics.push({
-              postId,
-              metricType: "bookmarks",
-              metricDate: today,
-              metricValue: BigInt(scraped.bookmarks),
-            });
-          }
+        if (pm.reply_count > 0) {
+          metrics.push({
+            postId: tweet.id,
+            metricType: "comments",
+            metricDate: today,
+            metricValue: BigInt(pm.reply_count),
+          });
+        }
 
-          // Rate limiting: 2-5s between page loads
-          await this.delay(PAGE_LOAD_DELAY + Math.random() * 2000);
-        } catch (err) {
-          this.logger(`Failed to scrape metrics for post ${postId}: ${err}`);
+        if (pm.bookmark_count > 0) {
+          metrics.push({
+            postId: tweet.id,
+            metricType: "bookmarks",
+            metricDate: today,
+            metricValue: BigInt(pm.bookmark_count),
+          });
         }
       }
+    }
 
-      return metrics;
-    });
+    this.logger(`Fetched ${metrics.length} metric records via API`);
+    return metrics;
   }
 
   async getAccountStats(): Promise<AccountStats> {
-    // Use cached stats from fetchPosts() to avoid launching another browser
-    if (this.cachedProfileStats) {
-      this.logger(
-        `Using cached profile stats: ${this.cachedProfileStats.followers} followers`
-      );
-      return this.cachedProfileStats;
+    if (this.cachedAccountStats) {
+      return this.cachedAccountStats;
     }
 
-    // Fallback: launch a fresh browser if cache is empty
-    return this.withBrowser(async (page) => {
-      this.logger(`Fetching profile stats for @${this.username}...`);
-
-      await page.goto(`https://x.com/${this.username}`, {
-        waitUntil: "domcontentloaded",
-        timeout: 30000,
-      });
-
-      await page.waitForTimeout(3000);
-
-      const profile = await extractProfileStats(page);
-
-      if (!profile) {
-        this.logger("Failed to extract profile stats");
-        return { followers: 0 };
-      }
-
-      return {
-        followers: profile.followers,
-        following: profile.following,
-      };
-    });
+    // Fetch fresh if not cached (shouldn't happen since fetchPosts calls getUserId first)
+    await this.getUserId();
+    return this.cachedAccountStats ?? { followers: 0 };
   }
 }
