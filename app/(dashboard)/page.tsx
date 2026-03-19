@@ -134,19 +134,6 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Followers */}
-      {data.summary.totalFollowers > 0 && (
-        <div className="mb-6 flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3">
-          <span className="text-xs font-medium text-clutch-grey/60">Total Followers</span>
-          <span className="text-lg font-bold text-clutch-black">{formatCompact(data.summary.totalFollowers)}</span>
-          {data.summary.totalFollowerGrowth !== 0 && (
-            <span className={`text-xs font-medium ${data.summary.totalFollowerGrowth > 0 ? "text-green-600" : "text-red-500"}`}>
-              {data.summary.totalFollowerGrowth > 0 ? "+" : ""}{formatCompact(data.summary.totalFollowerGrowth)} in period
-            </span>
-          )}
-        </div>
-      )}
-
       {/* Platform Cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         {data.platforms.map((p) => (
@@ -161,6 +148,19 @@ export default function DashboardPage() {
           />
         ))}
       </div>
+
+      {/* Followers */}
+      {data.summary.totalFollowers > 0 && (
+        <div className="mb-6 flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3">
+          <span className="text-xs font-medium text-clutch-grey/60">Total Followers</span>
+          <span className="text-lg font-bold text-clutch-black">{formatCompact(data.summary.totalFollowers)}</span>
+          {data.summary.totalFollowerGrowth !== 0 && (
+            <span className={`text-xs font-medium ${data.summary.totalFollowerGrowth > 0 ? "text-green-600" : "text-red-500"}`}>
+              {data.summary.totalFollowerGrowth > 0 ? "+" : ""}{formatCompact(data.summary.totalFollowerGrowth)} in period
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Weekly Trend Chart */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
