@@ -2,6 +2,7 @@
 
 import { createContext, useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { ProfileResponse } from "@/types";
 
 interface ProfileContextValue {
@@ -24,18 +25,34 @@ const STORAGE_KEY = "clutch-selected-profile";
 
 export default function ProfileProvider({ children }: { children: React.ReactNode }) {
   const { status } = useSession();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [profiles, setProfiles] = useState<ProfileResponse[]>([]);
   const [selectedProfileId, setSelectedProfileIdState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   const setSelectedProfileId = useCallback((id: string | null) => {
     setSelectedProfileIdState(id);
+
+    // Persist to localStorage
     if (id) {
       localStorage.setItem(STORAGE_KEY, id);
     } else {
       localStorage.removeItem(STORAGE_KEY);
     }
-  }, []);
+
+    // Update URL search params
+    const params = new URLSearchParams(searchParams.toString());
+    if (id) {
+      params.set("profile", id);
+    } else {
+      params.delete("profile");
+    }
+    const qs = params.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+  }, [searchParams, router, pathname]);
 
   const fetchProfiles = useCallback(async () => {
     setIsLoading(true);
@@ -59,13 +76,21 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
     }
   }, [status, fetchProfiles]);
 
-  // Restore selection from localStorage
+  // Initialize selection: URL param takes priority, then localStorage
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      setSelectedProfileIdState(stored);
+    if (initialized) return;
+    const urlProfile = searchParams.get("profile");
+    if (urlProfile) {
+      setSelectedProfileIdState(urlProfile);
+      localStorage.setItem(STORAGE_KEY, urlProfile);
+    } else {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        setSelectedProfileIdState(stored);
+      }
     }
-  }, []);
+    setInitialized(true);
+  }, [searchParams, initialized]);
 
   // If stored profile doesn't exist in the list, clear it
   useEffect(() => {

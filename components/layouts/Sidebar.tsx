@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -22,9 +22,25 @@ const ADMIN_ITEMS = [
   { href: "/users", label: "Users" },
 ];
 
+// Pages that support profile filtering
+const PROFILE_PAGES = new Set([
+  "/", "/platforms/youtube", "/platforms/twitter",
+  "/platforms/instagram", "/platforms/tiktok",
+  "/comparison", "/period-comparison",
+]);
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, isAdmin } = useAuth();
+  const profileParam = searchParams.get("profile");
+
+  function buildHref(href: string): string {
+    if (profileParam && PROFILE_PAGES.has(href)) {
+      return `${href}?profile=${profileParam}`;
+    }
+    return href;
+  }
 
   return (
     <aside className="flex w-56 flex-shrink-0 flex-col border-r border-gray-200 bg-white">
@@ -54,7 +70,7 @@ export default function Sidebar() {
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={buildHref(item.href)}
               className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 item.indent ? "pl-6" : ""
               } ${
