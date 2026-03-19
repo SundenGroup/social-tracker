@@ -153,30 +153,41 @@ export class YouTubeCollector extends BaseCollector {
           });
         }
 
-        if (stats.viewCount) {
+        const viewCount = BigInt(stats.viewCount || 0);
+        const likeCount = BigInt(stats.likeCount || 0);
+        const commentCount = BigInt(stats.commentCount || 0);
+
+        // Skip metrics for live broadcasts that return all zeros —
+        // YouTube API returns 0 views while a stream is live or processing.
+        // We don't want to overwrite real metrics with zeros.
+        if (viewCount === 0n && likeCount === 0n && commentCount === 0n) {
+          continue;
+        }
+
+        if (viewCount > 0n) {
           metrics.push({
             postId: video.id,
             metricType: "views",
             metricDate: today,
-            metricValue: BigInt(stats.viewCount),
+            metricValue: viewCount,
           });
         }
 
-        if (stats.likeCount) {
+        if (likeCount > 0n) {
           metrics.push({
             postId: video.id,
             metricType: "likes",
             metricDate: today,
-            metricValue: BigInt(stats.likeCount),
+            metricValue: likeCount,
           });
         }
 
-        if (stats.commentCount) {
+        if (commentCount > 0n) {
           metrics.push({
             postId: video.id,
             metricType: "comments",
             metricDate: today,
-            metricValue: BigInt(stats.commentCount),
+            metricValue: commentCount,
           });
         }
 
