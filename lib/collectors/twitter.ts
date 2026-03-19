@@ -183,7 +183,7 @@ export class TwitterCollector extends BaseCollector {
         if (pm.impression_count > 0) {
           metrics.push({
             postId: tweet.id,
-            metricType: "impressions",
+            metricType: "views",
             metricDate: today,
             metricValue: BigInt(pm.impression_count),
           });
