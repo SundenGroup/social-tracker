@@ -48,12 +48,13 @@ export function usePeriodComparison(
   endDateB: string,
   contentType?: string
 ) {
-  const { selectedProfileId } = useProfiles();
+  const { selectedProfileId, initialized } = useProfiles();
   const [data, setData] = useState<PeriodComparisonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (!initialized) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -76,7 +77,7 @@ export function usePeriodComparison(
     } finally {
       setIsLoading(false);
     }
-  }, [startDateA, endDateA, startDateB, endDateB, contentType, selectedProfileId]);
+  }, [startDateA, endDateA, startDateB, endDateB, contentType, selectedProfileId, initialized]);
 
   useEffect(() => {
     fetchData();

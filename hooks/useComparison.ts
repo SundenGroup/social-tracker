@@ -38,12 +38,13 @@ export interface ComparisonData {
 }
 
 export function useComparison(startDate: string, endDate: string) {
-  const { selectedProfileId } = useProfiles();
+  const { selectedProfileId, initialized } = useProfiles();
   const [data, setData] = useState<ComparisonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (!initialized) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -63,7 +64,7 @@ export function useComparison(startDate: string, endDate: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, selectedProfileId]);
+  }, [startDate, endDate, selectedProfileId, initialized]);
 
   useEffect(() => {
     fetchData();

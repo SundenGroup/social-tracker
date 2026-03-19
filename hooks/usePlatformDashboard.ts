@@ -84,12 +84,13 @@ export function usePlatformDashboard(
   endDate: string,
   contentType?: string
 ) {
-  const { selectedProfileId } = useProfiles();
+  const { selectedProfileId, initialized } = useProfiles();
   const [data, setData] = useState<PlatformDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (!initialized) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -112,7 +113,7 @@ export function usePlatformDashboard(
     } finally {
       setIsLoading(false);
     }
-  }, [platform, startDate, endDate, contentType, selectedProfileId]);
+  }, [platform, startDate, endDate, contentType, selectedProfileId, initialized]);
 
   useEffect(() => {
     fetchData();

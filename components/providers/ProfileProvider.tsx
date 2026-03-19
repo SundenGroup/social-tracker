@@ -10,6 +10,7 @@ interface ProfileContextValue {
   selectedProfileId: string | null;
   setSelectedProfileId: (id: string | null) => void;
   isLoading: boolean;
+  initialized: boolean;
   refetch: () => Promise<void>;
 }
 
@@ -18,6 +19,7 @@ export const ProfileContext = createContext<ProfileContextValue>({
   selectedProfileId: null,
   setSelectedProfileId: () => {},
   isLoading: false,
+  initialized: false,
   refetch: async () => {},
 });
 
@@ -110,6 +112,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         selectedProfileId,
         setSelectedProfileId,
         isLoading,
+        initialized,
         refetch: fetchProfiles,
       }}
     >

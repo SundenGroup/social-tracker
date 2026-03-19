@@ -56,12 +56,13 @@ interface DashboardData {
 }
 
 export function useDashboard(startDate: string, endDate: string, contentType?: string) {
-  const { selectedProfileId } = useProfiles();
+  const { selectedProfileId, initialized } = useProfiles();
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (!initialized) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -84,7 +85,7 @@ export function useDashboard(startDate: string, endDate: string, contentType?: s
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, contentType, selectedProfileId]);
+  }, [startDate, endDate, contentType, selectedProfileId, initialized]);
 
   useEffect(() => {
     fetchData();
