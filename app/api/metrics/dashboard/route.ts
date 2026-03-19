@@ -237,6 +237,7 @@ export const GET = apiHandler(
         base > 0 ? Number(((totalEngagements / base) * 100).toFixed(2)) : 0,
         prevEngRate
       ),
+      posts: pctChange(aggPosts.length, prevPosts.length),
     };
 
     // Build per-account follower map
@@ -297,6 +298,7 @@ export const GET = apiHandler(
             ((totalEngagements / base) * 100).toFixed(2)
           ) : 0,
           totalImpressions,
+          totalPosts: aggPosts.length,
           totalFollowers,
           totalFollowerGrowth,
           comparison,

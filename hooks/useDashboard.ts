@@ -25,6 +25,7 @@ interface Comparison {
   views: number;
   engagements: number;
   engagementRate: number;
+  posts: number;
 }
 
 interface DashboardSummary {
@@ -32,6 +33,7 @@ interface DashboardSummary {
   totalEngagements: number;
   avgEngagementRate: number;
   totalImpressions: number;
+  totalPosts: number;
   totalFollowers: number;
   totalFollowerGrowth: number;
   comparison: Comparison;

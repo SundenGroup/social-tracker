@@ -124,15 +124,28 @@ export default function DashboardPage() {
           } : undefined}
         />
         <KPICard
-          label="Total Followers"
-          value={formatCompact(data.summary.totalFollowers)}
-          trend={data.summary.totalFollowerGrowth !== 0 ? {
-            value: data.summary.totalFollowerGrowth,
-            isPositive: data.summary.totalFollowerGrowth > 0,
-            isAbsolute: true,
+          label="Total Posts"
+          value={String(data.summary.totalPosts)}
+          subtitle={rangeLabel}
+          trend={data.summary.comparison?.posts != null ? {
+            value: data.summary.comparison.posts,
+            isPositive: data.summary.comparison.posts >= 0,
           } : undefined}
         />
       </div>
+
+      {/* Followers */}
+      {data.summary.totalFollowers > 0 && (
+        <div className="mb-6 flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3">
+          <span className="text-xs font-medium text-clutch-grey/60">Total Followers</span>
+          <span className="text-lg font-bold text-clutch-black">{formatCompact(data.summary.totalFollowers)}</span>
+          {data.summary.totalFollowerGrowth !== 0 && (
+            <span className={`text-xs font-medium ${data.summary.totalFollowerGrowth > 0 ? "text-green-600" : "text-red-500"}`}>
+              {data.summary.totalFollowerGrowth > 0 ? "+" : ""}{formatCompact(data.summary.totalFollowerGrowth)} in period
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Platform Cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
