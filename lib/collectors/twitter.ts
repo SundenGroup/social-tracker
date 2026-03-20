@@ -10,7 +10,7 @@ import type { SocialAccount } from "@prisma/client";
 
 const BATCH_SIZE = 100; // X API max per request
 const MAX_POSTS_PER_SYNC = 50; // Only fetch recent posts for discovery
-const METRICS_REFRESH_DAYS = 30; // Refresh metrics for posts from last 30 days
+const METRICS_REFRESH_DAYS = 14; // Refresh metrics for posts from last 14 days
 
 interface XTweet {
   id: string;
