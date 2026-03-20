@@ -1,4 +1,5 @@
 import { decrypt } from "@/lib/api-keys";
+import { prisma } from "@/lib/db";
 import {
   BaseCollector,
   type PostData,
@@ -8,7 +9,8 @@ import {
 import type { SocialAccount } from "@prisma/client";
 
 const BATCH_SIZE = 100; // X API max per request
-const MAX_POSTS_PER_SYNC = 200;
+const MAX_POSTS_PER_SYNC = 50; // Only fetch recent posts for discovery
+const METRICS_REFRESH_DAYS = 30; // Refresh metrics for posts from last 30 days
 
 interface XTweet {
   id: string;
@@ -96,75 +98,79 @@ export class TwitterCollector extends BaseCollector {
   async fetchPosts(): Promise<PostData[]> {
     const userId = await this.getUserId();
     const posts: PostData[] = [];
-    let paginationToken: string | undefined;
 
-    this.logger(`Fetching posts for @${this.username} via API...`);
+    this.logger(`Fetching latest ${MAX_POSTS_PER_SYNC} posts for @${this.username} via API...`);
 
-    do {
-      const params = new URLSearchParams({
-        max_results: String(BATCH_SIZE),
-        "tweet.fields": "created_at,public_metrics,attachments",
-        "media.fields": "type,url,preview_image_url",
-        expansions: "attachments.media_keys",
-        exclude: "retweets,replies",
+    const params = new URLSearchParams({
+      max_results: String(MAX_POSTS_PER_SYNC),
+      "tweet.fields": "created_at,public_metrics,attachments",
+      "media.fields": "type,url,preview_image_url",
+      expansions: "attachments.media_keys",
+      exclude: "retweets,replies",
+    });
+
+    const res = await this.xFetch<{
+      data?: XTweet[];
+      includes?: { media?: XMedia[] };
+      meta: { result_count: number; next_token?: string };
+    }>(`https://api.x.com/2/users/${userId}/tweets?${params}`);
+
+    if (!res.data || res.data.length === 0) {
+      this.logger("No posts returned from API");
+      return posts;
+    }
+
+    // Build media lookup from includes
+    const mediaMap = new Map<string, XMedia>();
+    for (const m of res.includes?.media ?? []) {
+      mediaMap.set(m.media_key, m);
+    }
+
+    for (const tweet of res.data) {
+      const mediaKeys = tweet.attachments?.media_keys ?? [];
+      const mediaItems = mediaKeys.map((k) => mediaMap.get(k)).filter(Boolean) as XMedia[];
+      const hasVideo = mediaItems.some((m) => m.type === "video" || m.type === "animated_gif");
+      const hasImage = mediaItems.some((m) => m.type === "photo");
+      const postType = hasVideo ? "video" as const : hasImage ? "image" as const : "text" as const;
+
+      const thumbnail = mediaItems[0]?.preview_image_url ?? mediaItems[0]?.url ?? null;
+
+      posts.push({
+        postId: tweet.id,
+        platform: "twitter",
+        postType,
+        title: this.sanitizeText(tweet.text.substring(0, 200)) || null,
+        description: this.sanitizeText(tweet.text) || null,
+        contentUrl: `https://x.com/${this.username}/status/${tweet.id}`,
+        thumbnailUrl: thumbnail,
+        publishedAt: new Date(tweet.created_at ?? Date.now()),
       });
-      if (paginationToken) {
-        params.set("pagination_token", paginationToken);
-      }
-
-      const res = await this.xFetch<{
-        data?: XTweet[];
-        includes?: { media?: XMedia[] };
-        meta: { result_count: number; next_token?: string };
-      }>(`https://api.x.com/2/users/${userId}/tweets?${params}`);
-
-      if (!res.data || res.data.length === 0) break;
-
-      // Build media lookup from includes
-      const mediaMap = new Map<string, XMedia>();
-      for (const m of res.includes?.media ?? []) {
-        mediaMap.set(m.media_key, m);
-      }
-
-      for (const tweet of res.data) {
-        // Determine post type from attached media
-        const mediaKeys = tweet.attachments?.media_keys ?? [];
-        const mediaItems = mediaKeys.map((k) => mediaMap.get(k)).filter(Boolean) as XMedia[];
-        const hasVideo = mediaItems.some((m) => m.type === "video" || m.type === "animated_gif");
-        const hasImage = mediaItems.some((m) => m.type === "photo");
-        const postType = hasVideo ? "video" as const : hasImage ? "image" as const : "text" as const;
-
-        // Get thumbnail from first media item
-        const thumbnail = mediaItems[0]?.preview_image_url ?? mediaItems[0]?.url ?? null;
-
-        posts.push({
-          postId: tweet.id,
-          platform: "twitter",
-          postType,
-          title: this.sanitizeText(tweet.text.substring(0, 200)) || null,
-          description: this.sanitizeText(tweet.text) || null,
-          contentUrl: `https://x.com/${this.username}/status/${tweet.id}`,
-          thumbnailUrl: thumbnail,
-          publishedAt: new Date(tweet.created_at ?? Date.now()),
-        });
-      }
-
-      paginationToken = res.meta.next_token;
-
-      // Stop if we have enough posts
-      if (posts.length >= MAX_POSTS_PER_SYNC) break;
-    } while (paginationToken);
+    }
 
     this.logger(`Fetched ${posts.length} posts via API`);
     return posts;
   }
 
-  async fetchMetrics(postIds: string[]): Promise<MetricData[]> {
+  async fetchMetrics(_postIds: string[]): Promise<MetricData[]> {
     const metrics: MetricData[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    this.logger(`Fetching metrics for ${postIds.length} posts via API...`);
+    // Refresh metrics for all posts from the last N days (not just newly discovered ones)
+    const cutoff = new Date(Date.now() - METRICS_REFRESH_DAYS * 86400000);
+    const dbPosts = await prisma.post.findMany({
+      where: {
+        socialAccountId: this.account.id,
+        publishedAt: { gte: cutoff },
+        isDeleted: false,
+      },
+      select: { postId: true },
+    });
+
+    const postIds = dbPosts.map((p) => p.postId);
+    this.logger(`Refreshing metrics for ${postIds.length} posts from last ${METRICS_REFRESH_DAYS} days...`);
+
+    if (postIds.length === 0) return metrics;
 
     // Batch tweet IDs into groups of 100
     for (let i = 0; i < postIds.length; i += BATCH_SIZE) {
