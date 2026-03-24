@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface DateRangePickerProps {
   startDate: string;
@@ -23,16 +23,25 @@ export default function DateRangePicker({
   const [end, setEnd] = useState(endDate);
   const [activePreset, setActivePreset] = useState<number | null>(null);
 
-  // Detect active preset on mount based on current dates
+  // Sync local state when props change (e.g. URL navigation)
+  useEffect(() => {
+    setStart(startDate);
+    setEnd(endDate);
+  }, [startDate, endDate]);
+
+  // Whether local dates differ from the applied (prop) dates
+  const hasUnappliedChanges = start !== startDate || end !== endDate;
+
+  // Detect active preset based on applied dates
   const detectPreset = useCallback(() => {
     const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-    if (end !== yesterday) return null;
+    if (endDate !== yesterday) return null;
     for (const p of PRESETS) {
       const from = new Date(Date.now() - p.days * 86400000).toISOString().split("T")[0];
-      if (start === from) return p.days;
+      if (startDate === from) return p.days;
     }
     return null;
-  }, [start, end]);
+  }, [startDate, endDate]);
 
   // Initialize active preset detection
   if (activePreset === null && detectPreset() !== null) {
@@ -40,7 +49,6 @@ export default function DateRangePicker({
   }
 
   function applyPreset(days: number) {
-    // Last N complete days (not including today)
     const to = new Date(Date.now() - 86400000).toISOString().split("T")[0];
     const from = new Date(Date.now() - days * 86400000)
       .toISOString()
@@ -51,18 +59,16 @@ export default function DateRangePicker({
     onChange(from, to);
   }
 
-  function handleChange(newStart: string, newEnd: string) {
-    setStart(newStart);
-    setEnd(newEnd);
+  function applyRange() {
     setActivePreset(null);
-    onChange(newStart, newEnd);
+    onChange(start, end);
   }
 
   return (
     <div className="flex items-center gap-2">
       <div className="flex gap-1">
         {PRESETS.map((p) => {
-          const isActive = activePreset === p.days;
+          const isActive = activePreset === p.days && !hasUnappliedChanges;
           const isPrimary = p.days <= 30;
           return (
             <button
@@ -85,16 +91,25 @@ export default function DateRangePicker({
       <input
         type="date"
         value={start}
-        onChange={(e) => handleChange(e.target.value, end)}
+        onChange={(e) => setStart(e.target.value)}
         className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-clutch-blue focus:outline-none"
       />
       <span className="text-xs text-clutch-grey/50">to</span>
       <input
         type="date"
         value={end}
-        onChange={(e) => handleChange(start, e.target.value)}
+        onChange={(e) => setEnd(e.target.value)}
         className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-clutch-blue focus:outline-none"
       />
+      {hasUnappliedChanges && (
+        <button
+          type="button"
+          onClick={applyRange}
+          className="rounded-md bg-clutch-blue px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-clutch-blue/90"
+        >
+          Apply
+        </button>
+      )}
     </div>
   );
 }
