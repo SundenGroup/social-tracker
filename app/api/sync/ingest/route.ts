@@ -100,9 +100,9 @@ export async function POST(req: Request) {
           },
           create: {
             socialAccountId: account.id,
-            platform: platform as "tiktok",
+            platform: platform as "tiktok" | "instagram" | "youtube" | "twitter",
             postId: post.postId,
-            postType: (post.postType as "video" | "short") || "video",
+            postType: (post.postType as "video" | "short" | "image" | "carousel") || "video",
             title: sanitize(post.title, 200),
             description: sanitize(post.description),
             contentUrl: post.contentUrl,
@@ -150,7 +150,7 @@ export async function POST(req: Request) {
                 create: {
                   postId: dbPost.id,
                   socialAccountId: account.id,
-                  platform: platform as "tiktok",
+                  platform: platform as "tiktok" | "instagram" | "youtube" | "twitter",
                   metricType: type,
                   metricDate: today,
                   metricValue: BigInt(value),
@@ -198,7 +198,7 @@ export async function POST(req: Request) {
           },
           create: {
             socialAccountId: account.id,
-            platform: platform as "tiktok",
+            platform: platform as "tiktok" | "instagram" | "youtube" | "twitter",
             rollupDate: rollupDate,
             totalFollowers: BigInt(stats.followers),
             newFollowers: BigInt(Math.max(0, newFollowers)),

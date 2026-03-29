@@ -36,7 +36,7 @@ export class InstagramCollector extends BaseCollector {
 
     if (!account.authToken) {
       throw new Error(
-        "Instagram account missing session cookies. Export cookies from a logged-in browser and paste them in the account settings."
+        "Instagram sync skipped — no session cookies configured. This account uses the remote scraper."
       );
     }
   }

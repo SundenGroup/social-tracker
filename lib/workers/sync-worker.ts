@@ -88,6 +88,13 @@ async function processSyncJob(
   }
 
   try {
+    // Skip Instagram accounts with no auth token — they use the remote scraper
+    if (account.platform === "instagram" && !account.authToken) {
+      await prisma.syncLog.delete({ where: { id: syncLogId } });
+      console.log(`[SyncWorker] Skipping ${account.accountName} — uses remote scraper`);
+      return;
+    }
+
     // Delete the pending syncLog — the collector's sync() creates its own
     await prisma.syncLog.delete({ where: { id: syncLogId } });
 
