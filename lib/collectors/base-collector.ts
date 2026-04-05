@@ -135,6 +135,7 @@ export abstract class BaseCollector {
               title: this.sanitizeText(post.title),
               description: this.sanitizeText(post.description),
               thumbnailUrl: post.thumbnailUrl,
+              publishedAt: post.publishedAt,
               lastMetricRefreshAt: new Date(),
             },
           });

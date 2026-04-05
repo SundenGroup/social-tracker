@@ -113,6 +113,7 @@ export async function POST(req: Request) {
             title: sanitize(post.title, 200),
             description: sanitize(post.description),
             thumbnailUrl: post.thumbnailUrl || null,
+            publishedAt: new Date(post.publishedAt),
             lastMetricRefreshAt: new Date(),
           },
         });

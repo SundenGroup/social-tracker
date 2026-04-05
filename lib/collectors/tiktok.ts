@@ -22,6 +22,17 @@ import type { SocialAccount } from "@prisma/client";
 const MAX_VIDEOS_PER_SYNC = 100;
 const PAGE_LOAD_DELAY = 3000;
 
+/** Derive publish date from TikTok Snowflake ID (upper 32 bits = Unix timestamp). */
+function dateFromSnowflakeId(id: string): Date {
+  try {
+    const ts = Number(BigInt(id) >> 32n);
+    if (ts > 1600000000 && ts < 2000000000) {
+      return new Date(ts * 1000);
+    }
+  } catch { /* ignore */ }
+  return new Date();
+}
+
 export class TikTokCollector extends BaseCollector {
   private username: string;
   private hasCookies: boolean;
@@ -164,7 +175,7 @@ export class TikTokCollector extends BaseCollector {
         thumbnailUrl: video.coverUrl,
         publishedAt: video.createTime
           ? new Date(video.createTime * 1000)
-          : new Date(),
+          : dateFromSnowflakeId(video.videoId),
       }));
     });
   }
