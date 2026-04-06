@@ -76,8 +76,12 @@ export default function TikTokDashboardPage() {
 
   const SortHeader = ({ label, sortField, align }: { label: string; sortField: string; align?: string }) => (
     <th
+      role="columnheader button"
+      tabIndex={0}
+      aria-sort={sortKey === sortField ? (sortAsc ? "ascending" : "descending") : undefined}
       className={`cursor-pointer select-none pb-2 pr-4 font-medium hover:text-clutch-black ${align === "right" ? "text-right" : ""}`}
       onClick={() => handleSort(sortField)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSort(sortField); } }}
     >
       {label} {sortKey === sortField ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
     </th>

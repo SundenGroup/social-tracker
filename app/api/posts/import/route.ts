@@ -19,7 +19,20 @@ export const POST = apiHandler(
       throw new ValidationError("File is required");
     }
 
+    // Validate file size (10MB max)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      throw new ValidationError(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum is 10MB.`);
+    }
+
     const fileName = file.name.toLowerCase();
+
+    // Validate file type
+    const allowedExtensions = [".csv", ".xlsx", ".xls"];
+    if (!allowedExtensions.some((ext) => fileName.endsWith(ext))) {
+      throw new ValidationError("File must be .csv, .xlsx, or .xls");
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // Parse file
@@ -76,11 +89,13 @@ export const POST = apiHandler(
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
 
-      for (const row of batch) {
+      for (let j = 0; j < batch.length; j++) {
+        const row = batch[j];
+        const rowNum = i + j + 2; // +2 for 1-indexed + header row
         const accountId = accountByPlatform.get(row.platform);
         if (!accountId) {
           importErrors.push({
-            row: i + rows.indexOf(row) + 2,
+            row: rowNum,
             column: "Platform",
             error: `No ${row.platform} account configured. Add one in Account Management first.`,
           });
@@ -146,7 +161,7 @@ export const POST = apiHandler(
           rowsSuccessful++;
         } catch (err) {
           importErrors.push({
-            row: i + rows.indexOf(row) + 2,
+            row: rowNum,
             column: "",
             error: err instanceof Error ? err.message : "Unknown error",
           });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useId } from "react";
 
 interface ModalProps {
   open: boolean;
@@ -12,6 +12,8 @@ interface ModalProps {
 
 export default function Modal({ open, onClose, title, children, actions }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -19,6 +21,10 @@ export default function Modal({ open, onClose, title, children, actions }: Modal
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", handleKey);
+
+    // Focus the modal content when it opens
+    contentRef.current?.focus();
+
     return () => document.removeEventListener("keydown", handleKey);
   }, [open, onClose]);
 
@@ -32,8 +38,15 @@ export default function Modal({ open, onClose, title, children, actions }: Modal
         if (e.target === overlayRef.current) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg">
-        <h3 className="mb-3 text-lg font-bold text-clutch-black">{title}</h3>
+      <div
+        ref={contentRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg outline-none"
+      >
+        <h3 id={titleId} className="mb-3 text-lg font-bold text-clutch-black">{title}</h3>
         <div className="text-sm text-clutch-grey">{children}</div>
         {actions && (
           <div className="mt-5 flex justify-end gap-3">{actions}</div>

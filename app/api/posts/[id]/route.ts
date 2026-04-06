@@ -11,10 +11,11 @@ export const PATCH = apiHandler(
 
     const orgId = session!.user.organizationId;
 
-    // Verify the post belongs to the user's org
+    // Verify the post belongs to the user's org and is not deleted
     const post = await prisma.post.findFirst({
       where: {
         id,
+        isDeleted: false,
         socialAccount: { organizationId: orgId },
       },
       select: { id: true },

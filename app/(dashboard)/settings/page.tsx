@@ -163,6 +163,21 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const startPolling = useCallback((startedAt?: number) => {
+    // Clear any existing intervals first
+    if (refreshPollRef.current) clearInterval(refreshPollRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    pollRefreshStatus();
+    refreshPollRef.current = setInterval(pollRefreshStatus, 2000);
+
+    const baseTime = startedAt ?? Date.now();
+    setElapsedDisplay(Date.now() - baseTime);
+    timerRef.current = setInterval(() => {
+      setElapsedDisplay(Date.now() - baseTime);
+    }, 1000);
+  }, [pollRefreshStatus]);
+
   const handleStartRefresh = async () => {
     try {
       const res = await fetch("/api/admin/full-refresh", { method: "POST" });
@@ -171,17 +186,7 @@ export default function SettingsPage() {
         alert(json.error || "Failed to start refresh");
         return;
       }
-
-      // Start polling every 2 seconds
-      pollRefreshStatus();
-      refreshPollRef.current = setInterval(pollRefreshStatus, 2000);
-
-      // Start local elapsed timer (updates every second for smooth display)
-      setElapsedDisplay(0);
-      const startTime = Date.now();
-      timerRef.current = setInterval(() => {
-        setElapsedDisplay(Date.now() - startTime);
-      }, 1000);
+      startPolling();
     } catch {
       alert("Failed to start refresh");
     }
@@ -190,16 +195,9 @@ export default function SettingsPage() {
   // Check for in-progress refresh on mount
   useEffect(() => {
     pollRefreshStatus().then(() => {
-      // If a refresh is running, start polling
       setRefreshProgress((prev) => {
         if (prev?.isRunning) {
-          refreshPollRef.current = setInterval(pollRefreshStatus, 2000);
-          if (prev.startedAt) {
-            setElapsedDisplay(Date.now() - prev.startedAt);
-            timerRef.current = setInterval(() => {
-              setElapsedDisplay(Date.now() - prev.startedAt!);
-            }, 1000);
-          }
+          startPolling(prev.startedAt ?? undefined);
         }
         return prev;
       });
@@ -208,7 +206,7 @@ export default function SettingsPage() {
       if (refreshPollRef.current) clearInterval(refreshPollRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [pollRefreshStatus]);
+  }, [pollRefreshStatus, startPolling]);
 
   const formatDuration = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
