@@ -1,5 +1,31 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { z } from "zod";
+
+const ingestSchema = z.object({
+  platform: z.enum(["tiktok", "youtube", "instagram", "twitter"]),
+  accountId: z.string().min(1).max(255),
+  posts: z.array(z.object({
+    postId: z.string().min(1),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    contentUrl: z.string().url(),
+    thumbnailUrl: z.string().optional(),
+    publishedAt: z.string(),
+    postType: z.string().optional(),
+    metrics: z.object({
+      views: z.number().int().nonnegative().optional(),
+      likes: z.number().int().nonnegative().optional(),
+      comments: z.number().int().nonnegative().optional(),
+      shares: z.number().int().nonnegative().optional(),
+    }),
+  })).max(500),
+  stats: z.object({
+    followers: z.number().int().nonnegative().optional(),
+    following: z.number().int().nonnegative().optional(),
+    videoCount: z.number().int().nonnegative().optional(),
+  }).optional(),
+});
 
 /**
  * POST /api/sync/ingest — Accept scraped data from external collectors
@@ -19,34 +45,18 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { platform, accountId, posts, stats } = body as {
-      platform: string;
-      accountId: string;
-      posts: {
-        postId: string;
-        title?: string;
-        description?: string;
-        contentUrl: string;
-        thumbnailUrl?: string;
-        publishedAt: string;
-        postType?: string;
-        metrics: {
-          views?: number;
-          likes?: number;
-          comments?: number;
-          shares?: number;
-        };
-      }[];
-      stats?: {
-        followers?: number;
-        following?: number;
-        videoCount?: number;
-      };
-    };
+    const parsed = ingestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const { platform, accountId, posts, stats } = parsed.data;
 
     // Find the social account
     const account = await prisma.socialAccount.findFirst({
-      where: { platform: platform as "tiktok" | "youtube" | "instagram" | "twitter", accountId },
+      where: { platform, accountId },
     });
 
     if (!account) {
@@ -100,7 +110,7 @@ export async function POST(req: Request) {
           },
           create: {
             socialAccountId: account.id,
-            platform: platform as "tiktok" | "instagram" | "youtube" | "twitter",
+            platform: platform,
             postId: post.postId,
             postType: (post.postType as "video" | "short" | "image" | "carousel") || "video",
             title: sanitize(post.title, 200),
@@ -151,7 +161,7 @@ export async function POST(req: Request) {
                 create: {
                   postId: dbPost.id,
                   socialAccountId: account.id,
-                  platform: platform as "tiktok" | "instagram" | "youtube" | "twitter",
+                  platform: platform,
                   metricType: type,
                   metricDate: today,
                   metricValue: BigInt(value),
@@ -199,7 +209,7 @@ export async function POST(req: Request) {
           },
           create: {
             socialAccountId: account.id,
-            platform: platform as "tiktok" | "instagram" | "youtube" | "twitter",
+            platform: platform,
             rollupDate: rollupDate,
             totalFollowers: BigInt(stats.followers),
             newFollowers: BigInt(Math.max(0, newFollowers)),

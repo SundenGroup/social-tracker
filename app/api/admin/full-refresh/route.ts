@@ -210,7 +210,7 @@ export const POST = apiHandler(
 
     return NextResponse.json({ status: "started" });
   },
-  { requireAuth: true }
+  { requireAuth: true, requireAdmin: true }
 );
 
 // GET - Check current progress
@@ -250,5 +250,5 @@ export const GET = apiHandler(
       },
     });
   },
-  { requireAuth: true }
+  { requireAuth: true, requireAdmin: true }
 );

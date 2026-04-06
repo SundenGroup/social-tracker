@@ -110,54 +110,54 @@ export abstract class BaseCollector {
       const posts = await this.fetchPosts();
       this.logger(`Fetched ${posts.length} posts`);
 
-      // 2. Upsert posts into database
-      for (const post of posts) {
-        try {
-          await prisma.post.upsert({
-            where: {
-              socialAccountId_postId: {
-                socialAccountId: this.account.id,
-                postId: post.postId,
-              },
-            },
-            create: {
-              socialAccountId: this.account.id,
-              platform: post.platform,
-              postId: post.postId,
-              postType: post.postType,
-              title: this.sanitizeText(post.title),
-              description: this.sanitizeText(post.description),
-              contentUrl: post.contentUrl,
-              thumbnailUrl: post.thumbnailUrl,
-              publishedAt: post.publishedAt,
-            },
-            update: {
-              title: this.sanitizeText(post.title),
-              description: this.sanitizeText(post.description),
-              thumbnailUrl: post.thumbnailUrl,
-              publishedAt: post.publishedAt,
-              lastMetricRefreshAt: new Date(),
-            },
-          });
-          result.postsSynced++;
-        } catch (err) {
-          const msg = `Failed to upsert post ${post.postId}: ${err}`;
-          this.logger(msg);
-          result.errors.push(msg);
-        }
+      // 2. Fetch metrics for all posts
+      const postIds = posts.map((p) => p.postId);
+      const metrics = postIds.length > 0 ? await this.fetchMetrics(postIds) : [];
+      if (metrics.length > 0) {
+        this.logger(`Fetched ${metrics.length} metric records`);
       }
 
-      // 3. Fetch metrics for all posts
-      const postIds = posts.map((p) => p.postId);
-      if (postIds.length > 0) {
-        const metrics = await this.fetchMetrics(postIds);
-        this.logger(`Fetched ${metrics.length} metric records`);
+      // 3. Upsert posts and metrics in a single transaction
+      await prisma.$transaction(async (tx) => {
+        for (const post of posts) {
+          try {
+            await tx.post.upsert({
+              where: {
+                socialAccountId_postId: {
+                  socialAccountId: this.account.id,
+                  postId: post.postId,
+                },
+              },
+              create: {
+                socialAccountId: this.account.id,
+                platform: post.platform,
+                postId: post.postId,
+                postType: post.postType,
+                title: this.sanitizeText(post.title),
+                description: this.sanitizeText(post.description),
+                contentUrl: post.contentUrl,
+                thumbnailUrl: post.thumbnailUrl,
+                publishedAt: post.publishedAt,
+              },
+              update: {
+                title: this.sanitizeText(post.title),
+                description: this.sanitizeText(post.description),
+                thumbnailUrl: post.thumbnailUrl,
+                publishedAt: post.publishedAt,
+                lastMetricRefreshAt: new Date(),
+              },
+            });
+            result.postsSynced++;
+          } catch (err) {
+            const msg = `Failed to upsert post ${post.postId}: ${err instanceof Error ? err.message : err}`;
+            this.logger(msg);
+            result.errors.push(msg);
+          }
+        }
 
-        // 4. Upsert metrics
         for (const metric of metrics) {
           try {
-            // Find the DB post by external postId
-            const dbPost = await prisma.post.findUnique({
+            const dbPost = await tx.post.findUnique({
               where: {
                 socialAccountId_postId: {
                   socialAccountId: this.account.id,
@@ -169,7 +169,7 @@ export abstract class BaseCollector {
 
             if (!dbPost) continue;
 
-            await prisma.postMetric.upsert({
+            await tx.postMetric.upsert({
               where: {
                 postId_metricType_metricDate: {
                   postId: dbPost.id,
@@ -191,12 +191,12 @@ export abstract class BaseCollector {
             });
             result.metricsSynced++;
           } catch (err) {
-            const msg = `Failed to upsert metric for post ${metric.postId}: ${err}`;
+            const msg = `Failed to upsert metric for post ${metric.postId}: ${err instanceof Error ? err.message : err}`;
             this.logger(msg);
             result.errors.push(msg);
           }
         }
-      }
+      }, { timeout: 120000 });
 
       // 5. Update account stats and persist to AccountDailyRollup
       try {

@@ -31,5 +31,5 @@ export const PATCH = apiHandler(
 
     return NextResponse.json({ data: { hideSponsored: updated.hideSponsored } });
   },
-  { requireAuth: true }
+  { requireAuth: true, requireAdmin: true }
 );

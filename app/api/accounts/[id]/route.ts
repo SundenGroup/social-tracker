@@ -45,7 +45,7 @@ export const GET = apiHandler(
       },
     });
   },
-  { requireAuth: true }
+  { requireAuth: true, requireAdmin: true }
 );
 
 // PUT /api/accounts/[id] - Update account

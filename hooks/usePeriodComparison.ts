@@ -53,7 +53,7 @@ export function usePeriodComparison(
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     if (!initialized) return;
     setIsLoading(true);
     setError(null);
@@ -65,14 +65,15 @@ export function usePeriodComparison(
       if (selectedProfileId) {
         params.set("profileId", selectedProfileId);
       }
-      const res = await fetch(`/api/metrics/period-comparison?${params}`);
+      const res = await fetch(`/api/metrics/period-comparison?${params}`, { signal });
       const json = await res.json();
       if (!res.ok) {
         setError(json.error || "Failed to load period comparison data");
         return;
       }
       setData(json.data);
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError("Failed to load period comparison data");
     } finally {
       setIsLoading(false);
@@ -80,7 +81,9 @@ export function usePeriodComparison(
   }, [startDateA, endDateA, startDateB, endDateB, contentType, selectedProfileId, initialized]);
 
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
   }, [fetchData]);
 
   return { data, isLoading, error, refetch: fetchData };

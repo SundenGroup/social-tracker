@@ -81,12 +81,25 @@ export const POST = apiHandler(
       },
     });
 
+    // Try to send credentials via email; fall back to returning in response
+    let passwordDelivered = false;
+    try {
+      const { sendEmail } = await import("@/lib/email");
+      passwordDelivered = await sendEmail({
+        to: email,
+        subject: "Your Clutch Social account",
+        html: `<p>An account has been created for you.</p><p>Email: <strong>${email}</strong></p><p>Temporary password: <strong>${tempPassword}</strong></p><p>Please log in and change your password.</p>`,
+      });
+    } catch { /* SMTP not configured */ }
+
     return NextResponse.json(
       {
         data: {
           ...user,
           createdAt: user.createdAt.toISOString(),
-          tempPassword, // Return so admin can share with user
+          // Only include temp password if email delivery failed
+          ...(passwordDelivered ? {} : { tempPassword }),
+          passwordDelivered,
         },
       },
       { status: 201 }

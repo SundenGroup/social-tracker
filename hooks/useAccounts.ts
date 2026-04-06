@@ -8,18 +8,19 @@ export function useAccounts() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAccounts = useCallback(async () => {
+  const fetchAccounts = useCallback(async (signal?: AbortSignal) => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/accounts");
+      const res = await fetch("/api/accounts", { signal });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to fetch accounts");
         return;
       }
       setAccounts(data.data);
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError("Failed to fetch accounts");
     } finally {
       setIsLoading(false);
@@ -27,7 +28,9 @@ export function useAccounts() {
   }, []);
 
   useEffect(() => {
-    fetchAccounts();
+    const controller = new AbortController();
+    fetchAccounts(controller.signal);
+    return () => controller.abort();
   }, [fetchAccounts]);
 
   const deleteAccount = useCallback(async (id: string) => {

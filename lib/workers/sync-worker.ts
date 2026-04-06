@@ -31,45 +31,45 @@ export async function queueSync(
   accountId: string,
   syncType: SyncType
 ): Promise<string> {
-  // Auto-expire stale syncs stuck for over 30 minutes
-  const STALE_THRESHOLD = 30 * 60 * 1000;
-  const staleDate = new Date(Date.now() - STALE_THRESHOLD);
-  const staleJobs = await prisma.syncLog.findMany({
-    where: {
-      socialAccountId: accountId,
-      status: { in: ["pending", "syncing"] },
-      startedAt: { lt: staleDate },
-    },
-  });
-
-  if (staleJobs.length > 0) {
-    console.log(`[SyncWorker] Expiring ${staleJobs.length} stale sync(s) for account ${accountId}`);
-    await prisma.syncLog.updateMany({
-      where: { id: { in: staleJobs.map((j) => j.id) } },
+  // Atomic check-and-create: expire stale jobs, verify no active sync, create new log
+  const syncLog = await prisma.$transaction(async (tx) => {
+    // Auto-expire stale syncs stuck for over 30 minutes
+    const STALE_THRESHOLD = 30 * 60 * 1000;
+    const staleDate = new Date(Date.now() - STALE_THRESHOLD);
+    const { count: expiredCount } = await tx.syncLog.updateMany({
+      where: {
+        socialAccountId: accountId,
+        status: { in: ["pending", "syncing"] },
+        startedAt: { lt: staleDate },
+      },
       data: { status: "failed", errorMessage: "Auto-expired: stuck for >30 minutes", completedAt: new Date() },
     });
-  }
 
-  // Check for already-running sync (only recent ones — stale ones were just cleaned up)
-  const running = await prisma.syncLog.findFirst({
-    where: {
-      socialAccountId: accountId,
-      status: { in: ["pending", "syncing"] },
-    },
-  });
+    if (expiredCount > 0) {
+      console.log(`[SyncWorker] Expired ${expiredCount} stale sync(s) for account ${accountId}`);
+    }
 
-  if (running) {
-    throw new Error("A sync is already in progress for this account");
-  }
+    // Check for already-running sync (within the same transaction — no race window)
+    const running = await tx.syncLog.findFirst({
+      where: {
+        socialAccountId: accountId,
+        status: { in: ["pending", "syncing"] },
+      },
+    });
 
-  const syncLog = await prisma.syncLog.create({
-    data: {
-      socialAccountId: accountId,
-      syncType,
-      status: "pending",
-      startedAt: new Date(),
-    },
-  });
+    if (running) {
+      throw new Error("A sync is already in progress for this account");
+    }
+
+    return tx.syncLog.create({
+      data: {
+        socialAccountId: accountId,
+        syncType,
+        status: "pending",
+        startedAt: new Date(),
+      },
+    });
+  }, { isolationLevel: "Serializable" });
 
   // Fire and forget — process async
   processSyncJob(syncLog.id, accountId, syncType).catch((err) => {

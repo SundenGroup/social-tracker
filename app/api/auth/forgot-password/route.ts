@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       // In production, send email here with reset link:
       // `${process.env.NEXTAUTH_URL}/reset-password?token=${token}&email=${email}`
       console.log(
-        `[Auth] Password reset requested for ${email}. Token: ${token}`
+        `[Auth] Password reset requested for ${email}. Token generated (not logged for security).`
       );
     }
 
