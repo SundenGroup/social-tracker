@@ -81,6 +81,7 @@ export const GET = apiHandler(
           publishedAt: { gte: start, lte: end },
           isDeleted: false,
           ...postTypeFilter,
+          ...sponsoredFilter,
         },
         orderBy: { publishedAt: "desc" },
       }),

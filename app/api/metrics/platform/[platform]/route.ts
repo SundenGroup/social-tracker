@@ -64,6 +64,9 @@ export const GET = apiHandler(
     if (contentType && contentType !== "all") {
       postWhere.postType = contentType;
     }
+    if (hideSponsored) {
+      postWhere.isSponsored = false;
+    }
 
     // Previous period dates
     const rangeDuration = end.getTime() - start.getTime();

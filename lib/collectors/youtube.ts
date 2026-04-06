@@ -260,13 +260,17 @@ function parseISO8601Duration(duration: string): number {
  */
 async function isYouTubeShort(videoId: string): Promise<boolean> {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
       redirect: "follow",
+      signal: controller.signal,
       headers: {
         "Accept-Language": "en-US",
         "Cookie": "CONSENT=YES+",
       },
     });
+    clearTimeout(timeout);
     return res.url.includes("/shorts/");
   } catch {
     return false;

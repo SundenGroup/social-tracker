@@ -31,7 +31,26 @@ export async function queueSync(
   accountId: string,
   syncType: SyncType
 ): Promise<string> {
-  // Check for already-running sync
+  // Auto-expire stale syncs stuck for over 30 minutes
+  const STALE_THRESHOLD = 30 * 60 * 1000;
+  const staleDate = new Date(Date.now() - STALE_THRESHOLD);
+  const staleJobs = await prisma.syncLog.findMany({
+    where: {
+      socialAccountId: accountId,
+      status: { in: ["pending", "syncing"] },
+      startedAt: { lt: staleDate },
+    },
+  });
+
+  if (staleJobs.length > 0) {
+    console.log(`[SyncWorker] Expiring ${staleJobs.length} stale sync(s) for account ${accountId}`);
+    await prisma.syncLog.updateMany({
+      where: { id: { in: staleJobs.map((j) => j.id) } },
+      data: { status: "failed", errorMessage: "Auto-expired: stuck for >30 minutes", completedAt: new Date() },
+    });
+  }
+
+  // Check for already-running sync (only recent ones — stale ones were just cleaned up)
   const running = await prisma.syncLog.findFirst({
     where: {
       socialAccountId: accountId,
