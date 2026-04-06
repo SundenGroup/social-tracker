@@ -40,7 +40,7 @@ declare module "@auth/core/adapters" {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: 24 * 60 * 60 }, // 24 hours
   pages: {
     signIn: "/login",
   },
@@ -82,6 +82,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = user.role;
         token.organizationId = user.organizationId;
       }
+
+      // Periodically re-validate user is still active and org hasn't changed
+      // Check at most once every 5 minutes to avoid DB load on every request
+      const now = Math.floor(Date.now() / 1000);
+      const lastChecked = (token.lastChecked as number) ?? 0;
+      if (now - lastChecked > 300) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { isActive: true, role: true, organizationId: true },
+        });
+        if (!dbUser || !dbUser.isActive) {
+          // Return empty token to force sign-out
+          return { ...token, id: "", role: "viewer", organizationId: "" };
+        }
+        token.role = dbUser.role;
+        token.organizationId = dbUser.organizationId;
+        token.lastChecked = now;
+      }
+
       return token;
     },
     async session({ session, token }) {

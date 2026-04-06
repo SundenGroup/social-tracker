@@ -25,9 +25,10 @@ export async function POST(request: Request) {
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
+      // Generic message to prevent email enumeration
       return NextResponse.json(
-        { error: "A user with this email already exists" },
-        { status: 409 }
+        { error: "Registration failed. Please try again or contact support." },
+        { status: 400 }
       );
     }
 

@@ -2,6 +2,23 @@ import { prisma } from "@/lib/db";
 import { queueSync } from "@/lib/workers/sync-worker";
 
 /**
+ * Clean up expired sessions and verification tokens.
+ * Prevents unbounded DB growth from stale auth data.
+ */
+export async function cleanupExpiredAuthData(): Promise<void> {
+  const now = new Date();
+
+  const [sessions, tokens] = await Promise.all([
+    prisma.session.deleteMany({ where: { expires: { lt: now } } }),
+    prisma.verificationToken.deleteMany({ where: { expires: { lt: now } } }),
+  ]);
+
+  if (sessions.count > 0 || tokens.count > 0) {
+    console.log(`[Cron] Cleaned up ${sessions.count} expired sessions, ${tokens.count} expired tokens`);
+  }
+}
+
+/**
  * Daily sync job — triggers sync for all active social accounts.
  * Intended to run at 2 AM UTC via external cron trigger (e.g., Vercel Cron).
  *
@@ -12,6 +29,11 @@ export async function dailySyncJob(): Promise<{
   errors: string[];
 }> {
   console.log("[Cron] Starting daily sync job...");
+
+  // Clean up expired auth data before syncing
+  await cleanupExpiredAuthData().catch((err) =>
+    console.error("[Cron] Auth cleanup failed:", err)
+  );
 
   const accounts = await prisma.socialAccount.findMany({
     where: { isActive: true },

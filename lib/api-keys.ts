@@ -5,8 +5,9 @@ const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 
 function getKey(): Buffer {
-  const secret = process.env.NEXTAUTH_SECRET;
-  if (!secret) throw new Error("NEXTAUTH_SECRET is not set");
+  // Use dedicated encryption key if set, otherwise fall back to NEXTAUTH_SECRET
+  const secret = process.env.ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET;
+  if (!secret) throw new Error("ENCRYPTION_KEY or NEXTAUTH_SECRET must be set");
   return createHash("sha256").update(secret).digest();
 }
 
