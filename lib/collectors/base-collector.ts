@@ -82,15 +82,26 @@ export abstract class BaseCollector {
     return clean;
   }
 
-  async sync(syncType: SyncType): Promise<SyncResult> {
-    const syncLog = await prisma.syncLog.create({
-      data: {
-        socialAccountId: this.account.id,
-        syncType,
-        status: "syncing",
-        startedAt: new Date(),
-      },
-    });
+  async sync(syncType: SyncType, existingSyncLogId?: string): Promise<SyncResult> {
+    // Reuse existing sync log from worker if provided, otherwise create new
+    let syncLogId: string;
+    if (existingSyncLogId) {
+      await prisma.syncLog.update({
+        where: { id: existingSyncLogId },
+        data: { syncType, status: "syncing", startedAt: new Date() },
+      });
+      syncLogId = existingSyncLogId;
+    } else {
+      const syncLog = await prisma.syncLog.create({
+        data: {
+          socialAccountId: this.account.id,
+          syncType,
+          status: "syncing",
+          startedAt: new Date(),
+        },
+      });
+      syncLogId = syncLog.id;
+    }
 
     await prisma.socialAccount.update({
       where: { id: this.account.id },
@@ -287,7 +298,7 @@ export abstract class BaseCollector {
         result.errors.length > 0 && failRatio > 0.5 ? "failed" : "success";
 
       await prisma.syncLog.update({
-        where: { id: syncLog.id },
+        where: { id: syncLogId },
         data: {
           status,
           postsSynced: result.postsSynced,
@@ -315,7 +326,7 @@ export abstract class BaseCollector {
       this.logger(`Sync failed: ${err}`);
 
       await prisma.syncLog.update({
-        where: { id: syncLog.id },
+        where: { id: syncLogId },
         data: {
           status: "failed",
           errorMessage: String(err),

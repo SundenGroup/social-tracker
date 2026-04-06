@@ -155,6 +155,7 @@ model SocialAccount {
 
   @@unique([organizationId, platform, accountId])
   @@index([organizationId, platform])
+  @@index([organizationId, isActive])
   @@index([platform, accountId])
   @@index([profileId])
 }
@@ -186,6 +187,7 @@ model Post {
   @@index([socialAccountId, publishedAt])
   @@index([platform, publishedAt])
   @@index([lastMetricRefreshAt])
+  @@index([isDeleted, socialAccountId, publishedAt])
 }
 
 model PostMetric {
@@ -251,6 +253,7 @@ model SyncLog {
   createdAt   DateTime  @default(now())
 
   @@index([socialAccountId, createdAt])
+  @@index([socialAccountId, status, startedAt])
   @@index([status, createdAt])
 }
 

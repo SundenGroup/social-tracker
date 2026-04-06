@@ -59,10 +59,18 @@ export class TwitterCollector extends BaseCollector {
     this.bearerToken = token;
   }
 
-  private async xFetch<T>(url: string): Promise<T> {
+  private async xFetch<T>(url: string, retries = 3): Promise<T> {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${this.bearerToken}` },
     });
+
+    if (res.status === 429 && retries > 0) {
+      const retryAfter = Number(res.headers.get("retry-after") || "60");
+      const waitMs = Math.min(retryAfter, 120) * 1000 + Math.random() * 2000;
+      this.logger(`Rate limited (429). Waiting ${Math.round(waitMs / 1000)}s before retry...`);
+      await this.delay(waitMs);
+      return this.xFetch<T>(url, retries - 1);
+    }
 
     if (!res.ok) {
       const body = await res.text();

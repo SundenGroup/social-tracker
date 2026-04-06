@@ -33,8 +33,10 @@ export async function queueSync(
 ): Promise<string> {
   // Atomic check-and-create: expire stale jobs, verify no active sync, create new log
   const syncLog = await prisma.$transaction(async (tx) => {
-    // Auto-expire stale syncs stuck for over 30 minutes
-    const STALE_THRESHOLD = 30 * 60 * 1000;
+    // Platform-aware stale threshold: API-based (30min) vs browser-based scrapers (60min)
+    const account = await tx.socialAccount.findUnique({ where: { id: accountId }, select: { platform: true } });
+    const isBrowserBased = account?.platform === "tiktok" || account?.platform === "instagram";
+    const STALE_THRESHOLD = (isBrowserBased ? 60 : 30) * 60 * 1000;
     const staleDate = new Date(Date.now() - STALE_THRESHOLD);
     const { count: expiredCount } = await tx.syncLog.updateMany({
       where: {
@@ -109,25 +111,37 @@ async function processSyncJob(
   try {
     // Skip Instagram accounts with no auth token — they use the remote scraper
     if (account.platform === "instagram" && !account.authToken) {
-      await prisma.syncLog.delete({ where: { id: syncLogId } });
+      await prisma.syncLog.update({
+        where: { id: syncLogId },
+        data: { status: "failed", errorMessage: "Skipped — uses remote scraper", completedAt: new Date() },
+      });
       console.log(`[SyncWorker] Skipping ${account.accountName} — uses remote scraper`);
       return;
     }
 
-    // Delete the pending syncLog — the collector's sync() creates its own
-    await prisma.syncLog.delete({ where: { id: syncLogId } });
+    // Update the existing syncLog to syncing (instead of deleting — preserves audit trail)
+    await prisma.syncLog.update({
+      where: { id: syncLogId },
+      data: { status: "syncing" },
+    });
 
     const collector = getCollector(account);
-    await collector.sync(syncType);
+    await collector.sync(syncType, syncLogId);
   } catch (err) {
     console.error(
       `[SyncWorker] Attempt ${attempt}/${MAX_RETRIES} failed for ${account.accountName}:`,
       err
     );
 
+    // Ensure the sync log is marked failed
+    await prisma.syncLog.update({
+      where: { id: syncLogId },
+      data: { status: "failed", errorMessage: err instanceof Error ? err.message : String(err), completedAt: new Date() },
+    }).catch(() => { /* log may already be updated by collector */ });
+
     if (attempt < MAX_RETRIES) {
-      // Exponential backoff: 2s, 4s, 8s
-      const backoff = Math.pow(2, attempt) * 1000;
+      // Exponential backoff with jitter
+      const backoff = Math.pow(2, attempt) * 1000 * (0.5 + Math.random() * 0.5);
       await new Promise((resolve) => setTimeout(resolve, backoff));
 
       // Re-create pending log for retry

@@ -113,7 +113,7 @@ export class TikTokCollector extends BaseCollector {
 
       return await fn(page, browser);
     } finally {
-      await browser.close();
+      try { await browser.close(); } catch { /* browser may have already crashed */ }
     }
   }
 

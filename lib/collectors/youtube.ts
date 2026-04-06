@@ -10,9 +10,11 @@ import {
 import type { SocialAccount } from "@prisma/client";
 
 const BATCH_SIZE = 50; // YouTube API max per request
+const QUOTA_LIMIT = 9000; // Stop before hitting YouTube's 10k daily limit
 
 export class YouTubeCollector extends BaseCollector {
   private youtube;
+  private quotaUsed = 0;
 
   constructor(account: SocialAccount) {
     super(account);
@@ -31,10 +33,18 @@ export class YouTubeCollector extends BaseCollector {
     });
   }
 
+  private trackQuota(units: number) {
+    this.quotaUsed += units;
+    if (this.quotaUsed >= QUOTA_LIMIT) {
+      throw new Error(`YouTube API quota limit approaching (${this.quotaUsed} units used). Stopping to preserve quota.`);
+    }
+  }
+
   async fetchPosts(): Promise<PostData[]> {
     const posts: PostData[] = [];
 
     // Get the channel's uploads playlist
+    this.trackQuota(1);
     const channelRes = await this.youtube.channels.list({
       id: [this.account.accountId],
       part: ["contentDetails", "snippet"],
@@ -43,6 +53,7 @@ export class YouTubeCollector extends BaseCollector {
     const channel = channelRes.data.items?.[0];
     if (!channel) {
       // Try by forHandle/customUrl
+      this.trackQuota(1);
       const byHandle = await this.youtube.channels.list({
         forHandle: this.account.accountId,
         part: ["contentDetails", "snippet"],
@@ -74,6 +85,7 @@ export class YouTubeCollector extends BaseCollector {
     let nextPageToken: string | undefined;
 
     do {
+      this.trackQuota(1);
       const res = await this.youtube.playlistItems.list({
         playlistId,
         part: ["snippet", "contentDetails"],
@@ -120,6 +132,7 @@ export class YouTubeCollector extends BaseCollector {
     for (let i = 0; i < postIds.length; i += BATCH_SIZE) {
       const batch = postIds.slice(i, i + BATCH_SIZE);
 
+      this.trackQuota(1);
       const res = await this.youtube.videos.list({
         id: batch,
         part: ["statistics", "contentDetails"],
@@ -202,6 +215,7 @@ export class YouTubeCollector extends BaseCollector {
   }
 
   async getAccountStats(): Promise<AccountStats> {
+    this.trackQuota(1);
     const res = await this.youtube.channels.list({
       id: [this.account.accountId],
       part: ["statistics"],

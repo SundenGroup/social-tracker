@@ -84,6 +84,7 @@ export const GET = apiHandler(
           ...sponsoredFilter,
         },
         orderBy: { publishedAt: "desc" },
+        take: 5000,
       }),
       prisma.post.findMany({
         where: {

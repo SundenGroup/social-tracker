@@ -90,6 +90,7 @@ export const GET = apiHandler(
       prisma.post.findMany({
         where: postWhere,
         orderBy: { publishedAt: "desc" },
+        take: 5000,
       }),
       prisma.post.findMany({
         where: prevPostWhere,
