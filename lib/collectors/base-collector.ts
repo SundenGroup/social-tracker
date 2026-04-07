@@ -121,14 +121,7 @@ export abstract class BaseCollector {
       const posts = await this.fetchPosts();
       this.logger(`Fetched ${posts.length} posts`);
 
-      // 2. Fetch metrics for all posts
-      const postIds = posts.map((p) => p.postId);
-      const metrics = postIds.length > 0 ? await this.fetchMetrics(postIds) : [];
-      if (metrics.length > 0) {
-        this.logger(`Fetched ${metrics.length} metric records`);
-      }
-
-      // 3. Upsert posts and metrics in a single transaction
+      // 2. Upsert posts first (some collectors query the DB in fetchMetrics)
       await prisma.$transaction(async (tx) => {
         for (const post of posts) {
           try {
@@ -165,7 +158,17 @@ export abstract class BaseCollector {
             result.errors.push(msg);
           }
         }
+      }, { timeout: 120000 });
 
+      // 3. Fetch metrics (AFTER posts are in DB — some collectors query the DB here)
+      const postIds = posts.map((p) => p.postId);
+      const metrics = postIds.length > 0 ? await this.fetchMetrics(postIds) : [];
+      if (metrics.length > 0) {
+        this.logger(`Fetched ${metrics.length} metric records`);
+      }
+
+      // 4. Upsert metrics in a transaction
+      await prisma.$transaction(async (tx) => {
         for (const metric of metrics) {
           try {
             const dbPost = await tx.post.findUnique({
