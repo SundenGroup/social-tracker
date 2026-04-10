@@ -55,7 +55,7 @@ export default function RegisterForm() {
       if (signInRes?.error) {
         setError("Account created but sign-in failed. Please log in manually.");
       } else {
-        router.push("/dashboard");
+        router.push("/");
         router.refresh();
       }
     } catch {
