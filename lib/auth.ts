@@ -38,11 +38,28 @@ declare module "@auth/core/adapters" {
   }
 }
 
+const THIRTY_DAYS_SECONDS = 30 * 24 * 60 * 60;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 }, // 30 days
+  session: { strategy: "jwt", maxAge: THIRTY_DAYS_SECONDS },
+  jwt: { maxAge: THIRTY_DAYS_SECONDS },
   pages: {
     signIn: "/login",
+  },
+  // Explicit cookie config so the session token is persistent (not a
+  // session-only cookie) and survives browser restarts.
+  cookies: {
+    sessionToken: {
+      name: `__Secure-authjs.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: true,
+        maxAge: THIRTY_DAYS_SECONDS,
+      },
+    },
   },
   providers: [
     Credentials({
@@ -83,22 +100,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.organizationId = user.organizationId;
       }
 
-      // Periodically re-validate user is still active and org hasn't changed
-      // Check at most once every 5 minutes to avoid DB load on every request
+      // Periodically re-validate user is still active and org hasn't changed.
+      // Check at most once every 5 minutes to avoid DB load on every request.
+      // IMPORTANT: On any DB error we keep the existing token intact —
+      // a transient database hiccup must NOT sign the user out.
       const now = Math.floor(Date.now() / 1000);
       const lastChecked = (token.lastChecked as number) ?? 0;
-      if (now - lastChecked > 300) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.id as string },
-          select: { isActive: true, role: true, organizationId: true },
-        });
-        if (!dbUser || !dbUser.isActive) {
-          // Return empty token to force sign-out
-          return { ...token, id: "", role: "viewer", organizationId: "" };
+      if (token.id && now - lastChecked > 300) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { isActive: true, role: true, organizationId: true },
+          });
+          if (dbUser && dbUser.isActive) {
+            token.role = dbUser.role;
+            token.organizationId = dbUser.organizationId;
+            token.lastChecked = now;
+          } else if (dbUser && !dbUser.isActive) {
+            // User definitively deactivated — force sign-out
+            return { ...token, id: "", role: "viewer", organizationId: "" };
+          }
+          // dbUser === null: user not found. Could be a race with a fresh login
+          // or a stale read — don't wipe the session, just retry next cycle.
+        } catch (err) {
+          // DB unreachable / query failed — keep the existing token and
+          // back off for 5 minutes before trying again.
+          console.error("[auth] JWT revalidation DB error, keeping session:", err);
+          token.lastChecked = now;
         }
-        token.role = dbUser.role;
-        token.organizationId = dbUser.organizationId;
-        token.lastChecked = now;
       }
 
       return token;
