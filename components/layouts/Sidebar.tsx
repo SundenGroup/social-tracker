@@ -4,35 +4,55 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/components/providers/ThemeProvider";
+import { PlatformGlyph, PLATFORM_COLOR, type Platform } from "@/components/icons/PlatformGlyph";
 
-const NAV_ITEMS = [
+interface NavItem {
+  href: string;
+  label: string;
+}
+
+interface PlatformNavItem extends NavItem {
+  platform: Platform;
+}
+
+const REPORTING_ITEMS: NavItem[] = [
   { href: "/", label: "Overview" },
-  { href: "/platforms/youtube", label: "YouTube", indent: true },
-  { href: "/platforms/twitter", label: "X / Twitter", indent: true },
-  { href: "/platforms/instagram", label: "Instagram", indent: true },
-  { href: "/platforms/tiktok", label: "TikTok", indent: true },
-  { href: "/comparison", label: "Comparison" },
-  { href: "/period-comparison", label: "Period Comparison" },
+  { href: "/posts", label: "Post performance" },
+  { href: "/top-posts", label: "Top posts" },
+  { href: "/period-comparison", label: "Period comparison" },
+];
+
+const PLATFORM_ITEMS: PlatformNavItem[] = [
+  { href: "/platforms/youtube", label: "YouTube", platform: "youtube" },
+  { href: "/platforms/tiktok", label: "TikTok", platform: "tiktok" },
+  { href: "/platforms/twitter", label: "X / Twitter", platform: "twitter" },
+  { href: "/platforms/instagram", label: "Instagram", platform: "instagram" },
+];
+
+const WORKSPACE_ITEMS: NavItem[] = [
   { href: "/accounts", label: "Accounts" },
   { href: "/profiles", label: "Profiles" },
   { href: "/settings", label: "Settings" },
 ];
 
-const ADMIN_ITEMS = [
-  { href: "/users", label: "Users" },
-];
-
-// Pages that support profile filtering
+// Pages that support profile+date filtering in the querystring
 const PROFILE_PAGES = new Set([
-  "/", "/platforms/youtube", "/platforms/twitter",
-  "/platforms/instagram", "/platforms/tiktok",
-  "/comparison", "/period-comparison",
+  "/",
+  "/posts",
+  "/top-posts",
+  "/period-comparison",
+  "/platforms/youtube",
+  "/platforms/twitter",
+  "/platforms/instagram",
+  "/platforms/tiktok",
 ]);
 
 export default function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, isAdmin } = useAuth();
+  const { theme } = useTheme();
   const profileParam = searchParams.get("profile");
 
   function buildHref(href: string): string {
@@ -47,86 +67,256 @@ export default function Sidebar() {
     return qs ? `${href}?${qs}` : href;
   }
 
+  function isActive(href: string) {
+    if (href === "/") return pathname === "/";
+    return pathname.startsWith(href);
+  }
+
+  const initials = (user?.name ?? "??")
+    .split(/\s+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
   return (
-    <aside className="flex w-56 flex-shrink-0 flex-col border-r border-gray-200 bg-white">
-      {/* Logo */}
-      <div className="flex h-14 items-center border-b border-gray-200 px-4">
-        <Link href="/" className="flex items-center gap-1.5">
+    <aside
+      style={{
+        width: 232,
+        flexShrink: 0,
+        borderRight: "1px solid var(--border)",
+        background: "var(--bg-elev)",
+        display: "flex",
+        flexDirection: "column",
+        position: "sticky",
+        top: 0,
+        height: "100vh",
+      }}
+    >
+      {/* Logo row */}
+      <div
+        style={{
+          height: 56,
+          display: "flex",
+          alignItems: "center",
+          padding: "0 18px",
+          borderBottom: "1px solid var(--border)",
+          gap: 10,
+        }}
+      >
+        <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", flex: 1 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/logos/clutch-black.png"
+            src={theme === "dark" ? "/logos/clutch-white.png" : "/logos/clutch-black.png"}
             alt="Clutch Group"
-            className="h-7 w-auto"
+            style={{ height: 22, width: "auto", display: "block" }}
           />
-          <span className="text-[8px] font-bold uppercase tracking-widest text-clutch-black">
+          <span style={{ flex: 1 }} />
+          <span
+            className="mono"
+            style={{
+              fontSize: 9,
+              color: "var(--fg-muted)",
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              paddingLeft: 10,
+              borderLeft: "1px solid var(--border)",
+            }}
+          >
             Social
           </span>
         </Link>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex flex-1 flex-col gap-0.5 p-3">
-        {NAV_ITEMS.map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
-
-          return (
-            <Link
+      {/* Nav groups */}
+      <nav style={{ flex: 1, padding: "14px 10px", overflow: "auto" }}>
+        <NavGroup label="Reporting">
+          {REPORTING_ITEMS.map((item) => (
+            <NavRow
               key={item.href}
               href={buildHref(item.href)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                item.indent ? "pl-6" : ""
-              } ${
-                isActive
-                  ? "bg-clutch-blue/5 text-clutch-blue"
-                  : "text-clutch-grey hover:bg-clutch-white"
-              }`}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
+              label={item.label}
+              active={isActive(item.href)}
+            />
+          ))}
+        </NavGroup>
 
-        {isAdmin && (
-          <>
-            <div className="my-2 border-t border-gray-100" />
-            {ADMIN_ITEMS.map((item) => {
-              const isActive = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-clutch-blue/5 text-clutch-blue"
-                      : "text-clutch-grey hover:bg-clutch-white"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </>
-        )}
+        <NavGroup label="Platforms">
+          {PLATFORM_ITEMS.map((item) => (
+            <NavRow
+              key={item.href}
+              href={buildHref(item.href)}
+              label={item.label}
+              active={isActive(item.href)}
+              leading={
+                <span style={{ color: PLATFORM_COLOR[item.platform], display: "flex" }}>
+                  <PlatformGlyph platform={item.platform} size={13} />
+                </span>
+              }
+            />
+          ))}
+        </NavGroup>
+
+        <NavGroup label="Workspace">
+          {WORKSPACE_ITEMS.map((item) => (
+            <NavRow
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              active={isActive(item.href)}
+            />
+          ))}
+          {isAdmin && (
+            <NavRow
+              href="/users"
+              label="Users"
+              active={isActive("/users")}
+            />
+          )}
+        </NavGroup>
       </nav>
 
-      {/* User info + logout */}
-      <div className="border-t border-gray-200 p-3">
-        <div className="mb-2 px-3">
-          <p className="truncate text-sm font-medium text-clutch-black">
-            {user?.name}
-          </p>
-          <p className="truncate text-xs text-clutch-grey/50">{user?.email}</p>
+      {/* User footer */}
+      <div style={{ padding: 14, borderTop: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: "50%",
+              background: "var(--accent)",
+              display: "grid",
+              placeItems: "center",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: 11,
+              flexShrink: 0,
+            }}
+          >
+            {initials}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--fg)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {user?.name ?? "—"}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--fg-muted)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {user?.email ?? ""}
+            </div>
+          </div>
         </div>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-red-500 transition-colors hover:bg-red-50"
+          style={{
+            width: "100%",
+            padding: "6px 10px",
+            borderRadius: 7,
+            border: "1px solid var(--border)",
+            background: "transparent",
+            color: "var(--fg-muted)",
+            fontSize: 11,
+            fontWeight: 600,
+            textAlign: "left",
+          }}
         >
-          Sign Out
+          Sign out
         </button>
       </div>
     </aside>
+  );
+}
+
+function NavGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div
+        style={{
+          padding: "0 10px 6px",
+          fontSize: 10,
+          fontWeight: 600,
+          color: "var(--fg-subtle)",
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function NavRow({
+  href,
+  label,
+  active,
+  leading,
+}: {
+  href: string;
+  label: string;
+  active: boolean;
+  leading?: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "7px 10px",
+        borderRadius: 7,
+        fontSize: 13,
+        fontWeight: active ? 600 : 500,
+        color: active ? "var(--fg)" : "var(--fg-muted)",
+        background: active ? "var(--bg-sunken)" : "transparent",
+        textDecoration: "none",
+        marginBottom: 1,
+        position: "relative",
+      }}
+    >
+      {leading ?? (
+        <span
+          style={{
+            width: 13,
+            height: 13,
+            display: "inline-block",
+            borderRadius: 3,
+            background: active ? "var(--accent)" : "var(--border-strong)",
+          }}
+        />
+      )}
+      {label}
+      {active && (
+        <span
+          style={{
+            position: "absolute",
+            left: -10,
+            top: 6,
+            bottom: 6,
+            width: 2,
+            borderRadius: 2,
+            background: "var(--accent)",
+          }}
+        />
+      )}
+    </Link>
   );
 }

@@ -1,31 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import Header from "@/components/layouts/Header";
-import Link from "next/link";
-import KPICard from "@/components/cards/KPICard";
-import PeriodOverlayChart from "@/components/charts/PeriodOverlayChart";
-import PeriodComparisonTable from "@/components/tables/PeriodComparisonTable";
-import PeriodBarChart from "@/components/charts/PeriodBarChart";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import { Block } from "@/components/ui/Block";
+import { DeltaPill } from "@/components/ui/DeltaPill";
 import { usePeriodComparison } from "@/hooks/usePeriodComparison";
-
-function formatCompact(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
+import { fmtK, fmtInt } from "@/lib/format";
+import { PlatformGlyph, PLATFORM_COLOR, PLATFORM_LABEL } from "@/components/icons/PlatformGlyph";
 
 function toDateStr(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
-const PLATFORM_CONFIG: Record<string, { label: string; color: string; href: string }> = {
-  youtube: { label: "YouTube", color: "border-l-red-500", href: "/platforms/youtube" },
-  twitter: { label: "X / Twitter", color: "border-l-sky-500", href: "/platforms/twitter" },
-  instagram: { label: "Instagram", color: "border-l-pink-500", href: "/platforms/instagram" },
-  tiktok: { label: "TikTok", color: "border-l-gray-800", href: "/platforms/tiktok" },
-};
+function fmtRange(start: string, end: string) {
+  try {
+    const a = new Date(start);
+    const b = new Date(end);
+    const m = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const sameYear = a.getFullYear() === b.getFullYear();
+    return sameYear
+      ? `${m(a)} – ${m(b)}, ${b.getFullYear()}`
+      : `${m(a)}, ${a.getFullYear()} – ${m(b)}, ${b.getFullYear()}`;
+  } catch {
+    return `${start} – ${end}`;
+  }
+}
 
 const CONTENT_TYPES = [
   { label: "All", value: "all" },
@@ -70,210 +70,552 @@ export default function PeriodComparisonPage() {
 
   return (
     <>
-      <Header title="Period Comparison">
-        <button
-          onClick={() => refetch()}
-          className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-clutch-grey transition-colors hover:bg-gray-50"
+      <Header title="Period comparison" subtitle="This period vs. another" />
+
+      <div style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Period picker row */}
+        <div
+          style={{
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            borderRadius: 14,
+            padding: 14,
+            display: "flex",
+            gap: 14,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
         >
-          Refresh
-        </button>
-      </Header>
-
-      {/* Content Type Tabs */}
-      <div className="mb-6 flex gap-2">
-        {CONTENT_TYPES.map((ct) => (
+          <PeriodChip
+            label="Period A"
+            color="var(--accent)"
+            start={startA}
+            end={endA}
+            onStartChange={setStartA}
+            onEndChange={setEndA}
+          />
+          <div style={{ color: "var(--fg-subtle)", fontSize: 12, fontWeight: 600 }}>vs</div>
+          <PeriodChip
+            label="Period B"
+            color="var(--fg-subtle)"
+            dashed
+            start={startB}
+            end={endB}
+            onStartChange={setStartB}
+            onEndChange={setEndB}
+          />
+          <div style={{ flex: 1 }} />
           <button
-            key={ct.value}
-            onClick={() => setContentType(ct.value)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              contentType === ct.value
-                ? "bg-clutch-black text-white"
-                : "border border-gray-300 text-clutch-grey hover:bg-gray-50"
-            }`}
+            onClick={applyPreviousPeriod}
+            style={{
+              padding: "7px 12px",
+              fontSize: 12,
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--bg-sunken)",
+              color: "var(--fg-muted)",
+              fontWeight: 600,
+            }}
           >
-            {ct.label}
+            Previous period
           </button>
-        ))}
-      </div>
+          <button
+            onClick={applySamePeriodLastYear}
+            style={{
+              padding: "7px 12px",
+              fontSize: 12,
+              borderRadius: 8,
+              border: "none",
+              background: "var(--fg)",
+              color: "var(--bg-elev)",
+              fontWeight: 600,
+            }}
+          >
+            Same period last year
+          </button>
+        </div>
 
-      {/* Period Selection Bar */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
-        <div className="flex flex-wrap items-end gap-6">
-          {/* Period A */}
-          <div>
-            <p className="mb-1.5 text-xs font-semibold text-clutch-black">Period A</p>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={startA}
-                onChange={(e) => setStartA(e.target.value)}
-                className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-clutch-blue focus:outline-none"
+        {/* Content type filter */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {CONTENT_TYPES.map((ct) => {
+            const active = contentType === ct.value;
+            return (
+              <button
+                key={ct.value}
+                onClick={() => setContentType(ct.value)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: active ? "var(--fg)" : "var(--bg-elev)",
+                  color: active ? "var(--bg-elev)" : "var(--fg-muted)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                {ct.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {isLoading && !data && (
+          <div style={{ display: "flex", minHeight: 300, alignItems: "center", justifyContent: "center" }}>
+            <LoadingSpinner size="lg" />
+          </div>
+        )}
+
+        {error && (
+          <div
+            style={{
+              background: "color-mix(in srgb, var(--bad) 8%, transparent)",
+              color: "var(--bad)",
+              border: "1px solid color-mix(in srgb, var(--bad) 40%, transparent)",
+              borderRadius: 10,
+              padding: 14,
+              fontSize: 13,
+            }}
+          >
+            {error}
+            <button
+              onClick={() => refetch()}
+              style={{
+                marginLeft: 10,
+                padding: "4px 10px",
+                fontSize: 12,
+                borderRadius: 6,
+                border: "1px solid currentColor",
+                background: "transparent",
+                color: "inherit",
+                fontWeight: 600,
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {data && (
+          <>
+            {/* Delta-first KPI cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+              <DeltaCard
+                label="Total views"
+                currentValue={fmtK(data.periodA.summary.totalViews)}
+                previousValue={fmtK(data.periodB.summary.totalViews)}
+                delta={data.changes.views}
               />
-              <span className="text-xs text-clutch-grey/50">to</span>
-              <input
-                type="date"
-                value={endA}
-                onChange={(e) => setEndA(e.target.value)}
-                className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-clutch-blue focus:outline-none"
+              <DeltaCard
+                label="Engagements"
+                currentValue={fmtK(data.periodA.summary.totalEngagements)}
+                previousValue={fmtK(data.periodB.summary.totalEngagements)}
+                delta={data.changes.engagements}
+              />
+              <DeltaCard
+                label="Avg. eng. rate"
+                currentValue={`${data.periodA.summary.avgEngagementRate}%`}
+                previousValue={`${data.periodB.summary.avgEngagementRate}%`}
+                delta={data.changes.engagementRate}
+              />
+              <DeltaCard
+                label="Posts published"
+                currentValue={fmtInt(data.periodA.summary.totalPosts)}
+                previousValue={fmtInt(data.periodB.summary.totalPosts)}
+                delta={data.changes.posts}
               />
             </div>
-          </div>
 
-          {/* Period B */}
-          <div>
-            <p className="mb-1.5 text-xs font-semibold text-clutch-black">Period B</p>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={startB}
-                onChange={(e) => setStartB(e.target.value)}
-                className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-clutch-blue focus:outline-none"
-              />
-              <span className="text-xs text-clutch-grey/50">to</span>
-              <input
-                type="date"
-                value={endB}
-                onChange={(e) => setEndB(e.target.value)}
-                className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-clutch-blue focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Shortcuts */}
-          <div className="flex gap-2">
-            <button
-              onClick={applyPreviousPeriod}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-clutch-grey transition-colors hover:bg-gray-50"
-            >
-              Previous Period
-            </button>
-            <button
-              onClick={applySamePeriodLastYear}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-clutch-grey transition-colors hover:bg-gray-50"
-            >
-              Same Period Last Year
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {isLoading && (
-        <div className="flex h-96 items-center justify-center">
-          <LoadingSpinner size="lg" />
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">{error}</div>
-      )}
-
-      {data && !isLoading && (
-        <>
-          {/* KPI Cards */}
-          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <KPICard
-              label="Total Views"
-              value={formatCompact(data.periodA.summary.totalViews)}
-              subtitle={`vs ${formatCompact(data.periodB.summary.totalViews)}`}
-              trend={data.changes.views !== 0 ? {
-                value: Math.abs(data.changes.views),
-                isPositive: data.changes.views > 0,
-              } : undefined}
-            />
-            <KPICard
-              label="Total Engagements"
-              value={formatCompact(data.periodA.summary.totalEngagements)}
-              subtitle={`vs ${formatCompact(data.periodB.summary.totalEngagements)}`}
-              trend={data.changes.engagements !== 0 ? {
-                value: Math.abs(data.changes.engagements),
-                isPositive: data.changes.engagements > 0,
-              } : undefined}
-            />
-            <KPICard
-              label="Avg Eng. Rate"
-              value={`${data.periodA.summary.avgEngagementRate}%`}
-              subtitle={`vs ${data.periodB.summary.avgEngagementRate}%`}
-              trend={data.changes.engagementRate !== 0 ? {
-                value: Math.abs(data.changes.engagementRate),
-                isPositive: data.changes.engagementRate > 0,
-              } : undefined}
-            />
-            <KPICard
-              label="Posts Published"
-              value={String(data.periodA.summary.totalPosts)}
-              subtitle={`vs ${data.periodB.summary.totalPosts}`}
-              trend={data.changes.posts !== 0 ? {
-                value: Math.abs(data.changes.posts),
-                isPositive: data.changes.posts > 0,
-              } : undefined}
-            />
-          </div>
-
-          {/* Platform Cards */}
-          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-            {data.periodA.platforms.map((p) => {
-              const change = data.changes.platforms.find((c) => c.platform === p.platform);
-              const config = PLATFORM_CONFIG[p.platform] ?? { label: p.platform, color: "border-l-gray-400", href: "#" };
-              return (
-                <Link key={p.platform} href={config.href}>
-                  <div className={`rounded-xl border border-gray-200 border-l-4 ${config.color} bg-white p-5 transition-shadow hover:shadow-md`}>
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-clutch-grey/50">
-                      {config.label}
-                    </p>
-                    <div className="mb-1 flex gap-6">
-                      <div>
-                        <p className="text-lg font-bold text-clutch-black">{formatCompact(p.views)}</p>
-                        <p className="text-xs text-clutch-grey/50">Views</p>
+            {/* Per-platform comparison */}
+            <Block eyebrow="By platform" title="Where the lift came from">
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {data.periodA.platforms.map((p) => {
+                  const change = data.changes.platforms.find((c) => c.platform === p.platform);
+                  const b = data.periodB.platforms.find((x) => x.platform === p.platform);
+                  const max = Math.max(
+                    ...data.periodA.platforms.map((x) => x.views),
+                    ...data.periodB.platforms.map((x) => x.views),
+                    1
+                  );
+                  const color = PLATFORM_COLOR[p.platform] ?? "var(--fg-muted)";
+                  return (
+                    <div
+                      key={p.platform}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "140px 1fr 100px",
+                        gap: 14,
+                        alignItems: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "var(--fg)",
+                        }}
+                      >
+                        <span style={{ color }}>
+                          <PlatformGlyph platform={p.platform} size={14} />
+                        </span>
+                        {PLATFORM_LABEL[p.platform] ?? p.platform}
                       </div>
-                      <div>
-                        <p className="text-lg font-bold text-clutch-black">{formatCompact(p.engagements)}</p>
-                        <p className="text-xs text-clutch-grey/50">Eng.</p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <BarRow label="A" value={p.views} max={max} color={color} strong />
+                        <BarRow label="B" value={b?.views ?? 0} max={max} color="var(--border-strong)" />
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        {change && change.views !== 0 ? (
+                          <>
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 700,
+                                color: change.views > 0 ? "var(--good)" : "var(--bad)",
+                              }}
+                            >
+                              {change.views > 0 ? "+" : ""}
+                              {change.views.toFixed(1).replace(/\.0$/, "")}%
+                            </div>
+                            <div className="mono" style={{ fontSize: 10, color: "var(--fg-subtle)" }}>
+                              views
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ fontSize: 11, color: "var(--fg-subtle)" }}>no change</div>
+                        )}
                       </div>
                     </div>
-                    {change && change.views !== 0 && (
-                      <p className={`text-xs font-medium ${change.views > 0 ? "text-green-600" : "text-red-500"}`}>
-                        {change.views > 0 ? "\u25B2" : "\u25BC"} {change.views > 0 ? "+" : ""}{change.views}% views vs Period B
-                      </p>
-                    )}
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </Block>
 
-          {/* Overlay Trend Chart */}
-          <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-            <h2 className="mb-4 text-sm font-bold text-clutch-black">Views Trend Overlay</h2>
-            <PeriodOverlayChart
-              periodA={data.periodA.dailyTrend}
-              periodB={data.periodB.dailyTrend}
-              labelA={data.periodA.label}
-              labelB={data.periodB.label}
-            />
-          </div>
-
-          {/* Per-Platform Comparison Table */}
-          <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-            <h2 className="mb-4 text-sm font-bold text-clutch-black">Per-Platform Breakdown</h2>
-            <PeriodComparisonTable
-              platformsA={data.periodA.platforms}
-              platformsB={data.periodB.platforms}
-              changes={data.changes.platforms}
-            />
-          </div>
-
-          {/* Per-Platform Bar Chart */}
-          <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-            <h2 className="mb-4 text-sm font-bold text-clutch-black">Platform Comparison</h2>
-            <PeriodBarChart
-              platformsA={data.periodA.platforms}
-              platformsB={data.periodB.platforms}
-              labelA={data.periodA.label}
-              labelB={data.periodB.label}
-            />
-          </div>
-        </>
-      )}
+            {/* Trend overlay */}
+            <Block
+              eyebrow="Overlay"
+              title="Views — Period A vs Period B"
+              sub="Both series normalized to Day 1 – Day N."
+            >
+              <OverlayChart
+                seriesA={data.periodA.dailyTrend}
+                seriesB={data.periodB.dailyTrend}
+                labelA={data.periodA.label}
+                labelB={data.periodB.label}
+              />
+            </Block>
+          </>
+        )}
+      </div>
     </>
+  );
+}
+
+function PeriodChip({
+  label,
+  color,
+  start,
+  end,
+  onStartChange,
+  onEndChange,
+  dashed,
+}: {
+  label: string;
+  color: string;
+  start: string;
+  end: string;
+  onStartChange: (v: string) => void;
+  onEndChange: (v: string) => void;
+  dashed?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 12px",
+        borderRadius: 8,
+        background: "var(--bg-sunken)",
+      }}
+    >
+      <div
+        style={{
+          width: 18,
+          height: 3,
+          background: dashed ? "transparent" : color,
+          borderTop: dashed ? `2px dashed ${color}` : "none",
+        }}
+      />
+      <div>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: "var(--fg-subtle)",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+          }}
+        >
+          {label}
+        </div>
+        {editing ? (
+          <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 2 }}>
+            <input
+              type="date"
+              value={start}
+              onChange={(e) => onStartChange(e.target.value)}
+              style={{
+                padding: "2px 6px",
+                fontSize: 11,
+                borderRadius: 4,
+                border: "1px solid var(--border)",
+                background: "var(--bg-elev)",
+                color: "var(--fg)",
+              }}
+            />
+            <span style={{ fontSize: 11, color: "var(--fg-subtle)" }}>→</span>
+            <input
+              type="date"
+              value={end}
+              onChange={(e) => onEndChange(e.target.value)}
+              style={{
+                padding: "2px 6px",
+                fontSize: 11,
+                borderRadius: 4,
+                border: "1px solid var(--border)",
+                background: "var(--bg-elev)",
+                color: "var(--fg)",
+              }}
+            />
+            <button
+              onClick={() => setEditing(false)}
+              style={{
+                padding: "2px 8px",
+                fontSize: 10,
+                borderRadius: 4,
+                border: "none",
+                background: "var(--fg)",
+                color: "var(--bg-elev)",
+                fontWeight: 600,
+              }}
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            className="mono"
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--fg)",
+              background: "transparent",
+              border: "none",
+              padding: 0,
+            }}
+          >
+            {fmtRange(start, end)}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DeltaCard({
+  label,
+  currentValue,
+  previousValue,
+  delta,
+}: {
+  label: string;
+  currentValue: string;
+  previousValue: string;
+  delta: number;
+}) {
+  return (
+    <div
+      style={{
+        background: "var(--bg-elev)",
+        border: "1px solid var(--border)",
+        borderRadius: 14,
+        padding: "18px 20px",
+        position: "relative",
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 8 }}>{label}</div>
+      <div
+        className="tnum"
+        style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1, color: "var(--fg)" }}
+      >
+        {currentValue}
+      </div>
+      <DeltaPill delta={delta} sub={`vs ${previousValue}`} />
+    </div>
+  );
+}
+
+function BarRow({
+  label,
+  value,
+  max,
+  color,
+  strong,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: string;
+  strong?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "24px 1fr 64px",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <span className="mono" style={{ fontSize: 10, color: "var(--fg-subtle)", fontWeight: 600 }}>
+        {label}
+      </span>
+      <div
+        style={{
+          height: strong ? 12 : 10,
+          background: "var(--bg-sunken)",
+          borderRadius: 3,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{ height: "100%", width: `${(value / max) * 100}%`, background: color }}
+        />
+      </div>
+      <span
+        className="mono tnum"
+        style={{
+          fontSize: 11,
+          fontWeight: strong ? 700 : 500,
+          textAlign: "right",
+          color: strong ? "var(--fg)" : "var(--fg-muted)",
+        }}
+      >
+        {fmtK(value)}
+      </span>
+    </div>
+  );
+}
+
+function OverlayChart({
+  seriesA,
+  seriesB,
+  labelA,
+  labelB,
+}: {
+  seriesA: { day: number; views: number }[];
+  seriesB: { day: number; views: number }[];
+  labelA: string;
+  labelB: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(900);
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const { pathA, pathB, ticks } = useMemo(() => {
+    const h = 280;
+    const padL = 42;
+    const padR = 14;
+    const padT = 18;
+    const padB = 28;
+    const maxDays = Math.max(seriesA.length, seriesB.length, 2);
+    const max = Math.max(...seriesA.map((d) => d.views), ...seriesB.map((d) => d.views), 1);
+    const x = (i: number) => padL + (i / (maxDays - 1)) * (w - padL - padR);
+    const y = (v: number) => padT + (1 - v / max) * (h - padT - padB);
+    const pathA =
+      seriesA.length > 0 ? "M" + seriesA.map((d, i) => `${x(i)},${y(d.views)}`).join(" L ") : "";
+    const pathB =
+      seriesB.length > 0 ? "M" + seriesB.map((d, i) => `${x(i)},${y(d.views)}`).join(" L ") : "";
+    const ticks = [0, max * 0.25, max * 0.5, max * 0.75, max];
+    return { pathA, pathB, ticks, max, maxDays, x, y, h, padL, padR, padT, padB };
+  }, [seriesA, seriesB, w]);
+
+  const h = 280;
+  const padL = 42;
+  const padR = 14;
+  const padT = 18;
+  const padB = 28;
+  const maxDays = Math.max(seriesA.length, seriesB.length, 2);
+  const max = Math.max(...seriesA.map((d) => d.views), ...seriesB.map((d) => d.views), 1);
+  const x = (i: number) => padL + (i / (maxDays - 1)) * (w - padL - padR);
+  const y = (v: number) => padT + (1 - v / max) * (h - padT - padB);
+
+  return (
+    <div ref={ref}>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
+        {ticks.map((t, i) => (
+          <g key={i}>
+            <line
+              x1={padL}
+              x2={w - padR}
+              y1={y(t)}
+              y2={y(t)}
+              stroke="var(--border)"
+              strokeDasharray={i === 0 ? "0" : "2 4"}
+            />
+            <text x={padL - 8} y={y(t) + 3} textAnchor="end" fontSize="10" fill="var(--fg-subtle)" className="mono">
+              {fmtK(t)}
+            </text>
+          </g>
+        ))}
+        <path d={pathB} fill="none" stroke="var(--fg-subtle)" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.8" />
+        <path d={pathA} fill="none" stroke="var(--accent)" strokeWidth="2.2" />
+        {seriesA.map(
+          (d, i) =>
+            (i % Math.max(1, Math.floor(seriesA.length / 8)) === 0 || i === seriesA.length - 1) && (
+              <text
+                key={i}
+                x={x(i)}
+                y={h - 8}
+                textAnchor="middle"
+                fontSize="10"
+                fill="var(--fg-subtle)"
+                className="mono"
+              >
+                D{i + 1}
+              </text>
+            )
+        )}
+      </svg>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          gap: 18,
+          marginTop: 10,
+          fontSize: 11,
+          color: "var(--fg-muted)",
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 16, height: 2, background: "var(--accent)" }} /> {labelA}
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 16, height: 2, background: "var(--fg-subtle)", borderTop: "1px dashed" }} />{" "}
+          {labelB}
+        </span>
+      </div>
+    </div>
   );
 }

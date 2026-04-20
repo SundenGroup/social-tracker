@@ -9,10 +9,22 @@ interface DateRangePickerProps {
 }
 
 const PRESETS = [
-  { label: "7d", days: 7 },
-  { label: "30d", days: 30 },
-  { label: "90d", days: 90 },
+  { label: "7D", days: 7 },
+  { label: "30D", days: 30 },
+  { label: "90D", days: 90 },
 ];
+
+function fmtRange(a: string, b: string) {
+  try {
+    const ad = new Date(a);
+    const bd = new Date(b);
+    const m = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const sameYear = ad.getFullYear() === bd.getFullYear();
+    return `${m(ad)} → ${m(bd)}${sameYear ? "" : `, ${bd.getFullYear()}`}`;
+  } catch {
+    return `${a} → ${b}`;
+  }
+}
 
 export default function DateRangePicker({
   startDate,
@@ -22,17 +34,15 @@ export default function DateRangePicker({
   const [start, setStart] = useState(startDate);
   const [end, setEnd] = useState(endDate);
   const [activePreset, setActivePreset] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
 
-  // Sync local state when props change (e.g. URL navigation)
   useEffect(() => {
     setStart(startDate);
     setEnd(endDate);
   }, [startDate, endDate]);
 
-  // Whether local dates differ from the applied (prop) dates
   const hasUnappliedChanges = start !== startDate || end !== endDate;
 
-  // Detect active preset based on applied dates
   const detectPreset = useCallback(() => {
     const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
     if (endDate !== yesterday) return null;
@@ -43,71 +53,128 @@ export default function DateRangePicker({
     return null;
   }, [startDate, endDate]);
 
-  // Initialize active preset detection
-  if (activePreset === null && detectPreset() !== null) {
-    setActivePreset(detectPreset());
-  }
+  useEffect(() => {
+    const d = detectPreset();
+    setActivePreset(d);
+  }, [detectPreset]);
 
   function applyPreset(days: number) {
     const to = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-    const from = new Date(Date.now() - days * 86400000)
-      .toISOString()
-      .split("T")[0];
+    const from = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
     setStart(from);
     setEnd(to);
     setActivePreset(days);
+    setEditing(false);
     onChange(from, to);
   }
 
   function applyRange() {
     setActivePreset(null);
+    setEditing(false);
     onChange(start, end);
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex gap-1">
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      {/* Preset pills (segmented control) */}
+      <div
+        style={{
+          display: "flex",
+          background: "var(--bg-sunken)",
+          padding: 3,
+          borderRadius: 9,
+          border: "1px solid var(--border)",
+        }}
+      >
         {PRESETS.map((p) => {
           const isActive = activePreset === p.days && !hasUnappliedChanges;
-          const isPrimary = p.days <= 30;
           return (
             <button
               key={p.label}
               type="button"
               onClick={() => applyPreset(p.days)}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                isActive
-                  ? "bg-clutch-black text-white"
-                  : isPrimary
-                    ? "bg-gray-100 text-clutch-grey hover:bg-gray-200"
-                    : "bg-gray-50 text-clutch-grey/60 hover:bg-gray-100"
-              }`}
+              style={{
+                padding: "5px 12px",
+                borderRadius: 6,
+                border: "none",
+                background: isActive ? "var(--fg)" : "transparent",
+                color: isActive ? "var(--bg-elev)" : "var(--fg-muted)",
+                fontSize: 12,
+                fontWeight: 600,
+              }}
             >
               {p.label}
             </button>
           );
         })}
       </div>
-      <input
-        type="date"
-        value={start}
-        onChange={(e) => setStart(e.target.value)}
-        className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-clutch-blue focus:outline-none"
-      />
-      <span className="text-xs text-clutch-grey/50">to</span>
-      <input
-        type="date"
-        value={end}
-        onChange={(e) => setEnd(e.target.value)}
-        className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-clutch-blue focus:outline-none"
-      />
-      {hasUnappliedChanges && (
+
+      {/* Range summary chip / editor */}
+      {editing ? (
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <input
+            type="date"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            style={{
+              padding: "4px 8px",
+              fontSize: 12,
+              borderRadius: 6,
+              border: "1px solid var(--border)",
+              background: "var(--bg-elev)",
+              color: "var(--fg)",
+            }}
+          />
+          <span style={{ color: "var(--fg-subtle)", fontSize: 12 }}>→</span>
+          <input
+            type="date"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+            style={{
+              padding: "4px 8px",
+              fontSize: 12,
+              borderRadius: 6,
+              border: "1px solid var(--border)",
+              background: "var(--bg-elev)",
+              color: "var(--fg)",
+            }}
+          />
+          <button
+            type="button"
+            onClick={applyRange}
+            disabled={!hasUnappliedChanges}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 6,
+              background: "var(--fg)",
+              color: "var(--bg-elev)",
+              border: "none",
+              fontSize: 11,
+              fontWeight: 600,
+              opacity: hasUnappliedChanges ? 1 : 0.5,
+            }}
+          >
+            Apply
+          </button>
+        </div>
+      ) : (
         <button
           type="button"
-          onClick={applyRange}
-          className="rounded-md bg-clutch-blue px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-clutch-blue/90"
+          onClick={() => setEditing(true)}
+          className="mono tnum"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 10px",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            fontSize: 12,
+            color: "var(--fg-muted)",
+            background: "var(--bg-elev)",
+          }}
         >
-          Apply
+          {fmtRange(startDate, endDate)}
         </button>
       )}
     </div>

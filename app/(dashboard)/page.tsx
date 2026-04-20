@@ -1,206 +1,354 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useState, useMemo } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
 import KPICard from "@/components/cards/KPICard";
-import PlatformCard from "@/components/cards/PlatformCard";
+import PlatformStrip, { type PlatformStripItem } from "@/components/cards/PlatformStrip";
 import ContentPerformanceTable from "@/components/tables/ContentPerformanceTable";
-import WeeklyTrendChart from "@/components/charts/WeeklyTrendChart";
+import TopPostCard from "@/components/cards/TopPostCard";
+import { Block } from "@/components/ui/Block";
+import {
+  StackedSmoothChart,
+  SmallMultiplesChart,
+  AnnotatedBarsChart,
+  ChartVariantSwitcher,
+  ChartLegend,
+  type ChartVariant,
+} from "@/components/charts/TrendChartVariants";
+import CadenceHeatmap, { buildCadenceGrid } from "@/components/charts/CadenceHeatmap";
+import ContentMixDonut from "@/components/charts/ContentMixDonut";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { useDashboard } from "@/hooks/useDashboard";
+import { fmtK, fmtInt } from "@/lib/format";
+import type { Platform } from "@/components/icons/PlatformGlyph";
 
-function formatCompact(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
+const CONTENT_TYPE_TABS = [
+  { label: "All", value: "all" },
+  { label: "Video", value: "video" },
+  { label: "Short-form", value: "short-form" },
+  { label: "Long-form", value: "long-form" },
+  { label: "Image", value: "image" },
+];
 
 export default function DashboardPage() {
   const { startDate, endDate, setDateRange } = useDateRange();
   const [contentType, setContentType] = useState("all");
+  const [chartVariant, setChartVariant] = useState<ChartVariant>("stacked");
   const { data, isLoading, error, refetch } = useDashboard(startDate, endDate, contentType);
 
-  if (isLoading) {
-    return (
-      <div className="flex h-96 items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
+  // Build per-platform sparkline data from the trend series
+  const platformStripItems: PlatformStripItem[] = useMemo(() => {
+    if (!data) return [];
+    return data.platforms.map((p) => ({
+      platform: p.platform,
+      views: p.views,
+      engagements: p.engagements,
+      followers: p.followers,
+      followerGrowth: p.followerGrowth,
+      engagementRate: p.views > 0 ? (p.engagements / p.views) * 100 : 0,
+      topPost: p.topPost,
+      sparkline: data.trends.map((t) => {
+        const key = p.platform as keyof typeof t;
+        return (typeof t[key] === "number" ? (t[key] as number) : 0);
+      }),
+    }));
+  }, [data]);
+
+  const cadenceGrid = useMemo(() => {
+    if (!data) return [];
+    return buildCadenceGrid(
+      data.posts.map((p) => ({ publishedAt: p.publishedAt, views: p.views }))
     );
-  }
+  }, [data]);
 
-  if (error) {
-    return (
-      <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
-        {error}
-      </div>
-    );
-  }
+  const contentMix = useMemo(() => {
+    if (!data) return [];
+    const tally = new Map<string, number>();
+    for (const p of data.posts) {
+      tally.set(p.postType, (tally.get(p.postType) ?? 0) + p.views);
+    }
+    const palette: Record<string, string> = {
+      video: "var(--accent)",
+      "short-form": "var(--blue)",
+      "long-form": "#7C86FF",
+      image: "var(--fg-muted)",
+      carousel: "#1DA1F2",
+    };
+    return Array.from(tally.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value]) => ({
+        label: label.charAt(0).toUpperCase() + label.slice(1),
+        value,
+        color: palette[label] ?? "var(--fg-muted)",
+      }));
+  }, [data]);
 
-  if (!data) return null;
+  const topPosts = useMemo(() => {
+    if (!data) return [];
+    return [...data.posts].sort((a, b) => b.views - a.views).slice(0, 5);
+  }, [data]);
 
-  // Compute range label for KPI subtitles
-  const daysDiff = Math.round(
-    (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000
+  // Range label for KPI subtitles
+  const daysDiff = Math.max(
+    1,
+    Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000)
   );
   const rangeLabel = `from content posted in last ${daysDiff} days`;
 
-  const syncStatusColor = (status: string) => {
-    switch (status) {
-      case "success": return "text-green-600 bg-green-50";
-      case "failed": return "text-red-600 bg-red-50";
-      case "syncing": return "text-yellow-600 bg-yellow-50";
-      default: return "text-gray-500 bg-gray-50";
-    }
-  };
+  // Sync status summary
+  const syncSummary = useMemo(() => {
+    if (!data || data.accounts.length === 0) return null;
+    const ok = data.accounts.filter((a) => a.syncStatus === "success").length;
+    const total = data.accounts.length;
+    const lastSynced = data.accounts
+      .map((a) => (a.lastSyncedAt ? new Date(a.lastSyncedAt).getTime() : 0))
+      .reduce((a, b) => Math.max(a, b), 0);
+    const minutesAgo = lastSynced ? Math.round((Date.now() - lastSynced) / 60000) : null;
+    return { ok, total, minutesAgo };
+  }, [data]);
 
   return (
     <>
-      <Header title="Overview">
+      <Header title="Overview" subtitle="All platforms · selected period">
         <DateRangePicker
           startDate={startDate}
           endDate={endDate}
           onChange={(s, e) => setDateRange(s, e)}
         />
-        <button
-          onClick={() => refetch()}
-          className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-clutch-grey transition-colors hover:bg-gray-50"
-        >
-          Refresh
-        </button>
       </Header>
 
-      {/* Content Type Tabs */}
-      <div className="mb-6 flex gap-2">
-        {[
-          { label: "All", value: "all" },
-          { label: "Video", value: "video" },
-          { label: "Short-form", value: "short-form" },
-          { label: "Long-form", value: "long-form" },
-          { label: "Image", value: "image" },
-        ].map((ct) => (
-          <button
-            key={ct.value}
-            onClick={() => setContentType(ct.value)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              contentType === ct.value
-                ? "bg-clutch-black text-white"
-                : "border border-gray-300 text-clutch-grey hover:bg-gray-50"
-            }`}
-          >
-            {ct.label}
-          </button>
-        ))}
-      </div>
-
-      {/* KPI Cards */}
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <KPICard
-          label="Total Views"
-          value={formatCompact(data.summary.totalViews)}
-          subtitle={rangeLabel}
-          trend={data.summary.comparison?.views != null ? {
-            value: data.summary.comparison.views,
-            isPositive: data.summary.comparison.views >= 0,
-          } : undefined}
-        />
-        {/* Combined Engagement + Rate card */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <p className="mb-1 text-xs font-medium text-clutch-grey/60">Engagements</p>
-          <div className="flex items-baseline gap-2">
-            <p className="text-2xl font-bold text-clutch-black">{formatCompact(data.summary.totalEngagements)}</p>
-            <p className="text-sm font-medium text-clutch-grey/60">({data.summary.avgEngagementRate}%)</p>
-          </div>
-          {data.summary.comparison?.engagements != null && (
-            <p className={`mt-1 text-xs font-medium ${data.summary.comparison.engagements >= 0 ? "text-green-600" : "text-red-500"}`}>
-              {data.summary.comparison.engagements >= 0 ? "\u25B2 +" : "\u25BC -"}{Math.abs(data.summary.comparison.engagements)}%
-              <span className="ml-1 font-normal text-clutch-grey/40">vs prev</span>
-            </p>
-          )}
-          <p className="mt-1 text-[10px] text-clutch-grey/40">{rangeLabel}</p>
+      {isLoading && !data && (
+        <div style={{ display: "flex", minHeight: 400, alignItems: "center", justifyContent: "center" }}>
+          <LoadingSpinner size="lg" />
         </div>
-        <KPICard
-          label="Total Posts"
-          value={String(data.summary.totalPosts)}
-          subtitle={rangeLabel}
-          trend={data.summary.comparison?.posts != null ? {
-            value: data.summary.comparison.posts,
-            isPositive: data.summary.comparison.posts >= 0,
-          } : undefined}
-        />
-        <KPICard
-          label="Total Followers"
-          value={formatCompact(data.summary.totalFollowers)}
-          trend={data.summary.totalFollowerGrowth !== 0 ? {
-            value: data.summary.totalFollowerGrowth,
-            isPositive: data.summary.totalFollowerGrowth > 0,
-            isAbsolute: true,
-          } : undefined}
-        />
-      </div>
+      )}
 
-      {/* Platform Cards */}
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        {data.platforms.map((p) => (
-          <PlatformCard
-            key={p.platform}
-            platform={p.platform}
-            views={p.views}
-            engagements={p.engagements}
-            topPost={p.topPost}
-            followers={p.followers}
-            followerGrowth={p.followerGrowth}
-          />
-        ))}
-      </div>
-
-      {/* Weekly Trend Chart */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-bold text-clutch-black">
-          Views by Publish Date
-        </h2>
-        <WeeklyTrendChart data={data.trends} />
-      </div>
-
-      {/* Content Performance Table */}
-      <div className="mb-6">
-        <h2 className="mb-3 text-sm font-bold text-clutch-black">
-          Content Performance
-        </h2>
-        <ContentPerformanceTable posts={data.posts} onToggleSponsored={() => refetch()} />
-      </div>
-
-      {/* Account Health */}
-      {data.accounts.length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-bold text-clutch-black">
-            Account Health
-          </h2>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {data.accounts.map((account) => (
-              <div
-                key={account.id}
-                className="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-3"
-              >
-                <div>
-                  <p className="text-sm font-medium text-clutch-black">
-                    {account.accountName}
-                  </p>
-                  <p className="text-xs text-clutch-grey/50">
-                    {account.lastSyncedAt
-                      ? `Synced ${new Date(account.lastSyncedAt).toLocaleDateString()}`
-                      : "Never synced"}
-                  </p>
-                </div>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${syncStatusColor(account.syncStatus)}`}
-                >
-                  {account.syncStatus}
-                </span>
-              </div>
-            ))}
+      {error && (
+        <div style={{ padding: "24px 28px" }}>
+          <div
+            style={{
+              background: "color-mix(in srgb, var(--bad) 8%, transparent)",
+              color: "var(--bad)",
+              border: "1px solid color-mix(in srgb, var(--bad) 40%, transparent)",
+              borderRadius: 10,
+              padding: 14,
+              fontSize: 13,
+            }}
+          >
+            {error}
+            <button
+              onClick={() => refetch()}
+              style={{
+                marginLeft: 10,
+                padding: "4px 10px",
+                fontSize: 12,
+                borderRadius: 6,
+                border: "1px solid currentColor",
+                background: "transparent",
+                color: "inherit",
+                fontWeight: 600,
+              }}
+            >
+              Retry
+            </button>
           </div>
+        </div>
+      )}
+
+      {data && (
+        <div style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Content type tabs + sync status */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {CONTENT_TYPE_TABS.map((ct) => {
+                const active = contentType === ct.value;
+                return (
+                  <button
+                    key={ct.value}
+                    onClick={() => setContentType(ct.value)}
+                    style={{
+                      padding: "7px 12px",
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                      background: active ? "var(--fg)" : "var(--bg-elev)",
+                      color: active ? "var(--bg-elev)" : "var(--fg-muted)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {ct.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {syncSummary && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--fg-subtle)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: syncSummary.ok === syncSummary.total ? "var(--good)" : "var(--bad)",
+                  }}
+                />
+                {syncSummary.minutesAgo != null
+                  ? `Synced ${syncSummary.minutesAgo} min ago across ${syncSummary.total} accounts`
+                  : `${syncSummary.ok}/${syncSummary.total} accounts synced`}
+              </div>
+            )}
+          </div>
+
+          {/* KPI cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+            <KPICard
+              label="Total views"
+              value={fmtK(data.summary.totalViews)}
+              delta={data.summary.comparison?.views}
+              deltaSub={rangeLabel}
+              sparkline={data.trends.map(
+                (t) => (t.youtube ?? 0) + (t.twitter ?? 0) + (t.instagram ?? 0) + (t.tiktok ?? 0)
+              )}
+            />
+            <KPICard
+              label="Engagements"
+              value={fmtK(data.summary.totalEngagements)}
+              delta={data.summary.comparison?.engagements}
+              deltaSub={`${data.summary.avgEngagementRate}% eng. rate`}
+            />
+            <KPICard
+              label="Posts published"
+              value={fmtInt(data.summary.totalPosts)}
+              delta={data.summary.comparison?.posts}
+              deltaSub={`across ${data.platforms.length} platforms`}
+            />
+            <KPICard
+              label="Followers"
+              value={fmtK(data.summary.totalFollowers)}
+              delta={
+                data.summary.totalFollowers > 0 && data.summary.totalFollowerGrowth !== 0
+                  ? (data.summary.totalFollowerGrowth / data.summary.totalFollowers) * 100
+                  : null
+              }
+              deltaSub={
+                data.summary.totalFollowerGrowth !== 0
+                  ? `${data.summary.totalFollowerGrowth > 0 ? "+" : ""}${fmtK(
+                      data.summary.totalFollowerGrowth
+                    )} this period`
+                  : "no change this period"
+              }
+            />
+          </div>
+
+          {/* Platform strip */}
+          {platformStripItems.length > 0 && <PlatformStrip items={platformStripItems} />}
+
+          {/* Main trend chart with variant switcher */}
+          <Block
+            eyebrow="Performance"
+            title="Views by publish date"
+            rightSlot={<ChartVariantSwitcher value={chartVariant} onChange={setChartVariant} />}
+          >
+            {chartVariant === "stacked" && <StackedSmoothChart data={data.trends} />}
+            {chartVariant === "multiples" && <SmallMultiplesChart data={data.trends} />}
+            {chartVariant === "bars" && <AnnotatedBarsChart data={data.trends} />}
+            <ChartLegend />
+          </Block>
+
+          {/* Cadence heatmap */}
+          {data.posts.length > 0 && (
+            <Block
+              eyebrow="Cadence"
+              title="When posts land best"
+              sub="Brighter cells = more posts. Hover for detail."
+            >
+              <CadenceHeatmap grid={cadenceGrid} />
+            </Block>
+          )}
+
+          {/* Top posts strip + content mix */}
+          {topPosts.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
+              <Block
+                eyebrow="Top posts"
+                title="Most-watched this period"
+                rightSlot={
+                  <Link
+                    href="/top-posts"
+                    style={{
+                      fontSize: 12,
+                      color: "var(--fg-muted)",
+                      textDecoration: "none",
+                      fontWeight: 600,
+                    }}
+                  >
+                    View all →
+                  </Link>
+                }
+              >
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+                  {topPosts.map((p, i) => (
+                    <TopPostCard key={p.id} post={p} rank={i + 1} compact />
+                  ))}
+                </div>
+              </Block>
+              <Block eyebrow="Content mix" title="What drove the views">
+                <ContentMixDonut
+                  segments={contentMix}
+                  centerLabel={fmtK(data.posts.length)}
+                  centerSub="posts"
+                />
+              </Block>
+            </div>
+          )}
+
+          {/* Full performance table */}
+          <Block
+            eyebrow="All posts"
+            title="Post performance"
+            rightSlot={
+              <Link
+                href="/posts"
+                style={{
+                  fontSize: 12,
+                  color: "var(--fg-muted)",
+                  textDecoration: "none",
+                  fontWeight: 600,
+                }}
+              >
+                View full table →
+              </Link>
+            }
+            flush
+          >
+            <div style={{ padding: "0 20px 20px" }}>
+              <ContentPerformanceTable
+                posts={data.posts}
+                maxRows={10}
+                hideToolbar
+                onToggleSponsored={() => refetch()}
+              />
+            </div>
+          </Block>
         </div>
       )}
     </>

@@ -1,28 +1,188 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap');
 @import "tailwindcss";
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-
-  /* Clutch Brand Colors */
+  /* Clutch brand constants */
   --color-clutch-red: #FF154D;
   --color-clutch-blue: #121B6C;
   --color-clutch-black: #05090E;
   --color-clutch-grey: #1F2328;
   --color-clutch-white: #EBEFF4;
 
-  /* Font */
-  --font-sans: 'DM Sans', sans-serif;
+  /* Platform brand colors */
+  --color-platform-yt: #FF0033;
+  --color-platform-tt: #111111;
+  --color-platform-x: #1DA1F2;
+  --color-platform-ig: #E4405F;
+
+  /* Font families */
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-serif: 'Instrument Serif', Georgia, serif;
 }
 
+/*
+ * Semantic design tokens.
+ * Switched by html[data-theme] and html[data-direction] attributes so the
+ * same component CSS works across all 4 combinations.
+ */
+
+/* modern + light — the production default */
 :root {
-  --background: #EBEFF4;
-  --foreground: #05090E;
+  --bg:             #F4F6FA;
+  --bg-elev:        #FFFFFF;
+  --bg-sunken:      #EBEFF4;
+  --fg:             #05090E;
+  --fg-muted:       #5B6470;
+  --fg-subtle:      #8A94A2;
+  --border:         #E3E8EF;
+  --border-strong:  #CDD5E0;
+  --accent:         #FF154D;
+  --accent-soft:    #FFE4EC;
+  --blue:           #121B6C;
+  --good:           #0F9D58;
+  --bad:            #E53935;
+
+  --yt: #FF0033;
+  --tt: #111111;
+  --tw: #1DA1F2;
+  --ig: #E4405F;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
 }
+
+/* modern + dark */
+html[data-theme="dark"] {
+  --bg:             #0A0D12;
+  --bg-elev:        #121620;
+  --bg-sunken:      #05090E;
+  --fg:             #F5F7FA;
+  --fg-muted:       #9BA3AF;
+  --fg-subtle:      #6B7280;
+  --border:         #222938;
+  --border-strong:  #313B4E;
+  --accent:         #FF154D;
+  --accent-soft:    #2A0A17;
+  --blue:           #5E6BFF;
+  --good:           #4ADE80;
+  --bad:            #F87171;
+  --tt:             #F5F7FA;
+}
+
+/* courtside + light */
+html[data-direction="courtside"] {
+  --bg:             #F1EEE6;
+  --bg-elev:        #FBF9F4;
+  --bg-sunken:      #E6E1D2;
+  --fg:             #0A0A0A;
+  --fg-muted:       #4A4538;
+  --fg-subtle:      #77715F;
+  --border:         #D8D1BD;
+  --border-strong:  #BBB39D;
+  --accent:         #FF154D;
+  --accent-soft:    #F8D5DE;
+  --blue:           #121B6C;
+
+  --r-sm: 0px;
+  --r-md: 0px;
+  --r-lg: 0px;
+  --r-xl: 0px;
+}
+
+/* courtside + dark */
+html[data-direction="courtside"][data-theme="dark"] {
+  --bg:             #0B0A08;
+  --bg-elev:        #141210;
+  --bg-sunken:      #05050A;
+  --fg:             #F4EFE1;
+  --fg-muted:       #A89E86;
+  --fg-subtle:      #6E6650;
+  --border:         #26231C;
+  --border-strong:  #3A3528;
+  --accent:         #FF154D;
+  --accent-soft:    #2B0A14;
+  --tt:             #F4EFE1;
+}
+
+* { box-sizing: border-box; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  margin: 0;
   font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "zero", "ss02";
+}
+
+.serif {
+  font-family: var(--font-serif);
+}
+
+/* Tabular numerals for data readouts */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Courtside uses serif display for h1 by default */
+html[data-direction="courtside"] h1.display {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+button { font-family: inherit; cursor: pointer; }
+
+/* Subtle diagonal stripe used for placeholders / coming-soon surfaces */
+.stripes {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--fg) 6%, transparent) 0 8px,
+    transparent 8px 16px
+  );
+}
+
+/* Courtside broadcast masthead rule */
+html[data-direction="courtside"] .masthead-rule {
+  border-top: 3px solid var(--fg);
+  border-bottom: 1px solid var(--fg);
+  padding: 2px 0;
+}
+
+/* Courtside "3D" card offset shadow */
+html[data-direction="courtside"] .court-shadow {
+  box-shadow: 3px 3px 0 var(--fg);
+}
+
+/* Hairline utility */
+.hairline {
+  border-color: var(--border);
+}
+
+/* Shared card base — lets components just add .card */
+.card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+html[data-direction="courtside"] .card {
+  border-color: var(--fg);
+}
+
+/* Focus ring */
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

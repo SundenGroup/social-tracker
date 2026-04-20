@@ -1,42 +1,133 @@
-function formatCompactTrend(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${(abs / 1_000).toFixed(1)}K`;
-  return String(abs);
+"use client";
+
+import { Sparkline } from "@/components/ui/Sparkline";
+import { DeltaPill } from "@/components/ui/DeltaPill";
+
+interface TrendLegacy {
+  value: number;
+  isPositive: boolean;
+  isAbsolute?: boolean;
 }
 
 interface KPICardProps {
   label: string;
   value: string | number;
   subtitle?: string;
-  trend?: {
-    value: number;
-    isPositive: boolean;
-    isAbsolute?: boolean;
-  };
+
+  /** New-style delta (percentage, sign matters). Preferred. */
+  delta?: number | null;
+  /** Sub caption under the delta (e.g. "vs previous 29 days"). */
+  deltaSub?: string;
+
+  /** Optional sparkline values */
+  sparkline?: number[];
+  /** Accent color for the sparkline + the dot next to the label. Defaults to brand red. */
+  accent?: string;
+
+  /** Legacy shape (preserved for callers that haven't migrated yet) */
+  trend?: TrendLegacy;
 }
 
-export default function KPICard({ label, value, subtitle, trend }: KPICardProps) {
+/**
+ * The redesigned KPI card.
+ *
+ * - Small eyebrow label (optionally with an accent dot)
+ * - Big tabular-num value
+ * - Delta pill (green/red, with arrow) + sub caption
+ * - Optional sparkline in the bottom-right corner
+ *
+ * Legacy `trend` prop is still supported for pages that haven't been migrated yet.
+ */
+export default function KPICard({
+  label,
+  value,
+  subtitle,
+  delta,
+  deltaSub,
+  sparkline,
+  accent,
+  trend,
+}: KPICardProps) {
+  // Bridge legacy callers into the new delta API so nothing breaks mid-migration
+  const effectiveDelta =
+    delta ?? (trend ? (trend.isPositive ? trend.value : -trend.value) : null);
+  const effectiveDeltaSub = deltaSub ?? (trend?.isAbsolute ? "in period" : trend ? "vs prev" : subtitle);
+  const isAbsoluteLegacy = trend?.isAbsolute ?? false;
+
+  const accentColor = accent ?? "var(--accent)";
+
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
-      <p className="mb-1 text-xs font-medium text-clutch-grey/60">{label}</p>
-      <p className="text-2xl font-bold text-clutch-black">{value}</p>
-      {trend && (
-        <p
-          className={`mt-1 text-xs font-medium ${
-            trend.isPositive ? "text-green-600" : "text-red-500"
-          }`}
-        >
-          {trend.isPositive ? "\u25B2 +" : "\u25BC -"}
-          {trend.isAbsolute ? formatCompactTrend(trend.value) : `${Math.abs(trend.value)}%`}
-          <span className="ml-1 font-normal text-clutch-grey/40">
-            {trend.isAbsolute ? "in period" : "vs prev"}
-          </span>
-        </p>
-      )}
-      {subtitle && (
-        <p className="mt-1 text-[10px] text-clutch-grey/40">{subtitle}</p>
-      )}
+    <div
+      style={{
+        background: "var(--bg-elev)",
+        borderRadius: "var(--r-lg)",
+        border: "1px solid var(--border)",
+        padding: "18px 20px",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* soft accent wash top-left */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: `radial-gradient(120% 80% at 0% 0%, ${accentColor} 0%, transparent 20%)`,
+          opacity: 0.05,
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: "var(--fg-muted)",
+          letterSpacing: "0.02em",
+          marginBottom: 8,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        {accent && (
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: accent }} />
+        )}
+        {label}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <div
+            className="tnum"
+            style={{
+              fontSize: 30,
+              fontWeight: 700,
+              letterSpacing: "-0.03em",
+              lineHeight: 1,
+              color: "var(--fg)",
+            }}
+          >
+            {value}
+          </div>
+          {effectiveDelta != null && !Number.isNaN(effectiveDelta) ? (
+            <DeltaPill
+              delta={effectiveDelta}
+              sub={effectiveDeltaSub}
+              absolute={isAbsoluteLegacy}
+            />
+          ) : effectiveDeltaSub ? (
+            <div style={{ marginTop: 10, fontSize: 11, color: "var(--fg-subtle)" }}>
+              {effectiveDeltaSub}
+            </div>
+          ) : null}
+        </div>
+
+        {sparkline && sparkline.length > 1 && (
+          <div style={{ color: accentColor, opacity: 0.9 }}>
+            <Sparkline values={sparkline} color={accentColor} width={80} height={36} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
