@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import { consumeResetToken } from "@/lib/invites";
 
 // POST /api/auth/reset-password
 export async function POST(req: Request) {
@@ -25,37 +26,27 @@ export async function POST(req: Request) {
       );
     }
 
-    // Find and validate token
-    const verification = await prisma.verificationToken.findFirst({
-      where: {
-        identifier: email,
-        token,
-        expires: { gt: new Date() },
-      },
-    });
-
-    if (!verification) {
+    const valid = await consumeResetToken(email, token);
+    if (!valid) {
       return NextResponse.json(
         { error: "Invalid or expired reset token" },
         { status: 400 }
       );
     }
 
-    // Update password
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      // Token was valid but the account no longer exists — shouldn't happen.
+      return NextResponse.json(
+        { error: "Account not found" },
+        { status: 400 }
+      );
+    }
+
     const passwordHash = await bcrypt.hash(password, 12);
     await prisma.user.update({
       where: { email },
       data: { passwordHash },
-    });
-
-    // Delete used token
-    await prisma.verificationToken.delete({
-      where: {
-        identifier_token: {
-          identifier: email,
-          token,
-        },
-      },
     });
 
     return NextResponse.json({

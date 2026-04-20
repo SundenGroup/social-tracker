@@ -82,6 +82,15 @@ export default function LoginForm() {
         />
       </div>
 
+      <div className="flex justify-end">
+        <Link
+          href="/forgot-password"
+          className="text-xs font-medium text-clutch-blue hover:underline"
+        >
+          Forgot password?
+        </Link>
+      </div>
+
       <button
         type="submit"
         disabled={isLoading}
@@ -90,11 +99,8 @@ export default function LoginForm() {
         {isLoading ? "Signing in..." : "Sign In"}
       </button>
 
-      <p className="text-center text-sm text-clutch-grey/60">
-        Don&apos;t have an account?{" "}
-        <Link href="/register" className="font-medium text-clutch-blue hover:underline">
-          Register
-        </Link>
+      <p className="text-center text-xs text-clutch-grey/60">
+        Clutch Social is invite-only. Ask your admin to send you an invitation.
       </p>
     </form>
   );

@@ -2,9 +2,24 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { registerSchema } from "@/lib/validators";
+import { isPublicRegistrationEnabled } from "@/lib/invites";
 
 export async function POST(request: Request) {
   try {
+    // Public registration is closed by default (invite-only deployment).
+    // The first-ever user is still allowed through, so a fresh deploy can
+    // bootstrap its admin; after that, gate on ALLOW_PUBLIC_REGISTRATION.
+    const userCount = await prisma.user.count();
+    if (userCount > 0 && !isPublicRegistrationEnabled()) {
+      return NextResponse.json(
+        {
+          error:
+            "Public registration is disabled. Please ask your admin to send you an invitation.",
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const result = registerSchema.safeParse(body);
 
@@ -33,8 +48,6 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-
-    const userCount = await prisma.user.count();
     const isFirstUser = userCount === 0;
 
     let user;
