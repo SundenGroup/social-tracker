@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { PLATFORM_COLOR, PLATFORM_LABEL, PlatformGlyph, Dot, type Platform } from "@/components/icons/PlatformGlyph";
 import { fmtK } from "@/lib/format";
 
-export type ChartVariant = "stacked" | "multiples" | "bars";
+export type ChartVariant = "lines" | "multiples" | "bars";
 
 export interface TrendPoint {
   date: string;
@@ -38,56 +38,39 @@ function useContainerWidth(initial = 900) {
 }
 
 /* ========================================================================
- * Variant 1 — Stacked smooth area (default)
+ * Variant 1 — Simple overlaid line graphs (one line per platform)
  * ====================================================================== */
 
-export function StackedSmoothChart({ data, height = 280 }: { data: TrendPoint[]; height?: number }) {
+export function LinesChart({ data, height = 280 }: { data: TrendPoint[]; height?: number }) {
   const [ref, W] = useContainerWidth(900);
+  const [hover, setHover] = useState<number | null>(null);
   const h = height;
   const padL = 42;
   const padR = 14;
   const padT = 18;
   const padB = 28;
 
-  const stacked = useMemo(() => {
-    return data.map((d) => {
-      let acc = 0;
-      const out: Record<string, number | string> = { date: d.date, day: dayLabel(d.date) };
-      for (const p of PLATFORMS) {
-        const v = d[p] as number | undefined;
-        acc += v ?? 0;
-        out[`${p}_top`] = acc;
-        out[`${p}_val`] = v ?? 0;
-      }
-      out.total = acc;
-      return out;
-    });
-  }, [data]);
+  if (data.length < 2) return <EmptyChart height={height} />;
 
-  if (data.length < 2) {
-    return <EmptyChart height={height} />;
-  }
+  // Scale Y to the max of any single platform's daily value — keeps every
+  // line readable on the same axis (no platform disappears in the noise).
+  const maxY = Math.max(
+    1,
+    ...data.flatMap((d) => PLATFORMS.map((p) => (d[p] as number | undefined) ?? 0))
+  );
 
-  const maxY = Math.max(...stacked.map((d) => d.total as number), 1);
   const x = (i: number) => padL + (i / (data.length - 1)) * (W - padL - padR);
   const y = (v: number) => padT + (1 - v / maxY) * (h - padT - padB);
   const ticks = [0, maxY * 0.25, maxY * 0.5, maxY * 0.75, maxY];
 
-  const areas = PLATFORMS.map((p, idx) => {
-    const topKey = `${p}_top`;
-    const prev = idx > 0 ? `${PLATFORMS[idx - 1]}_top` : null;
-    const topPath = stacked.map((d, i) => `${x(i)},${y(d[topKey] as number)}`).join(" L ");
-    const basePath = prev
-      ? stacked
-          .slice()
-          .reverse()
-          .map((d, i) => `${x(stacked.length - 1 - i)},${y(d[prev] as number)}`)
-          .join(" L ")
-      : `${x(stacked.length - 1)},${y(0)} L ${x(0)},${y(0)}`;
-    return { p, d: `M ${topPath} L ${basePath} Z` };
+  // Build a path per platform
+  const lines = PLATFORMS.map((p) => {
+    const values = data.map((d) => (d[p] as number | undefined) ?? 0);
+    const pts = values.map((v, i): [number, number] => [x(i), y(v)]);
+    const linePath = "M" + pts.map((pt) => pt.join(",")).join(" L");
+    const last = pts[pts.length - 1];
+    return { p, linePath, last, color: PLATFORM_COLOR[p] ?? "var(--fg-muted)" };
   });
-
-  const [hover, setHover] = useState<number | null>(null);
 
   return (
     <div ref={ref} style={{ position: "relative", width: "100%" }}>
@@ -108,18 +91,47 @@ export function StackedSmoothChart({ data, height = 280 }: { data: TrendPoint[];
             </text>
           </g>
         ))}
-        {/* areas */}
-        {areas.map((a) => (
-          <path key={a.p} d={a.d} fill={PLATFORM_COLOR[a.p] ?? "var(--fg-muted)"} opacity="0.85" />
+
+        {/* hover guide */}
+        {hover != null && (
+          <line
+            x1={x(hover)}
+            x2={x(hover)}
+            y1={padT}
+            y2={h - padB}
+            stroke="var(--fg)"
+            strokeOpacity="0.4"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+          />
+        )}
+
+        {/* lines */}
+        {lines.map(({ p, linePath, color }) => (
+          <path
+            key={p}
+            d={linePath}
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity={hover != null && hover !== -1 ? 0.9 : 1}
+          />
         ))}
-        {/* top stroke */}
-        <path
-          d={"M " + stacked.map((d, i) => `${x(i)},${y(d.total as number)}`).join(" L ")}
-          fill="none"
-          stroke="var(--fg)"
-          strokeOpacity="0.3"
-          strokeWidth="1"
-        />
+
+        {/* hover dots on each line */}
+        {hover != null &&
+          lines.map(({ p, color }) => {
+            const v = (data[hover][p] as number | undefined) ?? 0;
+            return <circle key={`h-${p}`} cx={x(hover)} cy={y(v)} r="3" fill={color} stroke="var(--bg-elev)" strokeWidth="1.5" />;
+          })}
+
+        {/* terminal dots */}
+        {lines.map(({ p, last, color }) => (
+          <circle key={`last-${p}`} cx={last[0]} cy={last[1]} r="2" fill={color} />
+        ))}
+
         {/* x labels */}
         {data.map((d, i) =>
           i % Math.max(1, Math.floor(data.length / 8)) === 0 || i === data.length - 1 ? (
@@ -136,26 +148,14 @@ export function StackedSmoothChart({ data, height = 280 }: { data: TrendPoint[];
             </text>
           ) : null
         )}
-        {/* hover */}
-        {hover != null && (
-          <line
-            x1={x(hover)}
-            x2={x(hover)}
-            y1={padT}
-            y2={h - padB}
-            stroke="var(--fg)"
-            strokeOpacity="0.5"
-            strokeWidth="1"
-            strokeDasharray="3 3"
-          />
-        )}
-        {/* hit targets */}
-        {data.map((d, i) => (
+
+        {/* wider invisible hit targets for reliable hover */}
+        {data.map((_, i) => (
           <rect
-            key={i}
-            x={x(i) - 8}
+            key={`hit-${i}`}
+            x={x(i) - 10}
             y={padT}
-            width="16"
+            width="20"
             height={h - padT - padB}
             fill="transparent"
             onMouseEnter={() => setHover(i)}
@@ -163,6 +163,8 @@ export function StackedSmoothChart({ data, height = 280 }: { data: TrendPoint[];
           />
         ))}
       </svg>
+
+      {/* Tooltip */}
       {hover != null && (
         <div
           style={{
@@ -179,6 +181,7 @@ export function StackedSmoothChart({ data, height = 280 }: { data: TrendPoint[];
             minWidth: 160,
             boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
             color: "var(--fg)",
+            zIndex: 10,
           }}
         >
           <div style={{ fontWeight: 700, marginBottom: 6 }}>{dayLabel(data[hover].date)}</div>
@@ -212,9 +215,7 @@ export function StackedSmoothChart({ data, height = 280 }: { data: TrendPoint[];
           >
             <span>Total</span>
             <span className="mono tnum">
-              {fmtK(
-                PLATFORMS.reduce((s, p) => s + ((data[hover][p] as number | undefined) ?? 0), 0)
-              )}
+              {fmtK(PLATFORMS.reduce((s, p) => s + ((data[hover][p] as number | undefined) ?? 0), 0))}
             </span>
           </div>
         </div>
@@ -290,7 +291,7 @@ export function SmallMultiplesChart({ data, height = 180 }: { data: TrendPoint[]
 }
 
 /* ========================================================================
- * Variant 3 — Thin daily bars (total views), with spike annotations + hover
+ * Variant 3 — Stacked per-platform bars, with spike annotations + hover
  * ====================================================================== */
 
 export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[]; height?: number }) {
@@ -307,16 +308,14 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
   const totals = data.map((d) => PLATFORMS.reduce((s, p) => s + ((d[p] as number | undefined) ?? 0), 0));
   const maxY = Math.max(...totals, 1);
   const step = (W - padL - padR) / data.length;
-  // Thin "line bars" — capped around 7px wide, minimum 3px.
-  const barW = Math.max(3, Math.min(7, step - 4));
-  const x = (i: number) => padL + (step - barW) / 2 + i * step;
+  const barW = Math.max(6, step - 4);
+  const x = (i: number) => padL + 2 + i * step;
   const y = (v: number) => padT + (1 - v / maxY) * (h - padT - padB);
   const ticks = [0, maxY * 0.5, maxY];
   const spikes = data
     .map((d, i) => ({ i, total: totals[i], day: dayLabel(d.date) }))
     .sort((a, b) => b.total - a.total)
     .slice(0, 2);
-  const spikeSet = new Set(spikes.map((s) => s.i));
 
   return (
     <div ref={ref} style={{ position: "relative", width: "100%" }}>
@@ -324,14 +323,7 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
         {/* y-axis ticks */}
         {ticks.map((t, i) => (
           <g key={i}>
-            <line
-              x1={padL}
-              x2={W - padR}
-              y1={y(t)}
-              y2={y(t)}
-              stroke="var(--border)"
-              strokeDasharray={i === 0 ? "0" : "2 4"}
-            />
+            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--border)" />
             <text x={padL - 8} y={y(t) + 3} textAnchor="end" fontSize="10" fill="var(--fg-subtle)" className="mono">
               {fmtK(t)}
             </text>
@@ -352,28 +344,33 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
           />
         )}
 
-        {/* The bars themselves — thin, single-color, showing daily total */}
-        {data.map((_, i) => {
-          const v = totals[i];
-          const top = y(v);
-          const bottom = y(0);
-          const isHovered = hover === i;
-          const isSpike = spikeSet.has(i);
+        {/* Stacked per-platform bars */}
+        {data.map((d, i) => {
+          let acc = 0;
           return (
-            <rect
-              key={i}
-              x={x(i)}
-              y={top}
-              width={barW}
-              height={Math.max(1, bottom - top)}
-              rx={barW / 2}
-              fill={isSpike ? "var(--accent)" : "var(--fg)"}
-              opacity={isHovered ? 1 : isSpike ? 0.95 : 0.78}
-            />
+            <g key={i} opacity={hover != null && hover !== i ? 0.7 : 1}>
+              {PLATFORMS.map((p) => {
+                const v = (d[p] as number | undefined) ?? 0;
+                const yTop = y(acc + v);
+                const yBot = y(acc);
+                acc += v;
+                return (
+                  <rect
+                    key={p}
+                    x={x(i)}
+                    y={yTop}
+                    width={barW}
+                    height={Math.max(1, yBot - yTop)}
+                    fill={PLATFORM_COLOR[p] ?? "var(--fg-muted)"}
+                    opacity="0.95"
+                  />
+                );
+              })}
+            </g>
           );
         })}
 
-        {/* Spike annotations (kept — useful at a glance) */}
+        {/* Spike annotations */}
         {spikes.map((s) => (
           <g key={s.i} pointerEvents="none">
             <line
@@ -384,14 +381,8 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
               stroke="var(--accent)"
               strokeWidth="1.5"
             />
-            <rect
-              x={x(s.i) + barW / 2 - 50}
-              y={y(s.total) - 46}
-              width="100"
-              height="22"
-              rx="4"
-              fill="var(--accent)"
-            />
+            <circle cx={x(s.i) + barW / 2} cy={y(s.total) - 6} r="3" fill="var(--accent)" />
+            <rect x={x(s.i) + barW / 2 - 50} y={y(s.total) - 46} width="100" height="22" rx="4" fill="var(--accent)" />
             <text
               x={x(s.i) + barW / 2}
               y={y(s.total) - 31}
@@ -422,7 +413,7 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
           ) : null
         )}
 
-        {/* Wider invisible hit targets — the bars themselves are too thin to hover easily */}
+        {/* Wider invisible hit targets so hover is reliable even on narrow bars */}
         {data.map((_, i) => (
           <rect
             key={`hit-${i}`}
@@ -437,7 +428,7 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
         ))}
       </svg>
 
-      {/* Hover tooltip — same breakdown as the stacked view */}
+      {/* Hover tooltip */}
       {hover != null && (
         <div
           style={{
@@ -624,7 +615,7 @@ export function ChartVariantSwitcher({
   onChange: (v: ChartVariant) => void;
 }) {
   const opts: { k: ChartVariant; l: string }[] = [
-    { k: "stacked", l: "Stacked" },
+    { k: "lines", l: "Lines" },
     { k: "multiples", l: "Per platform" },
     { k: "bars", l: "Bars" },
   ];

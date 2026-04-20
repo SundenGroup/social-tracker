@@ -11,7 +11,7 @@ import ContentPerformanceTable from "@/components/tables/ContentPerformanceTable
 import TopPostCard from "@/components/cards/TopPostCard";
 import { Block } from "@/components/ui/Block";
 import {
-  StackedSmoothChart,
+  LinesChart,
   SmallMultiplesChart,
   AnnotatedBarsChart,
   ChartVariantSwitcher,
@@ -268,7 +268,7 @@ export default function DashboardPage() {
             title="Views by publish date"
             rightSlot={<ChartVariantSwitcher value={chartVariant} onChange={setChartVariant} />}
           >
-            {chartVariant === "stacked" && <StackedSmoothChart data={data.trends} />}
+            {chartVariant === "lines" && <LinesChart data={data.trends} />}
             {chartVariant === "multiples" && <SmallMultiplesChart data={data.trends} />}
             {chartVariant === "bars" && <AnnotatedBarsChart data={data.trends} />}
             <ChartLegend />
