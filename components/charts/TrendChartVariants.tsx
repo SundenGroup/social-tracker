@@ -290,11 +290,12 @@ export function SmallMultiplesChart({ data, height = 180 }: { data: TrendPoint[]
 }
 
 /* ========================================================================
- * Variant 3 — Annotated stacked bars
+ * Variant 3 — Thin daily bars (total views), with spike annotations + hover
  * ====================================================================== */
 
 export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[]; height?: number }) {
   const [ref, W] = useContainerWidth(900);
+  const [hover, setHover] = useState<number | null>(null);
   const h = height;
   const padL = 42;
   const padR = 14;
@@ -306,53 +307,75 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
   const totals = data.map((d) => PLATFORMS.reduce((s, p) => s + ((d[p] as number | undefined) ?? 0), 0));
   const maxY = Math.max(...totals, 1);
   const step = (W - padL - padR) / data.length;
-  const barW = Math.max(6, step - 4);
-  const x = (i: number) => padL + 2 + i * step;
+  // Thin "line bars" — capped around 7px wide, minimum 3px.
+  const barW = Math.max(3, Math.min(7, step - 4));
+  const x = (i: number) => padL + (step - barW) / 2 + i * step;
   const y = (v: number) => padT + (1 - v / maxY) * (h - padT - padB);
   const ticks = [0, maxY * 0.5, maxY];
   const spikes = data
     .map((d, i) => ({ i, total: totals[i], day: dayLabel(d.date) }))
     .sort((a, b) => b.total - a.total)
     .slice(0, 2);
+  const spikeSet = new Set(spikes.map((s) => s.i));
 
   return (
-    <div ref={ref} style={{ width: "100%" }}>
+    <div ref={ref} style={{ position: "relative", width: "100%" }}>
       <svg viewBox={`0 0 ${W} ${h}`} width="100%" height={h}>
+        {/* y-axis ticks */}
         {ticks.map((t, i) => (
           <g key={i}>
-            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--border)" />
+            <line
+              x1={padL}
+              x2={W - padR}
+              y1={y(t)}
+              y2={y(t)}
+              stroke="var(--border)"
+              strokeDasharray={i === 0 ? "0" : "2 4"}
+            />
             <text x={padL - 8} y={y(t) + 3} textAnchor="end" fontSize="10" fill="var(--fg-subtle)" className="mono">
               {fmtK(t)}
             </text>
           </g>
         ))}
-        {data.map((d, i) => {
-          let acc = 0;
+
+        {/* Hover guideline */}
+        {hover != null && (
+          <line
+            x1={x(hover) + barW / 2}
+            x2={x(hover) + barW / 2}
+            y1={padT}
+            y2={h - padB}
+            stroke="var(--fg)"
+            strokeOpacity="0.4"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+          />
+        )}
+
+        {/* The bars themselves — thin, single-color, showing daily total */}
+        {data.map((_, i) => {
+          const v = totals[i];
+          const top = y(v);
+          const bottom = y(0);
+          const isHovered = hover === i;
+          const isSpike = spikeSet.has(i);
           return (
-            <g key={i}>
-              {PLATFORMS.map((p) => {
-                const v = (d[p] as number | undefined) ?? 0;
-                const yTop = y(acc + v);
-                const yBot = y(acc);
-                acc += v;
-                return (
-                  <rect
-                    key={p}
-                    x={x(i)}
-                    y={yTop}
-                    width={barW}
-                    height={Math.max(1, yBot - yTop)}
-                    fill={PLATFORM_COLOR[p] ?? "var(--fg-muted)"}
-                    opacity="0.95"
-                  />
-                );
-              })}
-            </g>
+            <rect
+              key={i}
+              x={x(i)}
+              y={top}
+              width={barW}
+              height={Math.max(1, bottom - top)}
+              rx={barW / 2}
+              fill={isSpike ? "var(--accent)" : "var(--fg)"}
+              opacity={isHovered ? 1 : isSpike ? 0.95 : 0.78}
+            />
           );
         })}
-        {/* Spike annotations */}
+
+        {/* Spike annotations (kept — useful at a glance) */}
         {spikes.map((s) => (
-          <g key={s.i}>
+          <g key={s.i} pointerEvents="none">
             <line
               x1={x(s.i) + barW / 2}
               x2={x(s.i) + barW / 2}
@@ -361,8 +384,14 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
               stroke="var(--accent)"
               strokeWidth="1.5"
             />
-            <circle cx={x(s.i) + barW / 2} cy={y(s.total) - 6} r="3" fill="var(--accent)" />
-            <rect x={x(s.i) + barW / 2 - 50} y={y(s.total) - 46} width="100" height="22" rx="4" fill="var(--accent)" />
+            <rect
+              x={x(s.i) + barW / 2 - 50}
+              y={y(s.total) - 46}
+              width="100"
+              height="22"
+              rx="4"
+              fill="var(--accent)"
+            />
             <text
               x={x(s.i) + barW / 2}
               y={y(s.total) - 31}
@@ -375,6 +404,8 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
             </text>
           </g>
         ))}
+
+        {/* x-axis labels */}
         {data.map((d, i) =>
           i % Math.max(1, Math.floor(data.length / 8)) === 0 || i === data.length - 1 ? (
             <text
@@ -390,7 +421,76 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
             </text>
           ) : null
         )}
+
+        {/* Wider invisible hit targets — the bars themselves are too thin to hover easily */}
+        {data.map((_, i) => (
+          <rect
+            key={`hit-${i}`}
+            x={padL + i * step}
+            y={padT}
+            width={step}
+            height={h - padT - padB}
+            fill="transparent"
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover(null)}
+          />
+        ))}
       </svg>
+
+      {/* Hover tooltip — same breakdown as the stacked view */}
+      {hover != null && (
+        <div
+          style={{
+            position: "absolute",
+            left: `${((x(hover) + barW / 2) / W) * 100}%`,
+            top: 0,
+            transform: "translateX(8px)",
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border-strong)",
+            borderRadius: 8,
+            padding: "8px 10px",
+            fontSize: 11,
+            pointerEvents: "none",
+            minWidth: 160,
+            boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
+            color: "var(--fg)",
+            zIndex: 10,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>{dayLabel(data[hover].date)}</div>
+          {PLATFORMS.map((p) => (
+            <div
+              key={p}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                color: "var(--fg-muted)",
+              }}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Dot size={6} color={PLATFORM_COLOR[p] ?? "var(--fg-muted)"} /> {PLATFORM_LABEL[p]}
+              </span>
+              <span className="mono tnum" style={{ color: "var(--fg)" }}>
+                {fmtK((data[hover][p] as number | undefined) ?? 0)}
+              </span>
+            </div>
+          ))}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              marginTop: 6,
+              paddingTop: 6,
+              borderTop: "1px solid var(--border)",
+              fontWeight: 700,
+            }}
+          >
+            <span>Total</span>
+            <span className="mono tnum">{fmtK(totals[hover])}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -36,7 +36,7 @@ const CONTENT_TYPE_TABS = [
 export default function DashboardPage() {
   const { startDate, endDate, setDateRange } = useDateRange();
   const [contentType, setContentType] = useState("all");
-  const [chartVariant, setChartVariant] = useState<ChartVariant>("stacked");
+  const [chartVariant, setChartVariant] = useState<ChartVariant>("bars");
   const { data, isLoading, error, refetch } = useDashboard(startDate, endDate, contentType);
 
   // Build per-platform sparkline data from the trend series
