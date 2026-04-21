@@ -300,7 +300,10 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
   const h = height;
   const padL = 42;
   const padR = 14;
-  const padT = 28;
+  // Top padding has to reserve enough headroom for spike annotation labels
+  // (which sit 46 px above the bar top). Otherwise a spike on the tallest
+  // bar gets its label clipped by the SVG edge.
+  const padT = 56;
   const padB = 28;
 
   if (data.length < 2) return <EmptyChart height={height} />;
@@ -370,31 +373,44 @@ export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[];
           );
         })}
 
-        {/* Spike annotations */}
-        {spikes.map((s) => (
-          <g key={s.i} pointerEvents="none">
-            <line
-              x1={x(s.i) + barW / 2}
-              x2={x(s.i) + barW / 2}
-              y1={y(s.total) - 6}
-              y2={y(s.total) - 24}
-              stroke="var(--accent)"
-              strokeWidth="1.5"
-            />
-            <circle cx={x(s.i) + barW / 2} cy={y(s.total) - 6} r="3" fill="var(--accent)" />
-            <rect x={x(s.i) + barW / 2 - 50} y={y(s.total) - 46} width="100" height="22" rx="4" fill="var(--accent)" />
-            <text
-              x={x(s.i) + barW / 2}
-              y={y(s.total) - 31}
-              textAnchor="middle"
-              fontSize="10"
-              fontWeight="700"
-              fill="#fff"
-            >
-              {fmtK(s.total)} · {s.day}
-            </text>
-          </g>
-        ))}
+        {/* Spike annotations — clamped so the label never renders off-screen */}
+        {spikes.map((s) => {
+          const cx = x(s.i) + barW / 2;
+          const labelW = 100;
+          // Keep the whole rect inside the chart area horizontally
+          const labelCx = Math.max(padL + labelW / 2, Math.min(W - padR - labelW / 2, cx));
+          return (
+            <g key={s.i} pointerEvents="none">
+              <line
+                x1={cx}
+                x2={cx}
+                y1={y(s.total) - 6}
+                y2={y(s.total) - 24}
+                stroke="var(--accent)"
+                strokeWidth="1.5"
+              />
+              <circle cx={cx} cy={y(s.total) - 6} r="3" fill="var(--accent)" />
+              <rect
+                x={labelCx - labelW / 2}
+                y={y(s.total) - 46}
+                width={labelW}
+                height="22"
+                rx="4"
+                fill="var(--accent)"
+              />
+              <text
+                x={labelCx}
+                y={y(s.total) - 31}
+                textAnchor="middle"
+                fontSize="10"
+                fontWeight="700"
+                fill="#fff"
+              >
+                {fmtK(s.total)} · {s.day}
+              </text>
+            </g>
+          );
+        })}
 
         {/* x-axis labels */}
         {data.map((d, i) =>
