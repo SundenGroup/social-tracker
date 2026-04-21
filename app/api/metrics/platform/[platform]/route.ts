@@ -2,9 +2,51 @@ import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
-import type { Platform } from "@prisma/client";
+import type { Platform, PostType } from "@prisma/client";
 
 const VALID_PLATFORMS = ["youtube", "twitter", "instagram", "tiktok"] as const;
+
+/**
+ * Translate a UI content-type value into a Prisma `where` fragment.
+ * The UI's "short-form" / "long-form" are virtual buckets that don't map
+ * directly to the PostType enum — without this, Prisma fails validation
+ * because "short-form" isn't a valid enum value.
+ *
+ * Scoped to a single platform, so the cross-platform OR clauses that the
+ * dashboard route needs collapse into simpler shapes.
+ */
+function buildContentTypeWhere(contentType: string | null, platform: Platform): Record<string, unknown> {
+  if (!contentType || contentType === "all") return {};
+
+  if (contentType === "video") {
+    return { postType: { in: ["video", "short"] as PostType[] } };
+  }
+
+  if (contentType === "short-form") {
+    if (platform === "youtube") return { postType: "short" as PostType };
+    // TikTok + Instagram treat their native "video" type as short-form.
+    if (platform === "tiktok" || platform === "instagram") {
+      return { postType: "video" as PostType };
+    }
+    // Twitter: include both, tolerate either label.
+    return { postType: { in: ["short", "video"] as PostType[] } };
+  }
+
+  if (contentType === "long-form") {
+    // Only YouTube has long-form. On other platforms return a filter that
+    // matches nothing rather than throwing.
+    if (platform !== "youtube") return { postType: { in: [] as PostType[] } };
+    return { postType: "video" as PostType };
+  }
+
+  // Direct passthrough for known PostType values. Anything unrecognized
+  // yields an empty result set rather than a Prisma validation error.
+  const PASSTHROUGH: PostType[] = ["image", "carousel", "text", "short", "live", "story"];
+  if ((PASSTHROUGH as string[]).includes(contentType)) {
+    return { postType: contentType as PostType };
+  }
+  return { postType: { in: [] as PostType[] } };
+}
 
 // GET /api/metrics/platform/[platform]
 export const GET = apiHandler(
@@ -55,15 +97,17 @@ export const GET = apiHandler(
       });
     }
 
+    // Translate the UI content-type ("short-form", etc.) into a real Prisma
+    // filter. See buildContentTypeWhere above.
+    const typeWhere = buildContentTypeWhere(contentType, platform as Platform);
+
     // Build post filter
     const postWhere: Record<string, unknown> = {
       socialAccountId: { in: accountIds },
       publishedAt: { gte: start, lte: end },
       isDeleted: false,
+      ...typeWhere,
     };
-    if (contentType && contentType !== "all") {
-      postWhere.postType = contentType;
-    }
     if (hideSponsored) {
       postWhere.isSponsored = false;
     }
@@ -77,10 +121,8 @@ export const GET = apiHandler(
       socialAccountId: { in: accountIds },
       publishedAt: { gte: prevStart, lte: prevEnd },
       isDeleted: false,
+      ...typeWhere,
     };
-    if (contentType && contentType !== "all") {
-      prevPostWhere.postType = contentType;
-    }
     if (hideSponsored) {
       prevPostWhere.isSponsored = false;
     }
