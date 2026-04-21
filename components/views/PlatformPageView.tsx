@@ -37,13 +37,32 @@ const SECTION_TOGGLES = [
 
 type SectionKey = (typeof SECTION_TOGGLES)[number]["key"];
 
-const CONTENT_TYPE_TABS = [
-  { label: "All", value: "all" },
-  { label: "Video", value: "video" },
-  { label: "Short-form", value: "short-form" },
-  { label: "Long-form", value: "long-form" },
-  { label: "Image", value: "image" },
-];
+/**
+ * Per-platform content-type filter options. These match the platform-native
+ * content labels (Reels vs. Posts on Instagram, Shorts vs. Videos vs. Live
+ * on YouTube, etc.) and map to the Prisma PostType enum server-side.
+ *
+ * TikTok is deliberately filter-less — every TikTok post is video.
+ */
+const PLATFORM_CONTENT_TABS: Record<Platform, { label: string; value: string }[]> = {
+  instagram: [
+    { label: "All", value: "all" },
+    { label: "Reels", value: "video" },
+    { label: "Posts", value: "image" },
+    { label: "Carousels", value: "carousel" },
+  ],
+  youtube: [
+    { label: "All", value: "all" },
+    { label: "Shorts", value: "short" },
+    { label: "Videos", value: "video" },
+    { label: "Live", value: "live" },
+  ],
+  twitter: [
+    { label: "All", value: "all" },
+    { label: "Video only", value: "video" },
+  ],
+  tiktok: [],
+};
 
 export default function PlatformPageView({ platform, title, handle }: PlatformPageViewProps) {
   const { startDate, endDate, setDateRange } = useDateRange();
@@ -178,29 +197,33 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
 
       {data && (
         <div style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
-          {/* Content type filter — applies to every section below */}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {CONTENT_TYPE_TABS.map((ct) => {
-              const active = contentType === ct.value;
-              return (
-                <button
-                  key={ct.value}
-                  onClick={() => setContentType(ct.value)}
-                  style={{
-                    padding: "7px 12px",
-                    borderRadius: 8,
-                    border: "1px solid var(--border)",
-                    background: active ? "var(--fg)" : "var(--bg-elev)",
-                    color: active ? "var(--bg-elev)" : "var(--fg-muted)",
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  {ct.label}
-                </button>
-              );
-            })}
-          </div>
+          {/* Platform-specific content type filter — applies to every section below.
+              Hidden entirely on platforms that don't have meaningful sub-types
+              (TikTok is video-only, so the filter would only ever say "All"). */}
+          {PLATFORM_CONTENT_TABS[platform].length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {PLATFORM_CONTENT_TABS[platform].map((ct) => {
+                const active = contentType === ct.value;
+                return (
+                  <button
+                    key={ct.value}
+                    onClick={() => setContentType(ct.value)}
+                    style={{
+                      padding: "7px 12px",
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                      background: active ? "var(--fg)" : "var(--bg-elev)",
+                      color: active ? "var(--bg-elev)" : "var(--fg-muted)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {ct.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Hero — two tier */}
           <div
