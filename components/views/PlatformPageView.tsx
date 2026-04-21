@@ -37,9 +37,23 @@ const SECTION_TOGGLES = [
 
 type SectionKey = (typeof SECTION_TOGGLES)[number]["key"];
 
+const CONTENT_TYPE_TABS = [
+  { label: "All", value: "all" },
+  { label: "Video", value: "video" },
+  { label: "Short-form", value: "short-form" },
+  { label: "Long-form", value: "long-form" },
+  { label: "Image", value: "image" },
+];
+
 export default function PlatformPageView({ platform, title, handle }: PlatformPageViewProps) {
   const { startDate, endDate, setDateRange } = useDateRange();
-  const { data, isLoading, error, refetch } = usePlatformDashboard(platform, startDate, endDate);
+  const [contentType, setContentType] = useState("all");
+  const { data, isLoading, error, refetch } = usePlatformDashboard(
+    platform,
+    startDate,
+    endDate,
+    contentType
+  );
 
   const [sections, setSections] = useState<Record<SectionKey, boolean>>({
     types: true,
@@ -164,6 +178,30 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
 
       {data && (
         <div style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Content type filter — applies to every section below */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {CONTENT_TYPE_TABS.map((ct) => {
+              const active = contentType === ct.value;
+              return (
+                <button
+                  key={ct.value}
+                  onClick={() => setContentType(ct.value)}
+                  style={{
+                    padding: "7px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: active ? "var(--fg)" : "var(--bg-elev)",
+                    color: active ? "var(--bg-elev)" : "var(--fg-muted)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {ct.label}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Hero — two tier */}
           <div
             style={{
@@ -276,7 +314,12 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
             </div>
           </div>
 
-          {/* Section toggles */}
+          {/* Main trend chart */}
+          <Block eyebrow="Trend" title="Daily views">
+            <SinglePlatformChart data={trendData} platform={platform} />
+          </Block>
+
+          {/* Section toggles — live under the chart so they scope the rest of the page */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span
               style={{
@@ -327,11 +370,6 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
               );
             })}
           </div>
-
-          {/* Main trend chart */}
-          <Block eyebrow="Trend" title="Daily views">
-            <SinglePlatformChart data={trendData} platform={platform} />
-          </Block>
 
           {/* Content types + Leaderboard row */}
           {(sections.types || sections.leaderboard) && (
