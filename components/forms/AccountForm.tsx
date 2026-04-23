@@ -225,15 +225,24 @@ export default function AccountForm({ account }: AccountFormProps) {
       {needsApiKey && (
         <div>
           <label className="mb-1 block text-sm font-medium text-clutch-black">
-            API Key
+            API key <span className="text-clutch-grey/50 font-normal">(optional)</span>
           </label>
           <input
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
-            placeholder={isEditing ? "Leave blank to keep current" : "Enter API key"}
+            placeholder={
+              isEditing
+                ? "Leave blank to keep the current key"
+                : "Leave blank to use the server-wide default"
+            }
           />
+          <p className="mt-1 text-xs text-clutch-grey/50">
+            The server already has a YouTube Data API v3 key configured. Only paste
+            one here if you want this account to use its own dedicated key (e.g. to
+            isolate quota).
+          </p>
         </div>
       )}
 
