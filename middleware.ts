@@ -70,6 +70,13 @@ export default auth((req) => {
 
 export const config = {
   matcher: [
-    "/((?!api/auth|api/health|api/sync/trigger|api/sync/ingest|_next/static|_next/image|favicon.ico).*)",
+    // Skip middleware for:
+    //   - auth / health / sync API routes
+    //   - Next.js internals (static + image optimization)
+    //   - favicon + common image/font file extensions (covers /logos/*.png
+    //     and any future static asset — without this, unauthenticated users
+    //     on /login saw the logo request get redirected to /login too,
+    //     silently breaking the <img> tag)
+    "/((?!api/auth|api/health|api/sync/trigger|api/sync/ingest|_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf)$).*)",
   ],
 };
