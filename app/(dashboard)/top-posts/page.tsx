@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
+import ExportButton from "@/components/common/ExportButton";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import TopPostCard from "@/components/cards/TopPostCard";
 import { useDashboard } from "@/hooks/useDashboard";
@@ -49,6 +50,7 @@ export default function TopPostsPage() {
     <>
       <Header title="Top posts" subtitle="Your best content this period">
         <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
+        <ExportButton startDate={startDate} endDate={endDate} />
       </Header>
 
       {isLoading && !data && (

@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
+import ExportButton from "@/components/common/ExportButton";
 import { useDateRange } from "@/hooks/useDateRange";
 import { usePlatformDashboard } from "@/hooks/usePlatformDashboard";
 import { Block } from "@/components/ui/Block";
@@ -155,6 +156,7 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
     <>
       <Header title={label} subtitle="Single-platform breakdown">
         <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
+        <ExportButton startDate={startDate} endDate={endDate} platform={platform} />
       </Header>
 
       {isLoading && !data && (

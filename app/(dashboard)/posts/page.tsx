@@ -2,6 +2,7 @@
 
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
+import ExportButton from "@/components/common/ExportButton";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import ContentPerformanceTable from "@/components/tables/ContentPerformanceTable";
 import { useDashboard } from "@/hooks/useDashboard";
@@ -15,6 +16,7 @@ export default function PostsPage() {
     <>
       <Header title="Post performance" subtitle="Every post, every platform">
         <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
+        <ExportButton startDate={startDate} endDate={endDate} />
       </Header>
 
       {isLoading && !data && (
