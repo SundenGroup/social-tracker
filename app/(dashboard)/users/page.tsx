@@ -13,6 +13,8 @@ interface UserRow {
   email: string;
   role: string;
   isActive: boolean;
+  profileId: string | null;
+  profileName: string | null;
   createdAt: string;
   invitationStatus: InvitationStatus;
 }
@@ -201,7 +203,7 @@ export default function UsersPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1.5fr 2fr 100px 150px 110px 150px",
+              gridTemplateColumns: "1.5fr 2fr 90px 130px 140px 100px 150px",
               padding: "12px 16px",
               background: "var(--bg-sunken)",
               fontSize: 10,
@@ -216,6 +218,7 @@ export default function UsersPage() {
             <div>Name</div>
             <div>Email</div>
             <div>Role</div>
+            <div>Access</div>
             <div>Status</div>
             <div>Added</div>
             <div style={{ textAlign: "right" }}>Actions</div>
@@ -226,7 +229,7 @@ export default function UsersPage() {
               key={u.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "1.5fr 2fr 100px 150px 110px 150px",
+                gridTemplateColumns: "1.5fr 2fr 90px 130px 140px 100px 150px",
                 padding: "12px 16px",
                 alignItems: "center",
                 background: i % 2 === 1 ? "color-mix(in srgb, var(--fg) 2%, transparent)" : "transparent",
@@ -240,6 +243,9 @@ export default function UsersPage() {
               </div>
               <div>
                 <RoleBadge role={u.role} />
+              </div>
+              <div>
+                <AccessBadge role={u.role} profileName={u.profileName} />
               </div>
               <div>
                 <StatusBadge status={u.invitationStatus} />
@@ -316,6 +322,40 @@ function RoleBadge({ role }: { role: string }) {
       }}
     >
       {role}
+    </span>
+  );
+}
+
+function AccessBadge({ role, profileName }: { role: string; profileName: string | null }) {
+  // Admins always see everything. Unscoped viewers also see everything. Only
+  // scoped viewers show their specific profile.
+  if (role === "admin" || !profileName) {
+    return (
+      <span style={{ fontSize: 11, color: "var(--fg-muted)", fontStyle: "italic" }}>
+        All profiles
+      </span>
+    );
+  }
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        padding: "2px 8px",
+        borderRadius: 5,
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+        background: "color-mix(in srgb, var(--blue) 14%, transparent)",
+        color: "var(--blue)",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        maxWidth: "100%",
+      }}
+      title={profileName}
+    >
+      {profileName}
     </span>
   );
 }

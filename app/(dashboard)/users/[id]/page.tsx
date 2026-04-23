@@ -12,6 +12,7 @@ interface UserData {
   email: string;
   role: string;
   isActive: boolean;
+  profileId: string | null;
   createdAt: string;
 }
 
@@ -44,7 +45,12 @@ export default function EditUserPage() {
     fetchUser();
   }, [id]);
 
-  const handleSubmit = async (data: { name: string; role: string; isActive?: boolean }) => {
+  const handleSubmit = async (data: {
+    name: string;
+    role: string;
+    isActive?: boolean;
+    profileId?: string | null;
+  }) => {
     setIsSaving(true);
     try {
       const res = await fetch(`/api/users/${id}`, {

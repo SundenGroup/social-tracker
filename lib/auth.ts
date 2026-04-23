@@ -13,6 +13,8 @@ declare module "next-auth" {
       name: string;
       role: UserRole;
       organizationId: string;
+      /** If set, this viewer is scoped to a single profile within their org. */
+      profileId: string | null;
       image?: string | null;
     };
   }
@@ -20,6 +22,7 @@ declare module "next-auth" {
   interface User {
     role: UserRole;
     organizationId: string;
+    profileId?: string | null;
   }
 }
 
@@ -28,6 +31,7 @@ declare module "@auth/core/jwt" {
     id: string;
     role: UserRole;
     organizationId: string;
+    profileId: string | null;
   }
 }
 
@@ -35,6 +39,7 @@ declare module "@auth/core/adapters" {
   interface AdapterUser {
     role: UserRole;
     organizationId: string;
+    profileId?: string | null;
   }
 }
 
@@ -88,17 +93,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           role: user.role,
           organizationId: user.organizationId,
+          profileId: user.profileId,
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id as string;
         token.role = user.role;
         token.organizationId = user.organizationId;
+        token.profileId = user.profileId ?? null;
       }
+
+      // When the client calls session.update() (e.g. after editing profile),
+      // force an immediate DB re-read instead of waiting for the next 5-minute window.
+      const forceRevalidate = trigger === "update";
 
       // Periodically re-validate user is still active and org hasn't changed.
       // Check at most once every 5 minutes to avoid DB load on every request.
@@ -106,19 +117,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // a transient database hiccup must NOT sign the user out.
       const now = Math.floor(Date.now() / 1000);
       const lastChecked = (token.lastChecked as number) ?? 0;
-      if (token.id && now - lastChecked > 300) {
+      if (token.id && (forceRevalidate || now - lastChecked > 300)) {
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { isActive: true, role: true, organizationId: true },
+            select: { isActive: true, role: true, organizationId: true, profileId: true, name: true },
           });
           if (dbUser && dbUser.isActive) {
             token.role = dbUser.role;
             token.organizationId = dbUser.organizationId;
+            token.profileId = dbUser.profileId ?? null;
+            token.name = dbUser.name;
             token.lastChecked = now;
           } else if (dbUser && !dbUser.isActive) {
             // User definitively deactivated — force sign-out
-            return { ...token, id: "", role: "viewer", organizationId: "" };
+            return { ...token, id: "", role: "viewer", organizationId: "", profileId: null };
           }
           // dbUser === null: user not found. Could be a race with a fresh login
           // or a stale read — don't wipe the session, just retry next cycle.
@@ -136,6 +149,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.id = token.id as string;
       session.user.role = token.role as UserRole;
       session.user.organizationId = token.organizationId as string;
+      session.user.profileId = (token.profileId as string | null) ?? null;
       return session;
     },
   },

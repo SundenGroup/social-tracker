@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
+import { effectiveProfileId } from "@/lib/profile-scope";
 import type { Platform, PostType } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok"];
@@ -183,7 +184,7 @@ export const GET = apiHandler(
   async (req, session) => {
     const url = new URL(req.url);
     const orgId = session!.user.organizationId;
-    const profileId = url.searchParams.get("profileId");
+    const profileId = effectiveProfileId(session!, url.searchParams.get("profileId"));
     const contentType = url.searchParams.get("contentType");
     const startDateA = url.searchParams.get("startDateA");
     const endDateA = url.searchParams.get("endDateA");

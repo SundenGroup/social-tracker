@@ -2,12 +2,22 @@ import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { profileSchema } from "@/lib/validators";
+import { isScoped } from "@/lib/profile-scope";
 
 // GET /api/profiles - List profiles for organization
+// Scoped viewers only see the single profile they have access to, so the
+// profile picker and related UI can't hint at siblings they can't open.
 export const GET = apiHandler(
   async (_req, session) => {
+    const where: Record<string, unknown> = {
+      organizationId: session!.user.organizationId,
+    };
+    if (isScoped(session!)) {
+      where.id = session!.user.profileId;
+    }
+
     const profiles = await prisma.profile.findMany({
-      where: { organizationId: session!.user.organizationId },
+      where,
       orderBy: [{ isDefault: "desc" }, { name: "asc" }],
       include: {
         _count: { select: { socialAccounts: true } },

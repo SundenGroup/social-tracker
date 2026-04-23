@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { useProfiles } from "@/hooks/useProfiles";
 import { Chevron } from "@/components/icons/PlatformGlyph";
 
 export default function ProfileSelector() {
+  const { data: session } = useSession();
   const { profiles, selectedProfileId, setSelectedProfileId, isLoading } = useProfiles();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -24,6 +26,32 @@ export default function ProfileSelector() {
 
   const selected = profiles.find((p) => p.id === selectedProfileId);
   const label = selected?.name ?? "All profiles";
+  // Viewers scoped to a single profile can't pick — render a static pill
+  // that shows which profile their account is locked to.
+  const isLocked = session?.user?.role === "viewer" && !!session.user.profileId;
+
+  if (isLocked) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 10px",
+          borderRadius: 8,
+          border: "1px solid var(--border)",
+          background: "var(--bg-sunken)",
+          fontSize: 13,
+          fontWeight: 500,
+          color: "var(--fg-muted)",
+        }}
+        title="Your account is scoped to this profile"
+      >
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)" }} />
+        {label}
+      </div>
+    );
+  }
 
   return (
     <div ref={ref} style={{ position: "relative" }}>

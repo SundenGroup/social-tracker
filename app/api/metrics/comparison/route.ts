@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
+import { effectiveProfileId } from "@/lib/profile-scope";
 import type { Platform } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok"];
@@ -13,7 +14,7 @@ export const GET = apiHandler(
     const orgId = session!.user.organizationId;
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
-    const profileId = url.searchParams.get("profileId");
+    const profileId = effectiveProfileId(session!, url.searchParams.get("profileId"));
 
     const end = endDate ? new Date(endDate) : new Date();
     end.setHours(23, 59, 59, 999);

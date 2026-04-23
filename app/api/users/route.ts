@@ -7,6 +7,23 @@ import { ValidationError } from "@/lib/errors";
 import { createInviteToken, buildInviteUrl } from "@/lib/invites";
 import { sendInviteEmail, isEmailConfigured } from "@/lib/email";
 
+/**
+ * Validate that a provided profileId (if any) belongs to the admin's org.
+ * Returns the cleaned value (null = "all profiles"). Throws ValidationError
+ * if the profile exists but lives in a different org — we don't leak cross-org
+ * profile IDs this way.
+ */
+async function resolveProfileId(raw: unknown, orgId: string): Promise<string | null> {
+  if (raw == null || raw === "" || raw === "all") return null;
+  if (typeof raw !== "string") throw new ValidationError("Invalid profile");
+  const profile = await prisma.profile.findFirst({
+    where: { id: raw, organizationId: orgId },
+    select: { id: true },
+  });
+  if (!profile) throw new ValidationError("Profile not found in this organization");
+  return profile.id;
+}
+
 // GET /api/users - List all users in org (with invitation status)
 export const GET = apiHandler(
   async (_req, session) => {
@@ -20,6 +37,8 @@ export const GET = apiHandler(
         email: true,
         role: true,
         isActive: true,
+        profileId: true,
+        profile: { select: { name: true } },
         createdAt: true,
       },
       orderBy: { createdAt: "asc" },
@@ -44,7 +63,13 @@ export const GET = apiHandler(
 
     return NextResponse.json({
       data: users.map((u) => ({
-        ...u,
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        isActive: u.isActive,
+        profileId: u.profileId,
+        profileName: u.profile?.name ?? null,
         createdAt: u.createdAt.toISOString(),
         invitationStatus: u.isActive
           ? "active"
@@ -64,10 +89,11 @@ export const GET = apiHandler(
 export const POST = apiHandler(
   async (req, session) => {
     const body = await req.json();
-    const { email, name, role } = body as {
+    const { email, name, role, profileId: rawProfileId } = body as {
       email?: string;
       name?: string;
       role?: string;
+      profileId?: string | null;
     };
 
     if (!email || !name) {
@@ -86,6 +112,12 @@ export const POST = apiHandler(
     }
 
     const orgId = session!.user.organizationId;
+
+    // Admins always see everything — profile scope is ignored for them.
+    // Validate the provided profile either way so bad input doesn't silently
+    // get accepted.
+    const scopedProfileId =
+      role === "admin" ? null : await resolveProfileId(rawProfileId, orgId);
 
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
@@ -117,6 +149,7 @@ export const POST = apiHandler(
           data: {
             name: cleanName,
             role: (role as "admin" | "viewer") ?? existing.role,
+            profileId: scopedProfileId,
             // Keep the placeholder hash — we don't want a stale one lying around.
             passwordHash,
             isActive: false,
@@ -127,6 +160,7 @@ export const POST = apiHandler(
             email: true,
             role: true,
             isActive: true,
+            profileId: true,
             createdAt: true,
           },
         })
@@ -136,6 +170,7 @@ export const POST = apiHandler(
             name: cleanName,
             role: (role as "admin" | "viewer") ?? "viewer",
             organizationId: orgId,
+            profileId: scopedProfileId,
             passwordHash,
             isActive: false,
           },
@@ -145,6 +180,7 @@ export const POST = apiHandler(
             email: true,
             role: true,
             isActive: true,
+            profileId: true,
             createdAt: true,
           },
         });

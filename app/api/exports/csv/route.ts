@@ -3,6 +3,7 @@ import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { generateCSV, type ExportRow } from "@/lib/utils/export";
 import { ValidationError } from "@/lib/errors";
+import { effectiveProfileId } from "@/lib/profile-scope";
 import type { Platform } from "@prisma/client";
 
 const ALL_COLUMNS = [
@@ -15,11 +16,12 @@ const ALL_COLUMNS = [
 export const POST = apiHandler(
   async (req, session) => {
     const body = await req.json();
-    const { platform, startDate, endDate, metrics } = body as {
+    const { platform, startDate, endDate, metrics, profileId: requestedProfileId } = body as {
       platform?: string;
       startDate: string;
       endDate: string;
       metrics?: string[];
+      profileId?: string | null;
     };
 
     if (!startDate || !endDate) {
@@ -29,6 +31,7 @@ export const POST = apiHandler(
     const orgId = session!.user.organizationId;
     const start = new Date(startDate);
     const end = new Date(endDate);
+    const profileId = effectiveProfileId(session!, requestedProfileId);
 
     // Get accounts
     const accountWhere: Record<string, unknown> = {
@@ -37,6 +40,9 @@ export const POST = apiHandler(
     };
     if (platform) {
       accountWhere.platform = platform as Platform;
+    }
+    if (profileId) {
+      accountWhere.profileId = profileId;
     }
 
     const accounts = await prisma.socialAccount.findMany({

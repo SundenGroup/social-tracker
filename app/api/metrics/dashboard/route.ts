@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
+import { effectiveProfileId } from "@/lib/profile-scope";
 
 // GET /api/metrics/dashboard - Aggregated dashboard data
 export const GET = apiHandler(
@@ -11,7 +12,7 @@ export const GET = apiHandler(
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
     const contentType = url.searchParams.get("contentType");
-    const profileId = url.searchParams.get("profileId");
+    const profileId = effectiveProfileId(session!, url.searchParams.get("profileId"));
 
     const orgId = session!.user.organizationId;
 

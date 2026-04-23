@@ -26,7 +26,7 @@ export const ProfileContext = createContext<ProfileContextValue>({
 const STORAGE_KEY = "clutch-selected-profile";
 
 export default function ProfileProvider({ children }: { children: React.ReactNode }) {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -35,7 +35,16 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const [isLoading, setIsLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
+  // Scoped viewers are locked to a single profile and can't switch away.
+  const forcedProfileId =
+    session?.user?.role === "viewer" && session.user.profileId
+      ? session.user.profileId
+      : null;
+
   const setSelectedProfileId = useCallback((id: string | null) => {
+    // Scoped viewers can't pick — silently ignore any attempt to change.
+    if (forcedProfileId) return;
+
     setSelectedProfileIdState(id);
 
     // Persist to localStorage
@@ -54,7 +63,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
     }
     const qs = params.toString();
     router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
-  }, [searchParams, router, pathname]);
+  }, [searchParams, router, pathname, forcedProfileId]);
 
   const fetchProfiles = useCallback(async () => {
     setIsLoading(true);
@@ -78,21 +87,37 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
     }
   }, [status, fetchProfiles]);
 
-  // Initialize selection: URL param takes priority, then localStorage
+  // Initialize selection.
+  // Scoped viewers: force their assigned profile and ignore URL / storage.
+  // Otherwise: URL param wins, then localStorage.
   useEffect(() => {
     if (initialized) return;
-    const urlProfile = searchParams.get("profile");
-    if (urlProfile) {
-      setSelectedProfileIdState(urlProfile);
-      localStorage.setItem(STORAGE_KEY, urlProfile);
+    if (status === "loading") return;
+
+    if (forcedProfileId) {
+      setSelectedProfileIdState(forcedProfileId);
+      try {
+        localStorage.setItem(STORAGE_KEY, forcedProfileId);
+      } catch {
+        // storage can be unavailable (private mode); non-fatal
+      }
     } else {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setSelectedProfileIdState(stored);
+      const urlProfile = searchParams.get("profile");
+      if (urlProfile) {
+        setSelectedProfileIdState(urlProfile);
+        try {
+          localStorage.setItem(STORAGE_KEY, urlProfile);
+        } catch { /* ignore */ }
+      } else {
+        let stored: string | null = null;
+        try {
+          stored = localStorage.getItem(STORAGE_KEY);
+        } catch { /* ignore */ }
+        if (stored) setSelectedProfileIdState(stored);
       }
     }
     setInitialized(true);
-  }, [searchParams, initialized]);
+  }, [searchParams, initialized, forcedProfileId, status]);
 
   // If stored profile doesn't exist in the list, clear it
   useEffect(() => {

@@ -18,7 +18,12 @@ export default function NewUserPage() {
   const [result, setResult] = useState<InviteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (data: { name: string; email: string; role: string }) => {
+  const handleSubmit = async (data: {
+    name: string;
+    email: string;
+    role: string;
+    profileId?: string | null;
+  }) => {
     setIsLoading(true);
     setError(null);
     try {
