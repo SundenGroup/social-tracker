@@ -38,7 +38,7 @@ const PLATFORM_ITEMS: PlatformNavItem[] = [
 const WORKSPACE_ITEMS: (NavItem & { adminOnly?: boolean })[] = [
   { href: "/connections", label: "Connections", adminOnly: true },
   { href: "/profiles", label: "Profiles", adminOnly: true },
-  { href: "/settings", label: "Settings" },
+  { href: "/settings", label: "Settings", adminOnly: true },
 ];
 
 // Pages that support profile+date filtering in the querystring

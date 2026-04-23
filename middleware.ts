@@ -41,13 +41,27 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // Admin-only route protection
-  if (pathname.startsWith("/api/users")) {
-    if (req.auth?.user?.role !== "admin") {
+  // Admin-only route protection — both API and page routes. Viewers hitting
+  // any of these via URL get bounced back to the dashboard (pages) or 403'd
+  // (APIs). This is in addition to the sidebar hiding these entries.
+  const isAdmin = req.auth?.user?.role === "admin";
+  if (!isAdmin) {
+    // API admin gates (already enforced at the route handler level, but we
+    // bail here to save the function cold-start).
+    if (pathname.startsWith("/api/users")) {
       return NextResponse.json(
         { error: "Insufficient permissions" },
         { status: 403 }
       );
+    }
+    // Page-level admin gates. Redirect viewers to the dashboard.
+    // NOTE: /account (singular) is personal settings and stays viewer-accessible.
+    const ADMIN_PAGES = ["/users", "/connections", "/accounts", "/profiles", "/settings"];
+    const isAdminPage = ADMIN_PAGES.some(
+      (p) => pathname === p || pathname.startsWith(p + "/")
+    );
+    if (isAdminPage) {
+      return NextResponse.redirect(new URL("/", req.url));
     }
   }
 
