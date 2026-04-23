@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Header from "@/components/layouts/Header";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/components/common/Toast";
 
 interface SyncLogEntry {
   id: string;
@@ -52,10 +54,15 @@ interface RefreshProgress {
 }
 
 export default function SettingsPage() {
+  const { isAdmin } = useAuth();
+  const { toast } = useToast();
   const [accounts, setAccounts] = useState<AccountStatus[]>([]);
   const [syncLogs, setSyncLogs] = useState<SyncLogEntry[]>([]);
   const [health, setHealth] = useState<HealthData | null>(null);
   const [hideSponsored, setHideSponsored] = useState(false);
+  const [orgName, setOrgName] = useState("");
+  const [orgNameInput, setOrgNameInput] = useState("");
+  const [savingOrgName, setSavingOrgName] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
@@ -88,6 +95,9 @@ export default function SettingsPage() {
       if (settingsRes.ok) {
         const json = await settingsRes.json();
         setHideSponsored(json.data?.hideSponsored ?? false);
+        const name = json.data?.organizationName ?? "";
+        setOrgName(name);
+        setOrgNameInput(name);
       }
     } catch {
       // Silently handle errors
@@ -124,6 +134,35 @@ export default function SettingsPage() {
       });
     } catch {
       setHideSponsored(!newValue); // revert on error
+    }
+  };
+
+  const handleSaveOrgName = async () => {
+    const trimmed = orgNameInput.trim();
+    if (trimmed === orgName) return;
+    if (trimmed.length < 2) {
+      toast("error", "Organization name must be at least 2 characters");
+      return;
+    }
+    setSavingOrgName(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationName: trimmed }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast("error", json.error ?? "Failed to update organization name");
+        return;
+      }
+      setOrgName(json.data.organizationName);
+      setOrgNameInput(json.data.organizationName);
+      toast("success", "Organization name updated");
+    } catch {
+      toast("error", "Failed to update organization name");
+    } finally {
+      setSavingOrgName(false);
     }
   };
 
@@ -262,6 +301,44 @@ export default function SettingsPage() {
           {syncingAll ? "Syncing..." : "Sync All"}
         </button>
       </Header>
+
+      {/* Organization */}
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-1 text-sm font-bold text-clutch-black">Organization</h2>
+        <p className="mb-4 text-[10px] text-clutch-grey/50">
+          Shown in invitation emails and the workspace header.
+        </p>
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <label className="mb-1 block text-xs font-medium text-clutch-grey">
+              Organization name
+            </label>
+            <input
+              type="text"
+              value={orgNameInput}
+              onChange={(e) => setOrgNameInput(e.target.value)}
+              disabled={!isAdmin || savingOrgName}
+              maxLength={80}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue disabled:bg-gray-50 disabled:text-clutch-grey/60"
+              placeholder="e.g. Clutch"
+            />
+            {!isAdmin && (
+              <p className="mt-1 text-[10px] text-clutch-grey/50">
+                Only admins can change the organization name.
+              </p>
+            )}
+          </div>
+          {isAdmin && (
+            <button
+              onClick={handleSaveOrgName}
+              disabled={savingOrgName || orgNameInput.trim() === orgName || orgNameInput.trim().length < 2}
+              className="mt-5 rounded-lg bg-clutch-red px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-clutch-red/90 disabled:opacity-40"
+            >
+              {savingOrgName ? "Saving…" : "Save"}
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Display Preferences */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">

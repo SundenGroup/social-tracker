@@ -30,9 +30,13 @@ const PLATFORM_ITEMS: PlatformNavItem[] = [
   { href: "/platforms/instagram", label: "Instagram", platform: "instagram" },
 ];
 
-const WORKSPACE_ITEMS: NavItem[] = [
-  { href: "/accounts", label: "Accounts" },
-  { href: "/profiles", label: "Profiles" },
+/**
+ * Workspace links. `adminOnly` hides the row from viewers — they'd just hit
+ * 403s on every mutation over there, so the cleaner UX is to not show it.
+ */
+const WORKSPACE_ITEMS: (NavItem & { adminOnly?: boolean })[] = [
+  { href: "/accounts", label: "Accounts", adminOnly: true },
+  { href: "/profiles", label: "Profiles", adminOnly: true },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -159,7 +163,7 @@ export default function Sidebar() {
         </NavGroup>
 
         <NavGroup label="Workspace">
-          {WORKSPACE_ITEMS.map((item) => (
+          {WORKSPACE_ITEMS.filter((item) => !item.adminOnly || isAdmin).map((item) => (
             <NavRow
               key={item.href}
               href={item.href}
