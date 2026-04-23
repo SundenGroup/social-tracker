@@ -6,14 +6,18 @@ import { sendPasswordResetEmail } from "@/lib/email";
 // POST /api/auth/forgot-password
 export async function POST(req: Request) {
   try {
-    const { email } = (await req.json()) as { email?: string };
+    const { email: rawEmail } = (await req.json()) as { email?: string };
 
-    if (!email) {
+    if (!rawEmail) {
       return NextResponse.json(
         { error: "Email is required" },
         { status: 400 }
       );
     }
+
+    // Emails are stored lowercase on registration/invite; match the same
+    // rule here so "Simon@Clutch.Game" and "simon@clutch.game" both work.
+    const email = rawEmail.trim().toLowerCase();
 
     // Always return a generic success response — we never confirm whether
     // a given email is registered, to prevent account enumeration.

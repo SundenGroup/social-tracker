@@ -6,13 +6,13 @@ import { consumeResetToken } from "@/lib/invites";
 // POST /api/auth/reset-password
 export async function POST(req: Request) {
   try {
-    const { token, email, password } = (await req.json()) as {
+    const { token, email: rawEmail, password } = (await req.json()) as {
       token?: string;
       email?: string;
       password?: string;
     };
 
-    if (!token || !email || !password) {
+    if (!token || !rawEmail || !password) {
       return NextResponse.json(
         { error: "Token, email, and password are required" },
         { status: 400 }
@@ -25,6 +25,9 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    // Normalize email the same way register / invite / forgot-password do.
+    const email = rawEmail.trim().toLowerCase();
 
     const valid = await consumeResetToken(email, token);
     if (!valid) {

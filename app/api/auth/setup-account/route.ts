@@ -17,12 +17,16 @@ import { consumeInviteToken } from "@/lib/invites";
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const email = url.searchParams.get("email");
+  const rawEmail = url.searchParams.get("email");
   const token = url.searchParams.get("token");
 
-  if (!email || !token) {
+  if (!rawEmail || !token) {
     return NextResponse.json({ error: "Missing email or token" }, { status: 400 });
   }
+
+  // Emails stored lowercase on invite; match the same rule here so a
+  // copy-paste with extra whitespace or different case still works.
+  const email = rawEmail.trim().toLowerCase();
 
   const verification = await prisma.verificationToken.findFirst({
     where: {
@@ -62,13 +66,13 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { email, token, password } = (await req.json()) as {
+    const { email: rawEmail, token, password } = (await req.json()) as {
       email?: string;
       token?: string;
       password?: string;
     };
 
-    if (!email || !token || !password) {
+    if (!rawEmail || !token || !password) {
       return NextResponse.json(
         { error: "Email, token, and password are required" },
         { status: 400 }
@@ -81,6 +85,8 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const email = rawEmail.trim().toLowerCase();
 
     const valid = await consumeInviteToken(email, token);
     if (!valid) {
