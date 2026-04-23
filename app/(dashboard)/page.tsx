@@ -92,10 +92,11 @@ export default function DashboardPage() {
     return [...data.posts].sort((a, b) => b.views - a.views).slice(0, 5);
   }, [data]);
 
-  // Range label for KPI subtitles
+  // Range label for KPI subtitles. A range of Apr 16 → Apr 22 spans 7 days
+  // inclusive; the raw subtraction gives 6 so we add 1 to count both endpoints.
   const daysDiff = Math.max(
     1,
-    Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000)
+    Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1
   );
   const rangeLabel = `from content posted in last ${daysDiff} days`;
 
