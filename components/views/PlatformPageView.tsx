@@ -198,7 +198,10 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
       )}
 
       {data && (
-        <div style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
+        <div
+          className="page-pad"
+          style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}
+        >
           {/* Platform-specific content type filter — applies to every section below.
               Hidden entirely on platforms that don't have meaningful sub-types
               (TikTok is video-only, so the filter would only ever say "All"). */}
@@ -303,8 +306,11 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
                 </div>
               </div>
             </div>
-            {/* Tier 2 — 5 KPI cells */}
+            {/* Tier 2 — 5 KPI cells. The platform-kpi-row class ensures this
+                 collapses to 2 columns on tablet and keeps 2 columns on phone
+                 (instead of stacking into 5 rows, which would look silly). */}
             <div
+              className="platform-kpi-row"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(5, 1fr)",
@@ -396,12 +402,15 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
             })}
           </div>
 
-          {/* Content types + Leaderboard row */}
+          {/* Content types + Leaderboard row — side by side on desktop,
+               stacks to a single column at ≤900px via .row-1-11. */}
           {(sections.types || sections.leaderboard) && (
             <div
+              className={sections.types && sections.leaderboard ? "row row-1-11" : "row"}
               style={{
-                display: "grid",
-                gridTemplateColumns: sections.types && sections.leaderboard ? "1fr 1.1fr" : "1fr",
+                ...(sections.types && sections.leaderboard
+                  ? {}
+                  : { gridTemplateColumns: "minmax(0, 1fr)" }),
                 gap: 20,
               }}
             >
@@ -552,7 +561,7 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
             !sections.table && (
               <Block eyebrow="Top posts" title="Highlights" flush>
                 <div style={{ padding: "0 20px 20px" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+                  <div className="row row-5" style={{ gap: 10 }}>
                     {leaderboard.slice(0, 5).map((p, i) => (
                       <TopPostCard
                         key={p.id}

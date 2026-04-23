@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Providers from "@/components/providers/Providers";
 import { THEME_INIT_SCRIPT } from "@/components/providers/ThemeProvider";
 import "./globals.css";
@@ -6,6 +6,14 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Clutch Social",
   description: "Social performance tracker for PUBG Esports partners",
+};
+
+// Responsive viewport — previously missing, which broke mobile layouts on
+// iOS/Android (pages rendered at desktop width and shrank to fit).
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({

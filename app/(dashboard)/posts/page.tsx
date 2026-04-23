@@ -43,7 +43,7 @@ export default function PostsPage() {
       )}
 
       {data && (
-        <div style={{ padding: "24px 28px 48px" }}>
+        <div className="page-pad" style={{ padding: "24px 28px 48px" }}>
           <ContentPerformanceTable posts={data.posts} onToggleSponsored={() => refetch()} />
         </div>
       )}

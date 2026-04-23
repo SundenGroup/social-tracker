@@ -1,0 +1,16 @@
+{
+  "name": "instagram-remote-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "browser": "npx tsx browser-server.ts",
+    "scrape": "npx tsx scrape.ts",
+    "scrape:setup": "npx tsx scrape.ts --setup",
+    "install-browser": "npm install && npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "tsx": "^4.21.0"
+  }
+}

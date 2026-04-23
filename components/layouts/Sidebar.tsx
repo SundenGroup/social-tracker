@@ -5,8 +5,16 @@ import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { PlatformGlyph, PLATFORM_COLOR, type Platform } from "@/components/icons/PlatformGlyph";
+
+interface SidebarProps {
+  /** Whether the mobile drawer is currently open (ignored on desktop). */
+  mobileOpen?: boolean;
+  /** Called when the sidebar wants to close itself (× button or nav). */
+  onClose?: () => void;
+}
 
 interface NavItem {
   href: string;
@@ -53,12 +61,20 @@ const PROFILE_PAGES = new Set([
   "/platforms/tiktok",
 ]);
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps = {}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, isAdmin } = useAuth();
   const { theme } = useTheme();
+  const isMobile = useIsMobile(900);
   const profileParam = searchParams.get("profile");
+
+  // Auto-close the drawer whenever the route changes (mobile only).
+  // Without this the drawer would stay open after tapping a nav item.
+  useEffect(() => {
+    if (isMobile && mobileOpen) onClose?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   function buildHref(href: string): string {
     if (!PROFILE_PAGES.has(href)) return href;
@@ -85,9 +101,27 @@ export default function Sidebar() {
     .join("")
     .toUpperCase();
 
-  return (
-    <aside
-      style={{
+  const asideStyle: React.CSSProperties = isMobile
+    ? {
+        // Mobile — fixed drawer that slides in from the left
+        width: 280,
+        flexShrink: 0,
+        borderRight: "1px solid var(--border)",
+        background: "var(--bg-elev)",
+        display: "flex",
+        flexDirection: "column",
+        position: "fixed",
+        top: 0,
+        left: 0,
+        bottom: 0,
+        height: "100vh",
+        zIndex: 100,
+        transform: mobileOpen ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 0.22s cubic-bezier(.2,.8,.2,1)",
+        boxShadow: mobileOpen ? "0 10px 40px rgba(0,0,0,0.25)" : "none",
+      }
+    : {
+        // Desktop — sticky column, unchanged
         width: 232,
         flexShrink: 0,
         borderRight: "1px solid var(--border)",
@@ -97,8 +131,10 @@ export default function Sidebar() {
         position: "sticky",
         top: 0,
         height: "100vh",
-      }}
-    >
+      };
+
+  return (
+    <aside style={asideStyle} aria-hidden={isMobile ? !mobileOpen : undefined}>
       {/* Logo row */}
       <div
         style={{
@@ -110,7 +146,10 @@ export default function Sidebar() {
           gap: 10,
         }}
       >
-        <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", flex: 1 }}>
+        <Link
+          href="/"
+          style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", flex: 1 }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={theme === "dark" ? "/logos/clutch-white.png" : "/logos/clutch-black.png"}
@@ -132,6 +171,28 @@ export default function Sidebar() {
             Social
           </span>
         </Link>
+        {isMobile && (
+          <button
+            onClick={onClose}
+            aria-label="Close menu"
+            style={{
+              marginLeft: 6,
+              width: 30,
+              height: 30,
+              borderRadius: 7,
+              border: "1px solid var(--border)",
+              background: "var(--bg-elev)",
+              color: "var(--fg-muted)",
+              display: "grid",
+              placeItems: "center",
+              fontSize: 18,
+              lineHeight: 1,
+              flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
+        )}
       </div>
 
       {/* Nav groups */}

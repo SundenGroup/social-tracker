@@ -139,7 +139,7 @@ export default function UsersPage() {
         </Link>
       </Header>
 
-      <div style={{ padding: "24px 28px 48px" }}>
+      <div className="page-pad" style={{ padding: "24px 28px 48px" }}>
         {resendResult && (
           <div
             style={{
@@ -193,6 +193,7 @@ export default function UsersPage() {
         )}
 
         <div
+          className="hscroll"
           style={{
             background: "var(--bg-elev)",
             border: "1px solid var(--border)",
@@ -200,6 +201,7 @@ export default function UsersPage() {
             overflow: "hidden",
           }}
         >
+          <div style={{ minWidth: 900 }}>
           <div
             style={{
               display: "grid",
@@ -284,6 +286,7 @@ export default function UsersPage() {
               No users yet. Click &ldquo;Invite user&rdquo; above to send the first invitation.
             </div>
           )}
+          </div>
         </div>
       </div>
     </>

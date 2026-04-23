@@ -187,6 +187,76 @@ html[data-direction="courtside"] .card {
   outline-offset: 2px;
 }
 
+/* ───────── Responsive utilities (ported from the design prototype) ─────────
+   Three breakpoints:
+     ≥ 901px  — desktop (default)
+     641–900px — tablet (sidebar becomes a drawer, multi-col grids → 2-col)
+     ≤ 640px  — phone (grids → 1-col, chrome elements start hiding)
+*/
+
+/* Grid scaffolding. Every .row cell is min-width:0 so children can shrink
+   below their intrinsic content (essential for sparklines + overflowing text
+   not to blow out the page on 375px screens). */
+.row { display: grid; gap: 14px; }
+.row > * { min-width: 0; }
+.row-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.row-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.row-2-1 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.row-11-1 { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+.row-1-11 { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+
+/* Horizontal-scroll container for tables / wide strips on narrow screens. */
+.hscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.hscroll::-webkit-scrollbar { height: 8px; }
+
+/* Default state for mobile-only reveal classes */
+.show-sm-flex, .show-sm-block { display: none; }
+
+/* Mobile drawer backdrop (dismiss-on-tap) */
+.mobile-backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
+  z-index: 90; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.mobile-backdrop.open { opacity: 1; pointer-events: auto; }
+@media (min-width: 901px) { .mobile-backdrop { display: none; } }
+
+/* Tablet — ≤ 900px */
+@media (max-width: 900px) {
+  .row-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row-2-1, .row-11-1, .row-1-11 { grid-template-columns: minmax(0, 1fr); }
+  .hide-md { display: none !important; }
+
+  /* Platform hero's 5-col KPI strip drops to 2 cols + gets bottom hairlines */
+  .platform-kpi-row { grid-template-columns: repeat(2, 1fr) !important; }
+  .platform-kpi-row > * { border-bottom: 1px solid var(--border); }
+
+  /* Period comparison per-platform rows restructure: label row / bars / delta */
+  .cmp-row {
+    grid-template-columns: 1fr 80px !important;
+    grid-template-areas: "label delta" "bars bars" !important;
+  }
+  .cmp-row > *:nth-child(1) { grid-area: label; }
+  .cmp-row > *:nth-child(2) { grid-area: bars; }
+  .cmp-row > *:nth-child(3) { grid-area: delta; }
+}
+
+/* Phone — ≤ 640px */
+@media (max-width: 640px) {
+  .row-4, .row-5 { grid-template-columns: minmax(0, 1fr); }
+  .hide-sm { display: none !important; }
+  .show-sm-flex { display: flex !important; }
+  .show-sm-block { display: block !important; }
+
+  .page-pad { padding: 16px 14px 48px !important; gap: 14px !important; }
+  .topbar-pad { padding: 12px 14px !important; }
+
+  .h-title { font-size: 18px !important; }
+  .h-sub { font-size: 11px !important; }
+
+  .platform-kpi-row { grid-template-columns: 1fr 1fr !important; }
+}
+
 /* ---- Auth forms ---- */
 /* Shared styles for login / register / forgot / reset / setup pages.
    Kept as real CSS (rather than inline styles) so :focus, :hover, and

@@ -76,6 +76,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Derive publish date from TikTok Snowflake ID.
+ * Upper 32 bits contain a Unix timestamp.
+ */
+function dateFromSnowflakeId(id: string): string {
+  try {
+    const ts = Number(BigInt(id) >> 32n);
+    if (ts > 1600000000 && ts < 2000000000) {
+      return new Date(ts * 1000).toISOString();
+    }
+  } catch {}
+  return new Date().toISOString();
+}
+
 interface ScrapedVideo {
   postId: string;
   title: string;
@@ -300,7 +314,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
             description: String(videoData.desc || ""),
             contentUrl: videoUrl,
             thumbnailUrl: videoData.cover,
-            publishedAt: createTime > 0 ? new Date(createTime * 1000).toISOString() : new Date().toISOString(),
+            publishedAt: createTime > 0 ? new Date(createTime * 1000).toISOString() : dateFromSnowflakeId(videoData.id || videoId),
             postType: "video",
             metrics: {
               views: Number(videoData.stats.playCount || 0),
@@ -319,7 +333,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
               description: domData.desc,
               contentUrl: videoUrl,
               thumbnailUrl: null,
-              publishedAt: domData.date || new Date().toISOString(),
+              publishedAt: domData.date || dateFromSnowflakeId(videoId),
               postType: "video",
               metrics: {
                 views: domData.views,

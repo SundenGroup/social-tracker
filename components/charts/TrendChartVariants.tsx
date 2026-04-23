@@ -232,7 +232,7 @@ export function SmallMultiplesChart({ data, height = 180 }: { data: TrendPoint[]
   if (data.length < 2) return <EmptyChart height={height} />;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+    <div className="row row-4">
       {PLATFORMS.map((p) => {
         const values = data.map((d) => (d[p] as number | undefined) ?? 0);
         const max = Math.max(...values, 1);

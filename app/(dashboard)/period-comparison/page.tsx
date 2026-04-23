@@ -72,7 +72,10 @@ export default function PeriodComparisonPage() {
     <>
       <Header title="Period comparison" subtitle="This period vs. another" />
 
-      <div style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
+      <div
+        className="page-pad"
+        style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}
+      >
         {/* Period picker row */}
         <div
           style={{
@@ -198,7 +201,7 @@ export default function PeriodComparisonPage() {
         {data && (
           <>
             {/* Delta-first KPI cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+            <div className="row row-4">
               <DeltaCard
                 label="Total views"
                 currentValue={fmtK(data.periodA.summary.totalViews)}
@@ -240,6 +243,7 @@ export default function PeriodComparisonPage() {
                   return (
                     <div
                       key={p.platform}
+                      className="cmp-row"
                       style={{
                         display: "grid",
                         gridTemplateColumns: "140px 1fr 100px",

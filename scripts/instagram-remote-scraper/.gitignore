@@ -1,0 +1,6 @@
+node_modules/
+.env
+.browser-cdp
+.browser-ws
+browser-profile/
+debug-screenshot*.png

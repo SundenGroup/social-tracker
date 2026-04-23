@@ -77,7 +77,10 @@ export default function TopPostsPage() {
       )}
 
       {data && (
-        <div style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
+        <div
+          className="page-pad"
+          style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}
+        >
           {/* Metric switcher + platform filter */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div
@@ -160,7 +163,7 @@ export default function TopPostsPage() {
               No posts match these filters.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
+            <div className="row row-5">
               {sorted.map((p, i) => (
                 <TopPostCard key={p.id} post={p} rank={i + 1} metric={metric} aspectRatio="4 / 5" />
               ))}

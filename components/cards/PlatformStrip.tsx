@@ -44,7 +44,7 @@ export default function PlatformStrip({ items, hrefPattern = "/platforms/{platfo
   if (ordered.length === 0) return null;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${ordered.length}, 1fr)`, gap: 14 }}>
+    <div className={ordered.length === 4 ? "row row-4" : "row"} style={ordered.length !== 4 ? { gridTemplateColumns: `repeat(${ordered.length}, minmax(0, 1fr))` } : undefined}>
       {ordered.map((item) => {
         const color = PLATFORM_COLOR[item.platform] ?? "var(--fg-muted)";
         const label = PLATFORM_LABEL[item.platform] ?? item.platform;

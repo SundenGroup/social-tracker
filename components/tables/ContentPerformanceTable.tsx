@@ -181,6 +181,7 @@ export default function ContentPerformanceTable({
       )}
 
       <div
+        className="hscroll"
         style={{
           background: "var(--bg-elev)",
           border: "1px solid var(--border)",
@@ -193,7 +194,10 @@ export default function ContentPerformanceTable({
             No posts in this period
           </div>
         ) : (
-          <>
+          // Inner min-width keeps the 8 columns readable on mobile — users
+          // swipe horizontally through the table rather than the columns
+          // collapsing into each other.
+          <div style={{ minWidth: 780 }}>
             {/* Header row */}
             <div
               style={{
@@ -275,7 +279,7 @@ export default function ContentPerformanceTable({
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>

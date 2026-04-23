@@ -162,7 +162,10 @@ export default function DashboardPage() {
       )}
 
       {data && (
-        <div style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
+        <div
+          className="page-pad"
+          style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}
+        >
           {/* Content type tabs + sync status */}
           <div
             style={{
@@ -173,7 +176,7 @@ export default function DashboardPage() {
               flexWrap: "wrap",
             }}
           >
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <div className="hscroll" style={{ display: "flex", gap: 6, flexWrap: "nowrap", maxWidth: "100%" }}>
               {CONTENT_TYPE_TABS.map((ct) => {
                 const active = contentType === ct.value;
                 return (
@@ -222,7 +225,7 @@ export default function DashboardPage() {
           </div>
 
           {/* KPI cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+          <div className="row row-4">
             <KPICard
               label="Total views"
               value={fmtK(data.summary.totalViews)}
@@ -290,7 +293,7 @@ export default function DashboardPage() {
 
           {/* Top posts strip + content mix */}
           {topPosts.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
+            <div className="row row-2-1" style={{ gap: 20 }}>
               <Block
                 eyebrow="Top posts"
                 title="Most-watched this period"
@@ -308,7 +311,7 @@ export default function DashboardPage() {
                   </Link>
                 }
               >
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+                <div className="row row-5" style={{ gap: 10 }}>
                   {topPosts.map((p, i) => (
                     <TopPostCard key={p.id} post={p} rank={i + 1} compact />
                   ))}

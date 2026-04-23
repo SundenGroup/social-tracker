@@ -27,7 +27,8 @@ export default function CadenceHeatmap({ grid }: CadenceHeatmapProps) {
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div className="hscroll">
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 640 }}>
       {/* Hour scale (labels every 3 hours) */}
       <div
         style={{
@@ -127,6 +128,7 @@ export default function CadenceHeatmap({ grid }: CadenceHeatmapProps) {
           />
         ))}
         <span>More</span>
+      </div>
       </div>
     </div>
   );
