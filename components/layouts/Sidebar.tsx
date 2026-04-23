@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { PlatformGlyph, PLATFORM_COLOR, type Platform } from "@/components/icons/PlatformGlyph";
@@ -35,7 +36,7 @@ const PLATFORM_ITEMS: PlatformNavItem[] = [
  * 403s on every mutation over there, so the cleaner UX is to not show it.
  */
 const WORKSPACE_ITEMS: (NavItem & { adminOnly?: boolean })[] = [
-  { href: "/accounts", label: "Accounts", adminOnly: true },
+  { href: "/connections", label: "Connections", adminOnly: true },
   { href: "/profiles", label: "Profiles", adminOnly: true },
   { href: "/settings", label: "Settings" },
 ];
@@ -181,69 +182,185 @@ export default function Sidebar() {
         </NavGroup>
       </nav>
 
-      {/* User footer */}
-      <div style={{ padding: 14, borderTop: "1px solid var(--border)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: "50%",
-              background: "var(--accent)",
-              display: "grid",
-              placeItems: "center",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 11,
-              flexShrink: 0,
-            }}
-          >
-            {initials}
-          </div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--fg)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {user?.name ?? "—"}
-            </div>
-            <div
-              style={{
-                fontSize: 10,
-                color: "var(--fg-muted)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {user?.email ?? ""}
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
+      {/* User footer — click avatar/name to open menu */}
+      <UserFooter name={user?.name} email={user?.email} initials={initials} />
+    </aside>
+  );
+}
+
+function UserFooter({
+  name,
+  email,
+  initials,
+}: {
+  name?: string | null;
+  email?: string | null;
+  initials: string;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative", borderTop: "1px solid var(--border)" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: 14,
+          width: "100%",
+          background: open ? "var(--bg-sunken)" : "transparent",
+          border: "none",
+          textAlign: "left",
+          color: "var(--fg)",
+          transition: "background .1s",
+        }}
+      >
+        <div
           style={{
-            width: "100%",
-            padding: "6px 10px",
-            borderRadius: 7,
-            border: "1px solid var(--border)",
-            background: "transparent",
-            color: "var(--fg-muted)",
+            width: 30,
+            height: 30,
+            borderRadius: "50%",
+            background: "var(--accent)",
+            display: "grid",
+            placeItems: "center",
+            color: "#fff",
+            fontWeight: 700,
             fontSize: 11,
-            fontWeight: 600,
-            textAlign: "left",
+            flexShrink: 0,
           }}
         >
-          Sign out
-        </button>
-      </div>
-    </aside>
+          {initials}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--fg)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {name ?? "—"}
+          </div>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--fg-muted)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {email ?? ""}
+          </div>
+        </div>
+        <span
+          style={{
+            color: "var(--fg-subtle)",
+            fontSize: 14,
+            fontWeight: 600,
+            marginRight: 2,
+            transform: open ? "rotate(180deg)" : undefined,
+            transition: "transform .15s",
+          }}
+        >
+          ⌄
+        </span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 4px)",
+            left: 10,
+            right: 10,
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border-strong)",
+            borderRadius: 10,
+            padding: 6,
+            boxShadow: "0 8px 28px rgba(0,0,0,0.14), 0 1px 2px rgba(0,0,0,0.06)",
+            zIndex: 50,
+          }}
+        >
+          <MenuRow
+            label="My account"
+            onClick={() => {
+              router.push("/account");
+              setOpen(false);
+            }}
+          />
+          <div style={{ height: 1, background: "var(--border)", margin: "4px 2px" }} />
+          <MenuRow
+            label="Sign out"
+            danger
+            onClick={() => signOut({ callbackUrl: "/login" })}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuRow({
+  label,
+  onClick,
+  danger,
+}: {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      role="menuitem"
+      style={{
+        display: "block",
+        width: "100%",
+        padding: "7px 10px",
+        borderRadius: 6,
+        border: "none",
+        background: "transparent",
+        color: danger ? "var(--bad)" : "var(--fg)",
+        fontSize: 12,
+        fontWeight: 600,
+        textAlign: "left",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-sunken)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+      }}
+    >
+      {label}
+    </button>
   );
 }
 

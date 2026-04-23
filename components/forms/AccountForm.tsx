@@ -97,7 +97,7 @@ export default function AccountForm({ account }: AccountFormProps) {
       }
 
       toast("success", isEditing ? "Account updated" : "Account created");
-      router.push("/accounts");
+      router.push("/connections");
       router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");
