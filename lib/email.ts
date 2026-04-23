@@ -7,45 +7,124 @@ interface EmailOptions {
   text?: string;
 }
 
-function getTransporter() {
+/**
+ * Resolve the sender address once, preferring EMAIL_FROM (provider-agnostic)
+ * and falling back to the legacy SMTP_FROM name.
+ */
+function fromAddress(): string {
+  return (
+    process.env.EMAIL_FROM ??
+    process.env.SMTP_FROM ??
+    "Clutch Social <noreply@clutch.game>"
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Transport 1: Resend HTTPS API (preferred — works on locked-down hosts    */
+/*  where outbound SMTP is blocked, e.g. DigitalOcean's default droplet).   */
+/* ------------------------------------------------------------------------ */
+
+async function sendViaResend(options: EmailOptions): Promise<boolean> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return false;
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromAddress(),
+        to: [options.to],
+        subject: options.subject,
+        html: options.html,
+        text: options.text,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(
+        `[Email/Resend] ${res.status} sending "${options.subject}" to ${options.to}: ${body.slice(0, 500)}`
+      );
+      return false;
+    }
+
+    console.log(`[Email/Resend] Sent: "${options.subject}" to ${options.to}`);
+    return true;
+  } catch (err) {
+    console.error(`[Email/Resend] Failed:`, err);
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Transport 2: generic SMTP (fallback for local dev / self-hosted SMTP).   */
+/* ------------------------------------------------------------------------ */
+
+function smtpTransport() {
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT ?? 587);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
-  if (!host || !user || !pass) {
-    return null;
-  }
+  if (!host || !user || !pass) return null;
 
   return nodemailer.createTransport({
     host,
     port,
     secure: port === 465,
     auth: { user, pass },
+    // Fail fast on unreachable hosts instead of blocking invite responses
+    // for 60+ seconds when the host blocks outbound SMTP.
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 15000,
   });
 }
 
-export function isEmailConfigured(): boolean {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
-}
-
-export async function sendEmail({ to, subject, html, text }: EmailOptions): Promise<boolean> {
-  const transporter = getTransporter();
-  const from = process.env.SMTP_FROM ?? "noreply@clutch.game";
-
-  if (!transporter) {
-    console.warn("[Email] SMTP not configured. Skipping email:", subject);
-    return false;
-  }
+async function sendViaSmtp(options: EmailOptions): Promise<boolean> {
+  const transporter = smtpTransport();
+  if (!transporter) return false;
 
   try {
-    await transporter.sendMail({ from, to, subject, html, text });
-    console.log(`[Email] Sent: "${subject}" to ${to}`);
+    await transporter.sendMail({
+      from: fromAddress(),
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+    });
+    console.log(`[Email/SMTP] Sent: "${options.subject}" to ${options.to}`);
     return true;
-  } catch (error) {
-    console.error(`[Email] Failed to send "${subject}" to ${to}:`, error);
+  } catch (err) {
+    console.error(`[Email/SMTP] Failed to send "${options.subject}" to ${options.to}:`, err);
     return false;
   }
+}
+
+/* ------------------------------------------------------------------------ */
+
+export function isEmailConfigured(): boolean {
+  return Boolean(
+    process.env.RESEND_API_KEY ||
+      (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
+  );
+}
+
+export async function sendEmail(options: EmailOptions): Promise<boolean> {
+  // Prefer Resend when configured — no SMTP round-trips, works on hosts
+  // with outbound port 25/465/587 blocked.
+  if (process.env.RESEND_API_KEY) {
+    return sendViaResend(options);
+  }
+  if (smtpTransport()) {
+    return sendViaSmtp(options);
+  }
+  console.warn("[Email] No provider configured. Skipping:", options.subject);
+  return false;
 }
 
 /* ------------------------------------------------------------------------ */
