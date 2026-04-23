@@ -163,23 +163,35 @@ export default function Sidebar() {
           ))}
         </NavGroup>
 
-        <NavGroup label="Workspace">
-          {WORKSPACE_ITEMS.filter((item) => !item.adminOnly || isAdmin).map((item) => (
-            <NavRow
-              key={item.href}
-              href={item.href}
-              label={item.label}
-              active={isActive(item.href)}
-            />
-          ))}
-          {isAdmin && (
-            <NavRow
-              href="/users"
-              label="Users"
-              active={isActive("/users")}
-            />
-          )}
-        </NavGroup>
+        {/* Workspace group — render only if the current user has anything in it.
+            Viewers currently have zero visible items here, so the whole group
+            (including the "Workspace" heading) gets dropped for them. */}
+        {(() => {
+          const visibleWorkspaceItems = WORKSPACE_ITEMS.filter(
+            (item) => !item.adminOnly || isAdmin
+          );
+          const showUsers = isAdmin;
+          if (visibleWorkspaceItems.length === 0 && !showUsers) return null;
+          return (
+            <NavGroup label="Workspace">
+              {visibleWorkspaceItems.map((item) => (
+                <NavRow
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  active={isActive(item.href)}
+                />
+              ))}
+              {showUsers && (
+                <NavRow
+                  href="/users"
+                  label="Users"
+                  active={isActive("/users")}
+                />
+              )}
+            </NavGroup>
+          );
+        })()}
       </nav>
 
       {/* User footer — click avatar/name to open menu */}
