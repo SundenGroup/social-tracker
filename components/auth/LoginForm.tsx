@@ -45,15 +45,11 @@ export default function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {error && (
-        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-          {error}
-        </div>
-      )}
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {error && <div className="auth-error">{error}</div>}
 
       <div>
-        <label htmlFor="email" className="mb-1 block text-sm font-medium text-clutch-black">
+        <label htmlFor="email" className="auth-label">
           Email
         </label>
         <input
@@ -62,13 +58,14 @@ export default function LoginForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="email"
+          className="auth-input"
           placeholder="you@example.com"
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="mb-1 block text-sm font-medium text-clutch-black">
+        <label htmlFor="password" className="auth-label">
           Password
         </label>
         <input
@@ -77,29 +74,23 @@ export default function LoginForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="current-password"
+          className="auth-input"
           placeholder="••••••••"
         />
       </div>
 
-      <div className="flex justify-end">
-        <Link
-          href="/forgot-password"
-          className="text-xs font-medium text-clutch-blue hover:underline"
-        >
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -4 }}>
+        <Link href="/forgot-password" className="auth-link" style={{ fontSize: 12 }}>
           Forgot password?
         </Link>
       </div>
 
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full rounded-lg bg-clutch-red px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-clutch-red/90 disabled:opacity-50"
-      >
-        {isLoading ? "Signing in..." : "Sign In"}
+      <button type="submit" disabled={isLoading} className="auth-btn-primary">
+        {isLoading ? "Signing in…" : "Sign in"}
       </button>
 
-      <p className="text-center text-xs text-clutch-grey/60">
+      <p style={{ textAlign: "center", fontSize: 11, color: "var(--fg-subtle)", margin: 0 }}>
         Clutch Social is invite-only. Ask your admin to send you an invitation.
       </p>
     </form>

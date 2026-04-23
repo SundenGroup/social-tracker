@@ -1,15 +1,13 @@
 import ForgotPasswordForm from "@/components/auth/ForgotPasswordForm";
 
 export const metadata = {
-  title: "Forgot password - Clutch",
+  title: "Forgot password · Clutch Social",
 };
 
 export default function ForgotPasswordPage() {
   return (
     <>
-      <h2 className="mb-6 text-center text-xl font-bold text-clutch-black">
-        Reset your password
-      </h2>
+      <h2 className="auth-heading">Reset your password</h2>
       <ForgotPasswordForm />
     </>
   );

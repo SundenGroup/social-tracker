@@ -1,15 +1,14 @@
 import LoginForm from "@/components/auth/LoginForm";
 
 export const metadata = {
-  title: "Sign In - Clutch",
+  title: "Sign in · Clutch Social",
 };
 
 export default function LoginPage() {
   return (
     <>
-      <h2 className="mb-6 text-center text-xl font-bold text-clutch-black">
-        Sign in to your account
-      </h2>
+      <h2 className="auth-heading">Sign in</h2>
+      <p className="auth-sub">Welcome back to Clutch Social.</p>
       <LoginForm />
     </>
   );

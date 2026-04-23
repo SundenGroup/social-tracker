@@ -56,21 +56,19 @@ export default function ResetPasswordForm() {
 
   if (success) {
     return (
-      <div className="space-y-4">
-        <div className="rounded-lg bg-green-50 p-4 text-sm text-green-700">
-          Password updated. Redirecting you to sign in...
-        </div>
+      <div className="auth-success">
+        Password updated. Redirecting you to sign in…
       </div>
     );
   }
 
   if (!token || !email) {
     return (
-      <div className="space-y-5">
-        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-          This reset link is invalid. Please{" "}
-          <Link href="/forgot-password" className="font-semibold underline">
-            request a new one
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div className="auth-error">
+          This reset link is invalid.{" "}
+          <Link href="/forgot-password" className="auth-link" style={{ color: "inherit", textDecoration: "underline" }}>
+            Request a new one
           </Link>
           .
         </div>
@@ -79,15 +77,15 @@ export default function ResetPasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {error && <div className="auth-error">{error}</div>}
 
-      <p className="text-sm text-clutch-grey/70">
-        Setting a new password for <strong>{email}</strong>.
+      <p style={{ fontSize: 13, color: "var(--fg-muted)", margin: 0, lineHeight: 1.5 }}>
+        Setting a new password for <strong style={{ color: "var(--fg)" }}>{email}</strong>.
       </p>
 
       <div>
-        <label htmlFor="password" className="mb-1 block text-sm font-medium text-clutch-black">
+        <label htmlFor="password" className="auth-label">
           New password
         </label>
         <input
@@ -97,13 +95,14 @@ export default function ResetPasswordForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           minLength={8}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="new-password"
+          className="auth-input"
           placeholder="At least 8 characters"
         />
       </div>
 
       <div>
-        <label htmlFor="confirm" className="mb-1 block text-sm font-medium text-clutch-black">
+        <label htmlFor="confirm" className="auth-label">
           Confirm password
         </label>
         <input
@@ -113,17 +112,14 @@ export default function ResetPasswordForm() {
           onChange={(e) => setConfirm(e.target.value)}
           required
           minLength={8}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="new-password"
+          className="auth-input"
           placeholder="Type it again"
         />
       </div>
 
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full rounded-lg bg-clutch-red px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-clutch-red/90 disabled:opacity-50"
-      >
-        {isLoading ? "Saving..." : "Save new password"}
+      <button type="submit" disabled={isLoading} className="auth-btn-primary">
+        {isLoading ? "Saving…" : "Save new password"}
       </button>
     </form>
   );

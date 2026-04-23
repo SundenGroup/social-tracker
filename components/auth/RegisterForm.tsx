@@ -66,15 +66,11 @@ export default function RegisterForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {error && (
-        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-          {error}
-        </div>
-      )}
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {error && <div className="auth-error">{error}</div>}
 
       <div>
-        <label htmlFor="name" className="mb-1 block text-sm font-medium text-clutch-black">
+        <label htmlFor="name" className="auth-label">
           Name
         </label>
         <input
@@ -83,13 +79,14 @@ export default function RegisterForm() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="name"
+          className="auth-input"
           placeholder="Your name"
         />
       </div>
 
       <div>
-        <label htmlFor="email" className="mb-1 block text-sm font-medium text-clutch-black">
+        <label htmlFor="email" className="auth-label">
           Email
         </label>
         <input
@@ -98,13 +95,14 @@ export default function RegisterForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="email"
+          className="auth-input"
           placeholder="you@example.com"
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="mb-1 block text-sm font-medium text-clutch-black">
+        <label htmlFor="password" className="auth-label">
           Password
         </label>
         <input
@@ -113,17 +111,18 @@ export default function RegisterForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="new-password"
+          className="auth-input"
           placeholder="••••••••"
         />
-        <p className="mt-1 text-xs text-clutch-grey/50">
+        <p style={{ marginTop: 6, fontSize: 11, color: "var(--fg-subtle)" }}>
           Min 8 characters, with uppercase, lowercase, and a number
         </p>
       </div>
 
       <div>
-        <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium text-clutch-black">
-          Confirm Password
+        <label htmlFor="confirmPassword" className="auth-label">
+          Confirm password
         </label>
         <input
           id="confirmPassword"
@@ -131,23 +130,20 @@ export default function RegisterForm() {
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="new-password"
+          className="auth-input"
           placeholder="••••••••"
         />
       </div>
 
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full rounded-lg bg-clutch-red px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-clutch-red/90 disabled:opacity-50"
-      >
-        {isLoading ? "Creating account..." : "Create Account"}
+      <button type="submit" disabled={isLoading} className="auth-btn-primary">
+        {isLoading ? "Creating account…" : "Create account"}
       </button>
 
-      <p className="text-center text-sm text-clutch-grey/60">
+      <p style={{ textAlign: "center", fontSize: 12, color: "var(--fg-muted)", margin: 0 }}>
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-clutch-blue hover:underline">
-          Sign In
+        <Link href="/login" className="auth-link">
+          Sign in
         </Link>
       </p>
     </form>

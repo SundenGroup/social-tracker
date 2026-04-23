@@ -2,16 +2,21 @@ import { Suspense } from "react";
 import SetupAccountForm from "@/components/auth/SetupAccountForm";
 
 export const metadata = {
-  title: "Set up your account - Clutch",
+  title: "Set up your account · Clutch Social",
 };
 
 export default function SetupAccountPage() {
   return (
     <>
-      <h2 className="mb-6 text-center text-xl font-bold text-clutch-black">
-        Finish creating your account
-      </h2>
-      <Suspense fallback={<div className="py-10 text-center text-sm text-clutch-grey/60">Loading…</div>}>
+      <h2 className="auth-heading">Finish creating your account</h2>
+      <p className="auth-sub">Pick a password — you&rsquo;ll use it to sign in.</p>
+      <Suspense
+        fallback={
+          <div style={{ padding: "20px 0", textAlign: "center", fontSize: 13, color: "var(--fg-muted)" }}>
+            Loading…
+          </div>
+        }
+      >
         <SetupAccountForm />
       </Suspense>
     </>

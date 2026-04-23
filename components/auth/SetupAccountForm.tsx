@@ -26,7 +26,6 @@ export default function SetupAccountForm() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  // Validate + fetch invite info on mount
   useEffect(() => {
     if (!token || !email) {
       setLoadError("This invitation link is missing information. Please ask for a new invite.");
@@ -85,17 +84,18 @@ export default function SetupAccountForm() {
   }
 
   if (loading) {
-    return <div className="py-10 text-center text-sm text-clutch-grey/60">Checking invitation…</div>;
+    return (
+      <div style={{ padding: "28px 0", textAlign: "center", fontSize: 13, color: "var(--fg-muted)" }}>
+        Checking invitation…
+      </div>
+    );
   }
 
   if (loadError) {
     return (
-      <div className="space-y-4">
-        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">{loadError}</div>
-        <Link
-          href="/login"
-          className="block w-full rounded-lg border border-gray-300 px-4 py-2.5 text-center text-sm font-semibold text-clutch-grey transition-colors hover:bg-gray-50"
-        >
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="auth-error">{loadError}</div>
+        <Link href="/login" className="auth-btn-secondary">
           Go to sign in
         </Link>
       </div>
@@ -104,26 +104,34 @@ export default function SetupAccountForm() {
 
   if (success) {
     return (
-      <div className="rounded-lg bg-green-50 p-4 text-sm text-green-700">
-        Account activated. Redirecting you to sign in...
+      <div className="auth-success">
+        Account activated. Redirecting you to sign in…
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {error && <div className="auth-error">{error}</div>}
 
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
-        <div className="font-semibold text-clutch-black">{info?.name}</div>
-        <div className="text-xs text-clutch-grey/70">{info?.email}</div>
-        <div className="mt-1 text-xs text-clutch-grey/50">
-          Joining <strong>{info?.organizationName}</strong>
+      {/* Invitee summary card — preview what they're signing up to */}
+      <div
+        style={{
+          border: "1px solid var(--border)",
+          background: "var(--bg-sunken)",
+          borderRadius: 10,
+          padding: "12px 14px",
+        }}
+      >
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>{info?.name}</div>
+        <div style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 2 }}>{info?.email}</div>
+        <div style={{ fontSize: 11, color: "var(--fg-subtle)", marginTop: 6 }}>
+          Joining <strong style={{ color: "var(--fg)", fontWeight: 600 }}>{info?.organizationName}</strong>
         </div>
       </div>
 
       <div>
-        <label htmlFor="password" className="mb-1 block text-sm font-medium text-clutch-black">
+        <label htmlFor="password" className="auth-label">
           Choose a password
         </label>
         <input
@@ -133,13 +141,14 @@ export default function SetupAccountForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           minLength={8}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="new-password"
+          className="auth-input"
           placeholder="At least 8 characters"
         />
       </div>
 
       <div>
-        <label htmlFor="confirm" className="mb-1 block text-sm font-medium text-clutch-black">
+        <label htmlFor="confirm" className="auth-label">
           Confirm password
         </label>
         <input
@@ -149,17 +158,14 @@ export default function SetupAccountForm() {
           onChange={(e) => setConfirm(e.target.value)}
           required
           minLength={8}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          autoComplete="new-password"
+          className="auth-input"
           placeholder="Type it again"
         />
       </div>
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="w-full rounded-lg bg-clutch-red px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-clutch-red/90 disabled:opacity-50"
-      >
-        {isSubmitting ? "Activating..." : "Activate account"}
+      <button type="submit" disabled={isSubmitting} className="auth-btn-primary">
+        {isSubmitting ? "Activating…" : "Activate account"}
       </button>
     </form>
   );
