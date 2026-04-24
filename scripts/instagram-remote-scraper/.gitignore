@@ -4,3 +4,5 @@ node_modules/
 .browser-ws
 browser-profile/
 debug-screenshot*.png
+checkpoint-*.json
+checkpoint-*.json.tmp

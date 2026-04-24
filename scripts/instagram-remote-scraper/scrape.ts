@@ -52,6 +52,16 @@ const INSTAGRAM_USERNAMES: string[] = (process.env.INSTAGRAM_USERNAMES || "pubge
 const MAX_POSTS = parseInt(process.env.MAX_POSTS || "50", 10);
 const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || "3", 10);
 const RETRY_DELAY_MIN = parseInt(process.env.RETRY_DELAY_MIN || "5", 10);
+// Persist progress to `checkpoint-<user>.json` every N successfully-scraped
+// posts so a crash/Ctrl+C doesn't lose everything. Cheap; always on.
+const CHECKPOINT_EVERY = parseInt(process.env.CHECKPOINT_EVERY || "25", 10);
+// If > 0, push to the API incrementally every N posts (in addition to the
+// final push). Lets long runs get partial data into the dashboard before the
+// scrape finishes, and bounds the data-loss window if the run is abandoned.
+// Default 0 = only the single push at the end (existing behavior).
+const PUSH_EVERY = parseInt(process.env.PUSH_EVERY || "0", 10);
+// Checkpoints older than this are discarded (user left it sitting for days).
+const CHECKPOINT_TTL_MS = 7 * 24 * 3600_000;
 
 const CDP_FILE = path.join(SCRIPT_DIR, ".browser-cdp");
 const PROFILE_DIR = path.join(SCRIPT_DIR, "browser-profile");
@@ -210,7 +220,79 @@ async function checkForLoginWall(page: Page): Promise<boolean> {
 interface ScrapeResult {
   posts: ScrapedPost[];
   profileStats: ProfileStats | null;
+  /** True when we bailed early (Ctrl+C / SIGTERM). Main keeps the
+   *  checkpoint around so the next run can resume. */
+  interrupted?: boolean;
 }
+
+// ───────── checkpoint + signal handling ─────────
+
+interface PostLink {
+  shortcode: string;
+  href: string;
+  type: string;
+}
+
+interface Checkpoint {
+  version: 1;
+  username: string;
+  startedAt: string;
+  updatedAt: string;
+  profileStats: ProfileStats | null;
+  targetLinks: PostLink[];      // full list discovered during scrolling
+  scrapedPosts: ScrapedPost[];  // posts with full details (may include pushed ones)
+  pushedUpTo: number;           // how many of scrapedPosts have been ingested
+}
+
+function checkpointPath(username: string): string {
+  return path.join(SCRIPT_DIR, `checkpoint-${username}.json`);
+}
+
+function loadCheckpoint(username: string): Checkpoint | null {
+  try {
+    const raw = fs.readFileSync(checkpointPath(username), "utf-8");
+    const cp = JSON.parse(raw) as Checkpoint;
+    if (cp.version !== 1 || cp.username !== username) return null;
+    const age = Date.now() - new Date(cp.updatedAt).getTime();
+    if (age > CHECKPOINT_TTL_MS) {
+      console.log(`[Scraper] Checkpoint for @${username} is ${Math.round(age / 3600_000)}h old — discarding, starting fresh.`);
+      return null;
+    }
+    return cp;
+  } catch {
+    return null;
+  }
+}
+
+function saveCheckpoint(cp: Checkpoint) {
+  cp.updatedAt = new Date().toISOString();
+  // Atomic write — write to temp then rename, so a crash mid-write
+  // doesn't corrupt the file.
+  const p = checkpointPath(cp.username);
+  const tmp = p + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(cp));
+  fs.renameSync(tmp, p);
+}
+
+function clearCheckpoint(username: string) {
+  try { fs.unlinkSync(checkpointPath(username)); } catch { /* ignore */ }
+}
+
+// SIGINT/SIGTERM flag shared by scrape(). We only break out of the per-post
+// loop — still give the current post a chance to finish so the checkpoint
+// reflects a clean boundary.
+let interrupted = false;
+let sigintCount = 0;
+process.on("SIGINT", () => {
+  sigintCount++;
+  if (sigintCount > 1) {
+    console.log("\n[Scraper] Forced exit.");
+    process.exit(130);
+  }
+  interrupted = true;
+  console.log("\n[Scraper] Interrupt received — finishing current post, saving checkpoint, pushing progress, then exiting...");
+});
+process.on("SIGTERM", () => { interrupted = true; });
 
 /**
  * Scrape a single Instagram account.
@@ -221,6 +303,16 @@ async function scrape(username: string): Promise<ScrapeResult> {
 
   if (interactive) {
     console.log("[Scraper] INTERACTIVE MODE — script will pause so you can interact with the browser.");
+  }
+
+  // --- Step 0: Check for a checkpoint from a prior interrupted run ---
+  // If found and fresh, we skip the scroll phase (expensive) and resume
+  // per-post scraping from where we left off.
+  const resumeFrom = loadCheckpoint(username);
+  if (resumeFrom) {
+    const done = resumeFrom.scrapedPosts.length;
+    const total = resumeFrom.targetShortcodes.length;
+    console.log(`[Scraper] Found checkpoint for @${username}: ${done}/${total} posts already scraped (${resumeFrom.pushedUpTo} pushed). Resuming...`);
   }
 
   try {
@@ -321,16 +413,26 @@ async function scrape(username: string): Promise<ScrapeResult> {
     }
 
     // --- Step 4: Scroll to load posts and collect post links ---
-    // Scrape both the main Posts tab and the Reels tab to get all content
-    // Instagram uses virtual scrolling — it removes off-screen elements from the DOM.
-    // We must collect links DURING scrolling, not just at the end.
-    const allPostLinks = new Map<string, { shortcode: string; href: string; type: string }>();
+    // Scrape both the main Posts tab and the Reels tab to get all content.
+    // Instagram uses virtual scrolling — it removes off-screen elements from
+    // the DOM. We must collect links DURING scrolling, not just at the end.
+    //
+    // If we're resuming from a checkpoint, skip this whole phase and reuse
+    // the previously-collected link list.
+    const allPostLinks = new Map<string, PostLink>();
+
+    if (resumeFrom) {
+      for (const link of resumeFrom.targetLinks) allPostLinks.set(link.shortcode, link);
+      // Also reuse the profile stats we captured before (cheap, no re-fetch).
+      if (resumeFrom.profileStats) profileStats = resumeFrom.profileStats;
+      console.log(`[Scraper] Resume mode — skipping scroll phase, using ${allPostLinks.size} saved post links.`);
+    } else {
 
     const collectLinksFromPage = async () => {
-      const links: { shortcode: string; href: string; type: string }[] = await page.$$eval(
+      const links: PostLink[] = await page.$$eval(
         'a[href*="/p/"], a[href*="/reel/"], a[href*="/tv/"]',
         (els) => {
-          const result: { shortcode: string; href: string; type: string }[] = [];
+          const result: PostLink[] = [];
           els.forEach((e) => {
             const href = e.getAttribute("href") || "";
             const m = href.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
@@ -358,6 +460,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
     ];
 
     for (const tab of scrapeTabs) {
+      if (interrupted) break;
       if (tab.label === "Reels") {
         console.log(`[Scraper] Loading ${tab.label} tab...`);
         await page.goto(tab.url, { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -381,6 +484,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
       const staleLimit = MAX_POSTS > 500 ? 15 : 5;
 
       for (let i = 0; i < maxScrolls; i++) {
+        if (interrupted) break;
         await page.evaluate("window.scrollBy(0, window.innerHeight * 2)");
         await page.waitForTimeout(1500 + Math.random() * 1500);
 
@@ -412,6 +516,8 @@ async function scrape(username: string): Promise<ScrapeResult> {
       console.log(`[Scraper] ${allPostLinks.size} total unique posts after ${tab.label} tab`);
     }
 
+    } // end of non-resume (scroll) branch
+
     const postLinks = Array.from(allPostLinks.values());
     console.log(`[Scraper] Found ${postLinks.length} unique post links total`);
 
@@ -423,17 +529,43 @@ async function scrape(username: string): Promise<ScrapeResult> {
     // Limit to MAX_POSTS
     const toScrape = postLinks.slice(0, MAX_POSTS);
 
+    // Initialize / hydrate state from checkpoint so we don't re-scrape posts.
+    const posts: ScrapedPost[] = resumeFrom?.scrapedPosts.slice() ?? [];
+    const alreadyScraped = new Set(posts.map((p) => p.postId));
+    let pushedUpTo = resumeFrom?.pushedUpTo ?? 0;
+    const remaining = toScrape.filter((l) => !alreadyScraped.has(l.shortcode));
+
+    // Seed the checkpoint so a crash during the per-post loop still leaves
+    // something resumable (even before the first CHECKPOINT_EVERY threshold).
+    const startedAt = resumeFrom?.startedAt ?? new Date().toISOString();
+    let checkpoint: Checkpoint = {
+      version: 1,
+      username,
+      startedAt,
+      updatedAt: new Date().toISOString(),
+      profileStats,
+      targetLinks: toScrape,
+      scrapedPosts: posts,
+      pushedUpTo,
+    };
+    saveCheckpoint(checkpoint);
+
     // --- Step 5: Visit each post page to get full details ---
-    console.log(`[Scraper] Scraping details for ${toScrape.length} posts...`);
-    const posts: ScrapedPost[] = [];
+    console.log(
+      `[Scraper] Scraping details for ${remaining.length} posts (${posts.length} already done from checkpoint)...`
+    );
     let failures = 0;
 
     // Navigate to Instagram homepage first to ensure cookies are active for API calls
     await page.goto("https://www.instagram.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    for (let i = 0; i < toScrape.length; i++) {
-      const { shortcode, href, type } = toScrape[i];
+    for (let i = 0; i < remaining.length; i++) {
+      if (interrupted) {
+        console.log(`[Scraper] Interrupted after ${posts.length}/${toScrape.length} posts. Checkpoint saved.`);
+        break;
+      }
+      const { shortcode, href, type } = remaining[i];
 
       try {
         const mediaId = shortcodeToMediaId(shortcode);
@@ -549,11 +681,33 @@ async function scrape(username: string): Promise<ScrapeResult> {
         }
 
         if ((i + 1) % 10 === 0) {
-          console.log(`[Scraper] ... ${i + 1}/${toScrape.length} posts scraped (${posts.length} successful)`);
+          console.log(`[Scraper] ... ${posts.length}/${toScrape.length} posts scraped (this run: ${i + 1}/${remaining.length})`);
+        }
+
+        // Persist a checkpoint every CHECKPOINT_EVERY posts so a crash
+        // / Ctrl+C doesn't lose the work we've done. Cheap — a few KB write.
+        if (posts.length % CHECKPOINT_EVERY === 0) {
+          checkpoint = { ...checkpoint, profileStats, scrapedPosts: posts, pushedUpTo };
+          saveCheckpoint(checkpoint);
+        }
+
+        // Incremental push: if the user set PUSH_EVERY, stream completed
+        // batches to the server so their dashboard fills in progressively.
+        if (PUSH_EVERY > 0 && posts.length - pushedUpTo >= PUSH_EVERY) {
+          try {
+            const batch = posts.slice(pushedUpTo);
+            console.log(`[Scraper] Incremental push: ${batch.length} posts...`);
+            await pushToAPI(username, batch, profileStats);
+            pushedUpTo = posts.length;
+            checkpoint = { ...checkpoint, scrapedPosts: posts, pushedUpTo };
+            saveCheckpoint(checkpoint);
+          } catch (err) {
+            console.log(`[Scraper] Incremental push failed (will retry at end): ${err instanceof Error ? err.message : err}`);
+          }
         }
 
         // Small delay between API calls to avoid rate limiting
-        if (i < toScrape.length - 1) {
+        if (i < remaining.length - 1) {
           await page.waitForTimeout(500 + Math.random() * 1000);
         }
       } catch (err) {
@@ -566,7 +720,14 @@ async function scrape(username: string): Promise<ScrapeResult> {
       }
     }
 
-    console.log(`[Scraper] Scraped ${posts.length} posts with details (${failures} failures)`);
+    // Final checkpoint snapshot — covers the case where we finished cleanly
+    // OR were interrupted.
+    checkpoint = { ...checkpoint, profileStats, scrapedPosts: posts, pushedUpTo };
+    saveCheckpoint(checkpoint);
+
+    console.log(
+      `[Scraper] Scraped ${posts.length}/${toScrape.length} posts (${failures} failures, ${interrupted ? "INTERRUPTED" : "complete"})`
+    );
 
     if (posts.length === 0) {
       throw new Error("Failed to scrape any post details");
@@ -575,7 +736,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
     // Navigate away so browser isn't sitting on Instagram between runs
     await page.goto("about:blank").catch(() => {});
 
-    return { posts, profileStats };
+    return { posts, profileStats, interrupted };
   } finally {
     if (standalone) {
       await context.close();
@@ -655,8 +816,29 @@ async function main() {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         console.log(`[Scraper] === Attempt ${attempt}/${MAX_RETRIES} for @${username} ===`);
-        const { posts, profileStats } = await scrape(username);
-        await pushToAPI(username, posts, profileStats);
+        const { posts, profileStats, interrupted: wasInterrupted } = await scrape(username);
+        // Push only posts that haven't been sent by the incremental-push
+        // branch inside scrape(). Check the checkpoint for pushedUpTo.
+        const cp = loadCheckpoint(username);
+        const pushedUpTo = cp?.pushedUpTo ?? 0;
+        const tail = posts.slice(pushedUpTo);
+        if (tail.length > 0) {
+          await pushToAPI(username, tail, profileStats);
+          if (cp) {
+            saveCheckpoint({ ...cp, pushedUpTo: posts.length });
+          }
+        } else {
+          console.log(`[Scraper] Nothing new to push (incremental pushes already sent everything).`);
+        }
+
+        if (wasInterrupted) {
+          console.log(`[Scraper] @${username} interrupted — checkpoint kept so you can resume next run.`);
+          success = true; // Not a failure; user asked to stop.
+          break;
+        }
+
+        // Clean finish — drop the checkpoint so the next run starts fresh.
+        clearCheckpoint(username);
         console.log(`[Scraper] @${username} completed successfully on attempt ${attempt}.`);
         success = true;
         break;
@@ -665,6 +847,10 @@ async function main() {
           `[Scraper] @${username} attempt ${attempt} failed:`,
           err instanceof Error ? err.message : err
         );
+        if (interrupted) {
+          console.log(`[Scraper] Interrupt flag set — not retrying. Checkpoint preserved.`);
+          break;
+        }
         if (attempt < MAX_RETRIES) {
           console.log(`[Scraper] Waiting ${RETRY_DELAY_MIN} minutes before retry...`);
           await sleep(RETRY_DELAY_MIN * 60 * 1000);
