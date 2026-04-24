@@ -6,3 +6,5 @@ browser-profile/
 debug-screenshot*.png
 checkpoint-*.json
 checkpoint-*.json.tmp
+backfill-checkpoint-*.json
+backfill-checkpoint-*.json.tmp
