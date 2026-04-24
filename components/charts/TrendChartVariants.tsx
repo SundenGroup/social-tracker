@@ -15,7 +15,19 @@ export interface TrendPoint {
   vk?: number;
 }
 
-const PLATFORMS: Platform[] = ["youtube", "twitter", "tiktok", "instagram", "vk"];
+const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "tiktok", "instagram", "vk"];
+
+/**
+ * Resolve which platforms a chart should render. Callers pass the
+ * profile-aware list (e.g. `activePlatforms` from useProfiles()) so a
+ * platform with zero accounts in the current scope doesn't appear in
+ * tooltips/legends as "0". Falls back to ALL_PLATFORMS when nothing is
+ * provided (e.g. legacy callers or before the profile context loads).
+ */
+function resolvePlatforms(override?: string[]): Platform[] {
+  if (!override || override.length === 0) return ALL_PLATFORMS;
+  return ALL_PLATFORMS.filter((p) => override.includes(p));
+}
 
 function dayLabel(dateStr: string): string {
   try {
@@ -42,7 +54,7 @@ function useContainerWidth(initial = 900) {
  * Variant 1 — Simple overlaid line graphs (one line per platform)
  * ====================================================================== */
 
-export function LinesChart({ data, height = 280 }: { data: TrendPoint[]; height?: number }) {
+export function LinesChart({ data, height = 280, platforms: platformsOverride }: { data: TrendPoint[]; height?: number; platforms?: string[] }) {
   const [ref, W] = useContainerWidth(900);
   const [hover, setHover] = useState<number | null>(null);
   const h = height;
@@ -50,6 +62,7 @@ export function LinesChart({ data, height = 280 }: { data: TrendPoint[]; height?
   const padR = 14;
   const padT = 18;
   const padB = 28;
+  const PLATFORMS = resolvePlatforms(platformsOverride);
 
   if (data.length < 2) return <EmptyChart height={height} />;
 
@@ -229,7 +242,8 @@ export function LinesChart({ data, height = 280 }: { data: TrendPoint[]; height?
  * Variant 2 — Small multiples (one mini area chart per platform)
  * ====================================================================== */
 
-export function SmallMultiplesChart({ data, height = 180 }: { data: TrendPoint[]; height?: number }) {
+export function SmallMultiplesChart({ data, height = 180, platforms: platformsOverride }: { data: TrendPoint[]; height?: number; platforms?: string[] }) {
+  const PLATFORMS = resolvePlatforms(platformsOverride);
   if (data.length < 2) return <EmptyChart height={height} />;
 
   return (
@@ -295,7 +309,8 @@ export function SmallMultiplesChart({ data, height = 180 }: { data: TrendPoint[]
  * Variant 3 — Stacked per-platform bars, with spike annotations + hover
  * ====================================================================== */
 
-export function AnnotatedBarsChart({ data, height = 280 }: { data: TrendPoint[]; height?: number }) {
+export function AnnotatedBarsChart({ data, height = 280, platforms: platformsOverride }: { data: TrendPoint[]; height?: number; platforms?: string[] }) {
+  const PLATFORMS = resolvePlatforms(platformsOverride);
   const [ref, W] = useContainerWidth(900);
   const [hover, setHover] = useState<number | null>(null);
   const h = height;
@@ -602,7 +617,8 @@ function EmptyChart({ height }: { height: number }) {
  * Legend + switcher
  * ====================================================================== */
 
-export function ChartLegend() {
+export function ChartLegend({ platforms: platformsOverride }: { platforms?: string[] } = {}) {
+  const PLATFORMS = resolvePlatforms(platformsOverride);
   return (
     <div
       style={{

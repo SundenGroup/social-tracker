@@ -23,6 +23,7 @@ import CadenceHeatmap, { buildCadenceGrid } from "@/components/charts/CadenceHea
 import ContentMixDonut from "@/components/charts/ContentMixDonut";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { useDashboard } from "@/hooks/useDashboard";
+import { useProfiles } from "@/hooks/useProfiles";
 import { fmtK, fmtInt } from "@/lib/format";
 import type { Platform } from "@/components/icons/PlatformGlyph";
 
@@ -39,6 +40,10 @@ export default function DashboardPage() {
   const [contentType, setContentType] = useState("all");
   const [chartVariant, setChartVariant] = useState<ChartVariant>("bars");
   const { data, isLoading, error, refetch } = useDashboard(startDate, endDate, contentType);
+  // Charts respect the current profile's active platforms — so e.g.
+  // VK doesn't show up as "0" in the legend/tooltip when the selected
+  // profile has no VK accounts.
+  const { activePlatforms } = useProfiles();
 
   // Build per-platform sparkline data from the trend series
   const platformStripItems: PlatformStripItem[] = useMemo(() => {
@@ -274,10 +279,10 @@ export default function DashboardPage() {
             title="Views by publish date"
             rightSlot={<ChartVariantSwitcher value={chartVariant} onChange={setChartVariant} />}
           >
-            {chartVariant === "lines" && <LinesChart data={data.trends} />}
-            {chartVariant === "multiples" && <SmallMultiplesChart data={data.trends} />}
-            {chartVariant === "bars" && <AnnotatedBarsChart data={data.trends} />}
-            <ChartLegend />
+            {chartVariant === "lines" && <LinesChart data={data.trends} platforms={activePlatforms} />}
+            {chartVariant === "multiples" && <SmallMultiplesChart data={data.trends} platforms={activePlatforms} />}
+            {chartVariant === "bars" && <AnnotatedBarsChart data={data.trends} platforms={activePlatforms} />}
+            <ChartLegend platforms={activePlatforms} />
           </Block>
 
           {/* Cadence heatmap */}
