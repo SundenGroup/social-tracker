@@ -16,6 +16,7 @@ const PLATFORMS = [
   { value: "twitter", label: "X / Twitter" },
   { value: "instagram", label: "Instagram" },
   { value: "tiktok", label: "TikTok" },
+  { value: "vk", label: "VK" },
 ] as const;
 
 export default function AccountForm({ account }: AccountFormProps) {

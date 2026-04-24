@@ -25,7 +25,7 @@ export interface ParseResult {
   errors: ImportError[];
 }
 
-const VALID_PLATFORMS = ["youtube", "twitter", "instagram", "tiktok"];
+const VALID_PLATFORMS = ["youtube", "twitter", "instagram", "tiktok", "vk"];
 const VALID_POST_TYPES = ["video", "image", "carousel", "text", "short", "live", "story"];
 
 const COLUMN_MAP: Record<string, string> = {

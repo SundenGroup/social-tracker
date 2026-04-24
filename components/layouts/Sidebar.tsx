@@ -37,6 +37,7 @@ const PLATFORM_ITEMS: PlatformNavItem[] = [
   { href: "/platforms/tiktok", label: "TikTok", platform: "tiktok" },
   { href: "/platforms/twitter", label: "X / Twitter", platform: "twitter" },
   { href: "/platforms/instagram", label: "Instagram", platform: "instagram" },
+  { href: "/platforms/vk", label: "VK", platform: "vk" },
 ];
 
 /**
@@ -59,6 +60,7 @@ const PROFILE_PAGES = new Set([
   "/platforms/twitter",
   "/platforms/instagram",
   "/platforms/tiktok",
+  "/platforms/vk",
 ]);
 
 export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps = {}) {

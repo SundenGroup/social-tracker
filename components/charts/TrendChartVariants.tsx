@@ -12,9 +12,10 @@ export interface TrendPoint {
   twitter?: number;
   instagram?: number;
   tiktok?: number;
+  vk?: number;
 }
 
-const PLATFORMS: Platform[] = ["youtube", "twitter", "tiktok", "instagram"];
+const PLATFORMS: Platform[] = ["youtube", "twitter", "tiktok", "instagram", "vk"];
 
 function dayLabel(dateStr: string): string {
   try {

@@ -3,7 +3,7 @@ import { apiHandler } from "@/lib/api-handler";
 import { z } from "zod";
 
 const testConnectionSchema = z.object({
-  platform: z.enum(["youtube", "twitter", "instagram", "tiktok"]),
+  platform: z.enum(["youtube", "twitter", "instagram", "tiktok", "vk"]),
   accountId: z.string().optional(),
   apiKey: z.string().optional(),
   authToken: z.string().optional(),

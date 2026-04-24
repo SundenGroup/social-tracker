@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { z } from "zod";
 
 const ingestSchema = z.object({
-  platform: z.enum(["tiktok", "youtube", "instagram", "twitter"]),
+  platform: z.enum(["tiktok", "youtube", "instagram", "twitter", "vk"]),
   accountId: z.string().min(1).max(255),
   posts: z.array(z.object({
     postId: z.string().min(1),
@@ -13,6 +13,10 @@ const ingestSchema = z.object({
     thumbnailUrl: z.string().optional(),
     publishedAt: z.string(),
     postType: z.string().optional(),
+    // VK only: the video ID attached to this wall post (e.g. "456251681").
+    // Lets the server correlate wall-level engagement (already in `metrics`)
+    // with the separate video entity without re-scraping.
+    attachedVideoId: z.string().optional(),
     metrics: z.object({
       views: z.number().int().nonnegative().optional(),
       likes: z.number().int().nonnegative().optional(),
@@ -112,12 +116,13 @@ export async function POST(req: Request) {
             socialAccountId: account.id,
             platform: platform,
             postId: post.postId,
-            postType: (post.postType as "video" | "short" | "image" | "carousel") || "video",
+            postType: (post.postType as "video" | "short" | "image" | "carousel" | "text") || "video",
             title: sanitize(post.title, 200),
             description: sanitize(post.description),
             contentUrl: post.contentUrl,
             thumbnailUrl: post.thumbnailUrl || null,
             publishedAt: new Date(post.publishedAt),
+            attachedVideoId: post.attachedVideoId ?? null,
           },
           update: {
             title: sanitize(post.title, 200),
@@ -125,6 +130,9 @@ export async function POST(req: Request) {
             thumbnailUrl: post.thumbnailUrl || null,
             publishedAt: new Date(post.publishedAt),
             lastMetricRefreshAt: new Date(),
+            // Only update attachedVideoId when the sync actually provided it —
+            // don't accidentally wipe it on a partial update.
+            ...(post.attachedVideoId != null && { attachedVideoId: post.attachedVideoId }),
           },
         });
         postsSynced++;

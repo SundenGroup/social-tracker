@@ -100,6 +100,7 @@ async function main() {
     twitter: [PostType.text, PostType.video],
     instagram: [PostType.image, PostType.carousel],
     tiktok: [PostType.video, PostType.short],
+    vk: [PostType.video, PostType.text],
   };
 
   const now = new Date();

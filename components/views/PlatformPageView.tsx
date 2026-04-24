@@ -63,6 +63,11 @@ const PLATFORM_CONTENT_TABS: Record<Platform, { label: string; value: string }[]
     { label: "Video only", value: "video" },
   ],
   tiktok: [],
+  vk: [
+    { label: "All", value: "all" },
+    { label: "Video posts", value: "video" },
+    { label: "Text posts", value: "text" },
+  ],
 };
 
 export default function PlatformPageView({ platform, title, handle }: PlatformPageViewProps) {

@@ -35,6 +35,7 @@
     "prisma.config.ts",
     "scripts/instagram-remote-scraper",
     "scripts/tiktok-remote-scraper/debug-hydration.ts",
+    "scripts/vk-remote-scraper",
     "scripts/debug-tiktok-stealth.ts",
     "scripts/debug-twitter.ts",
     "scripts/import-historical-data.ts",

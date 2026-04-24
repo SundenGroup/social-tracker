@@ -5,7 +5,7 @@ import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import { effectiveProfileId } from "@/lib/profile-scope";
 import type { Platform } from "@prisma/client";
 
-const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok"];
+const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok", "vk"];
 
 // GET /api/metrics/comparison
 export const GET = apiHandler(

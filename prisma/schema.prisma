@@ -13,6 +13,7 @@ enum Platform {
   twitter
   instagram
   tiktok
+  vk
 }
 
 enum UserRole {
@@ -188,6 +189,12 @@ model Post {
   isDeleted           Boolean  @default(false)
   isTrending          Boolean  @default(false)
   isSponsored         Boolean  @default(false)
+
+  // VK-specific: wall posts may attach a separate VK Video entity that has
+  // its own metrics namespace. When set, the post's view count comes from
+  // video_ext.php's JSON; the rest of the metrics (likes/comments/reposts)
+  // are still the wall-level numbers. Empty for all non-VK platforms.
+  attachedVideoId     String?
 
   metrics PostMetric[]
 

@@ -5,6 +5,7 @@ import { YouTubeCollector } from "@/lib/collectors/youtube";
 import { TwitterCollector } from "@/lib/collectors/twitter";
 import { InstagramCollector } from "@/lib/collectors/instagram";
 import { TikTokCollector } from "@/lib/collectors/tiktok";
+import { VKCollector } from "@/lib/collectors/vk";
 import type { BaseCollector } from "@/lib/collectors/base-collector";
 import type { SocialAccount } from "@prisma/client";
 
@@ -47,6 +48,8 @@ function getCollector(account: SocialAccount): BaseCollector {
       return new InstagramCollector(account);
     case "tiktok":
       return new TikTokCollector(account);
+    case "vk":
+      return new VKCollector(account);
   }
 }
 

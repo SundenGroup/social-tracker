@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type Platform = "youtube" | "tiktok" | "twitter" | "instagram";
+export type Platform = "youtube" | "tiktok" | "twitter" | "instagram" | "vk";
 
 interface PlatformGlyphProps extends Omit<SVGProps<SVGSVGElement>, "className"> {
   platform: Platform | string;
@@ -58,6 +58,19 @@ export function PlatformGlyph({ platform, size = 14, invert = false, className, 
     );
   }
 
+  if (platform === "vk") {
+    // Stylized VK mark — bold V bounded by rounded rectangle.
+    return (
+      <svg {...common} aria-label="VK">
+        <rect x="2" y="4" width="20" height="16" rx="4" fill="currentColor" />
+        <path
+          d="M7.2 9h2.1c.2 2 .9 3.4 1.9 4.2V9h2v3.6c.9-.2 1.7-1.3 2.1-3.6h2c-.3 1.7-1 3-2 3.8.8.5 1.4 1.3 2.3 3.2h-2.1c-.8-1.7-1.4-2.3-2.3-2.3V16h-.5c-2.9 0-4.6-1.9-5.5-7z"
+          fill="#fff"
+        />
+      </svg>
+    );
+  }
+
   return null;
 }
 
@@ -67,6 +80,7 @@ export const PLATFORM_COLOR: Record<string, string> = {
   twitter: "#1DA1F2",
   x: "#1DA1F2",
   instagram: "#E4405F",
+  vk: "#0077FF",
 };
 
 export const PLATFORM_LABEL: Record<string, string> = {
@@ -75,6 +89,7 @@ export const PLATFORM_LABEL: Record<string, string> = {
   twitter: "X",
   x: "X",
   instagram: "Instagram",
+  vk: "VK",
 };
 
 export const PLATFORM_SHORT: Record<string, string> = {
@@ -83,6 +98,7 @@ export const PLATFORM_SHORT: Record<string, string> = {
   twitter: "X",
   x: "X",
   instagram: "IG",
+  vk: "VK",
 };
 
 // Small SVG helper for the UI icons used throughout

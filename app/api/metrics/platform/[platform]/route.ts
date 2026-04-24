@@ -5,7 +5,7 @@ import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import { effectiveProfileId } from "@/lib/profile-scope";
 import type { Platform, PostType } from "@prisma/client";
 
-const VALID_PLATFORMS = ["youtube", "twitter", "instagram", "tiktok"] as const;
+const VALID_PLATFORMS = ["youtube", "twitter", "instagram", "tiktok", "vk"] as const;
 
 /**
  * Translate a UI content-type value into a Prisma `where` fragment.

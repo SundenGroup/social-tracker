@@ -17,7 +17,7 @@ export const registerSchema = z.object({
 });
 
 export const socialAccountSchema = z.object({
-  platform: z.enum(["youtube", "twitter", "instagram", "tiktok"]),
+  platform: z.enum(["youtube", "twitter", "instagram", "tiktok", "vk"]),
   accountId: z.string().min(1, "Account ID is required"),
   accountName: z.string().min(1, "Account name is required"),
   contentFilter: z.enum(["all", "video_only"]).default("all"),
