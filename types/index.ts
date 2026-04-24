@@ -44,6 +44,9 @@ export interface ProfileResponse {
   isDefault: boolean;
   organizationId: string;
   accountCount?: number;
+  /** Distinct platforms this profile has active connections for.
+   *  Used by the Sidebar to hide platform nav items with no data here. */
+  platforms?: string[];
   createdAt: string;
 }
 

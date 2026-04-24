@@ -6,6 +6,7 @@ import { signOut } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useProfiles } from "@/hooks/useProfiles";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { PlatformGlyph, PLATFORM_COLOR, type Platform } from "@/components/icons/PlatformGlyph";
 
@@ -68,8 +69,17 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps = 
   const searchParams = useSearchParams();
   const { user, isAdmin } = useAuth();
   const { theme } = useTheme();
+  const { activePlatforms, initialized: profilesInitialized } = useProfiles();
   const isMobile = useIsMobile(900);
   const profileParam = searchParams.get("profile");
+
+  // Filter the Platforms nav group to only platforms with active connections
+  // in the current scope (selected profile, or org-wide for "All profiles").
+  // Until profiles have loaded once, show everything so the nav doesn't
+  // collapse on first paint.
+  const visiblePlatformItems = !profilesInitialized
+    ? PLATFORM_ITEMS
+    : PLATFORM_ITEMS.filter((item) => activePlatforms.includes(item.platform));
 
   // Auto-close the drawer whenever the route changes (mobile only).
   // Without this the drawer would stay open after tapping a nav item.
@@ -210,21 +220,25 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps = 
           ))}
         </NavGroup>
 
-        <NavGroup label="Platforms">
-          {PLATFORM_ITEMS.map((item) => (
-            <NavRow
-              key={item.href}
-              href={buildHref(item.href)}
-              label={item.label}
-              active={isActive(item.href)}
-              leading={
-                <span style={{ color: PLATFORM_COLOR[item.platform], display: "flex" }}>
-                  <PlatformGlyph platform={item.platform} size={13} />
-                </span>
-              }
-            />
-          ))}
-        </NavGroup>
+        {/* Hide the whole Platforms group if the current profile scope
+            has zero connected platforms — avoids a dangling heading. */}
+        {visiblePlatformItems.length > 0 && (
+          <NavGroup label="Platforms">
+            {visiblePlatformItems.map((item) => (
+              <NavRow
+                key={item.href}
+                href={buildHref(item.href)}
+                label={item.label}
+                active={isActive(item.href)}
+                leading={
+                  <span style={{ color: PLATFORM_COLOR[item.platform], display: "flex" }}>
+                    <PlatformGlyph platform={item.platform} size={13} />
+                  </span>
+                }
+              />
+            ))}
+          </NavGroup>
+        )}
 
         {/* Workspace group — render only if the current user has anything in it.
             Viewers currently have zero visible items here, so the whole group

@@ -12,6 +12,14 @@ interface ProfileContextValue {
   isLoading: boolean;
   initialized: boolean;
   refetch: () => Promise<void>;
+  /**
+   * Distinct platforms with at least one active connection in the current
+   * scope (selected profile, or org-wide if "All profiles" is selected).
+   * Used by the Sidebar to hide platform nav items that have no data.
+   * Empty array = no data yet loaded / no connections; treated as "show all"
+   * so we don't collapse the nav before we know the answer.
+   */
+  activePlatforms: string[];
 }
 
 export const ProfileContext = createContext<ProfileContextValue>({
@@ -21,6 +29,7 @@ export const ProfileContext = createContext<ProfileContextValue>({
   isLoading: false,
   initialized: false,
   refetch: async () => {},
+  activePlatforms: [],
 });
 
 const STORAGE_KEY = "clutch-selected-profile";
@@ -31,6 +40,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const [profiles, setProfiles] = useState<ProfileResponse[]>([]);
+  const [orgPlatforms, setOrgPlatforms] = useState<string[]>([]);
   const [selectedProfileId, setSelectedProfileIdState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -72,6 +82,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
       const json = await res.json();
       if (res.ok && json.data) {
         setProfiles(json.data);
+        setOrgPlatforms(Array.isArray(json.orgPlatforms) ? json.orgPlatforms : []);
       }
     } catch {
       // silently fail — profiles are optional
@@ -130,6 +141,19 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
     }
   }, [profiles, selectedProfileId, setSelectedProfileId]);
 
+  // Active platforms derivation:
+  //   - If a specific profile is selected, use that profile's `platforms`.
+  //   - Otherwise fall back to the org-wide union from the API.
+  //   - If neither is loaded yet (initial render before the profile fetch
+  //     returns), stay empty — the Sidebar reads this as "show nothing yet"
+  //     only briefly; the real answer arrives on the first successful fetch.
+  const selectedProfile = selectedProfileId
+    ? profiles.find((p) => p.id === selectedProfileId)
+    : null;
+  const activePlatforms = selectedProfile
+    ? (selectedProfile.platforms ?? [])
+    : orgPlatforms;
+
   return (
     <ProfileContext.Provider
       value={{
@@ -139,6 +163,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         isLoading,
         initialized,
         refetch: fetchProfiles,
+        activePlatforms,
       }}
     >
       {children}

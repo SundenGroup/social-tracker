@@ -94,6 +94,7 @@ export const GET = apiHandler(
           trends: [],
           engagementBreakdown: [],
           topPosts: [],
+          accounts: [],
         },
       });
     }

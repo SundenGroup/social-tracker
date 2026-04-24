@@ -7,12 +7,19 @@ import { isScoped } from "@/lib/profile-scope";
 // GET /api/profiles - List profiles for organization
 // Scoped viewers only see the single profile they have access to, so the
 // profile picker and related UI can't hint at siblings they can't open.
+//
+// Response includes a `platforms: string[]` on each profile (distinct
+// platforms for the profile's active connections) plus a top-level
+// `orgPlatforms: string[]` union across the whole org (respecting scope)
+// — used by the Sidebar to hide Platform nav items that have no content
+// in the current profile context.
 export const GET = apiHandler(
   async (_req, session) => {
-    const where: Record<string, unknown> = {
-      organizationId: session!.user.organizationId,
-    };
-    if (isScoped(session!)) {
+    const orgId = session!.user.organizationId;
+    const scoped = isScoped(session!);
+
+    const where: Record<string, unknown> = { organizationId: orgId };
+    if (scoped) {
       where.id = session!.user.profileId;
     }
 
@@ -21,6 +28,10 @@ export const GET = apiHandler(
       orderBy: [{ isDefault: "desc" }, { name: "asc" }],
       include: {
         _count: { select: { socialAccounts: true } },
+        socialAccounts: {
+          where: { isActive: true },
+          select: { platform: true },
+        },
       },
     });
 
@@ -30,10 +41,28 @@ export const GET = apiHandler(
       isDefault: p.isDefault,
       organizationId: p.organizationId,
       accountCount: p._count.socialAccounts,
+      platforms: Array.from(new Set(p.socialAccounts.map((a) => a.platform))),
       createdAt: p.createdAt.toISOString(),
     }));
 
-    return NextResponse.json({ data });
+    // Org-wide distinct platforms, respecting the viewer's scope. Used
+    // when "All profiles" is selected in the picker (or when the caller
+    // has no profile context yet). Also includes unprofiled accounts.
+    const orgAccountsWhere: Record<string, unknown> = {
+      organizationId: orgId,
+      isActive: true,
+    };
+    if (scoped) {
+      orgAccountsWhere.profileId = session!.user.profileId;
+    }
+    const orgAccounts = await prisma.socialAccount.findMany({
+      where: orgAccountsWhere,
+      select: { platform: true },
+      distinct: ["platform"],
+    });
+    const orgPlatforms = orgAccounts.map((a) => a.platform);
+
+    return NextResponse.json({ data, orgPlatforms });
   },
   { requireAuth: true }
 );
