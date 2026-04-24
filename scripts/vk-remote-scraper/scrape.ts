@@ -91,6 +91,17 @@ async function scrapeAccount(browser: Browser, shortName: string): Promise<Scrap
   });
   const page = await context.newPage();
 
+  // tsx compiles our TS with esbuild's keepNames=true, which emits
+  // `__name(fn, "name")` wrappers around function declarations. When
+  // Playwright serializes a TS callback for page.evaluate, those refs go
+  // with it — but the page context has no __name helper, so evaluate fails
+  // with "ReferenceError: __name is not defined". Inject a no-op shim on
+  // every page navigation.
+  await context.addInitScript(() => {
+    // @ts-expect-error - runtime shim; window.__name isn't a real global
+    if (!window.__name) window.__name = (fn: unknown) => fn;
+  });
+
   try {
     const url = `https://vk.com/${shortName}`;
     console.log(`[VK:${shortName}] Loading ${url}...`);
