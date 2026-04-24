@@ -42,7 +42,11 @@ const API_URL = process.env.API_URL ?? "https://social.clutch.game";
 const API_TOKEN = process.env.API_TOKEN ?? "";
 const VK_ACCOUNTS = (process.env.VK_ACCOUNTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const MAX_POSTS = Number(process.env.MAX_POSTS_PER_RUN ?? 30);
-const HEADLESS = (process.env.HEADLESS ?? "true").toLowerCase() !== "false";
+// Visible browser by default — matches the Instagram + TikTok scrapers.
+// A real rendered browser is less likely to trip VK's anti-bot heuristics
+// than a headless one, and on first run you want to see what VK serves.
+// Override with HEADLESS=true in .env once you have cron running.
+const HEADLESS = (process.env.HEADLESS ?? "false").toLowerCase() === "true";
 
 if (!API_TOKEN) {
   console.error("[VK] Missing API_TOKEN — aborting. See .env.example.");
