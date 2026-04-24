@@ -60,6 +60,7 @@ const CHECKPOINT_TTL_MS = 7 * 24 * 3600_000;
 const USERNAME = process.argv[2] || process.env.BACKFILL_USERNAME || "";
 
 const CDP_FILE = path.join(SCRIPT_DIR, ".browser-cdp");
+const PROFILE_DIR = path.join(SCRIPT_DIR, "browser-profile");
 
 if (!API_TOKEN) {
   console.error("ERROR: API_TOKEN not set in .env");
@@ -140,21 +141,60 @@ function clearCheckpoint(username: string) {
   try { fs.unlinkSync(checkpointPath(username)); } catch { /* ignore */ }
 }
 
-// ───────── browser connection (reuse CDP session) ─────────
+// ───────── browser connection ─────────
+//
+// Same two-tier logic as scrape.ts: if browser-server.ts is running
+// (there's a .browser-cdp file with a WebSocket endpoint), connect to
+// it; otherwise launch a fresh Chromium using the persistent profile
+// directory so cookies / IG session state persist between runs.
 
-async function connectToBrowser(): Promise<{ browser: Browser; context: BrowserContext }> {
-  if (!fs.existsSync(CDP_FILE)) {
-    throw new Error(
-      `No CDP endpoint file found at ${CDP_FILE}. ` +
-      `Start browser-server.ts first (same prerequisite as scrape.ts).`
-    );
+async function connectToBrowser(): Promise<{
+  browser: Browser | null;
+  context: BrowserContext;
+  standalone: boolean;
+}> {
+  if (fs.existsSync(CDP_FILE)) {
+    const endpoint = fs.readFileSync(CDP_FILE, "utf-8").trim();
+    try {
+      const browser = await chromium.connectOverCDP(endpoint);
+      const contexts = browser.contexts();
+      const context = contexts.length > 0 ? contexts[0] : await browser.newContext();
+      console.log("[Backfill] Connected to running browser-server.");
+      return { browser, context, standalone: false };
+    } catch {
+      console.log("[Backfill] Browser-server not reachable, launching standalone...");
+    }
+  } else {
+    console.log("[Backfill] No browser-server found, launching standalone using persistent profile...");
   }
-  const wsEndpoint = fs.readFileSync(CDP_FILE, "utf-8").trim();
-  console.log(`[Backfill] Connecting to browser at ${wsEndpoint}...`);
-  const browser = await chromium.connectOverCDP(wsEndpoint);
-  const contexts = browser.contexts();
-  const context = contexts.length > 0 ? contexts[0] : await browser.newContext();
-  return { browser, context };
+
+  let context: BrowserContext;
+  try {
+    context = await chromium.launchPersistentContext(PROFILE_DIR, {
+      channel: "chrome",
+      headless: false,
+      args: ["--disable-blink-features=AutomationControlled"],
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 900 },
+      locale: "en-US",
+    });
+  } catch {
+    context = await chromium.launchPersistentContext(PROFILE_DIR, {
+      headless: false,
+      args: ["--disable-blink-features=AutomationControlled"],
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 900 },
+      locale: "en-US",
+    });
+  }
+
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => false });
+  });
+
+  return { browser: null, context, standalone: true };
 }
 
 // ───────── post extraction ─────────
@@ -369,8 +409,9 @@ async function main() {
     return;
   }
 
-  // 2. Connect to browser
-  const { browser, context } = await connectToBrowser();
+  // 2. Connect to browser (reuse browser-server if running, else launch
+  //    standalone via the persistent profile in browser-profile/).
+  const { browser, context, standalone } = await connectToBrowser();
   const pages = context.pages();
   const page = pages.length > 0 ? pages[0] : await context.newPage();
 
@@ -461,7 +502,13 @@ async function main() {
     console.log(`[Backfill] Interrupted — resume with: npx tsx backfill-details.ts ${USERNAME}`);
   }
 
-  try { await browser.close(); } catch { /* connect-only, may throw */ }
+  // Tidy up. Don't close the browser-server — scrape.ts may want it
+  // again. Only close when we launched our own standalone instance.
+  if (standalone) {
+    try { await context.close(); } catch { /* already closed */ }
+  } else if (browser) {
+    try { await browser.close(); } catch { /* connect-only, may throw */ }
+  }
 }
 
 main().catch((err) => {
