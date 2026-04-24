@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import Providers from "@/components/providers/Providers";
 import { THEME_INIT_SCRIPT } from "@/components/providers/ThemeProvider";
 import "./globals.css";
@@ -16,6 +17,14 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
+// Umami visitor analytics — self-hosted at stats.clutch.game. The script
+// only loads in production when NEXT_PUBLIC_UMAMI_WEBSITE_ID is set, so
+// dev + preview builds don't pollute the dashboard. Umami is cookie-free
+// and privacy-respecting, so no consent banner is required.
+const UMAMI_WEBSITE_ID = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID;
+const UMAMI_SRC =
+  process.env.NEXT_PUBLIC_UMAMI_SRC ?? "https://stats.clutch.game/script.js";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,6 +38,15 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="antialiased">
+        {UMAMI_WEBSITE_ID && (
+          <Script
+            src={UMAMI_SRC}
+            data-website-id={UMAMI_WEBSITE_ID}
+            strategy="afterInteractive"
+            async
+            defer
+          />
+        )}
         <Providers>{children}</Providers>
       </body>
     </html>
