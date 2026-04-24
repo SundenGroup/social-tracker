@@ -105,6 +105,17 @@ export async function POST(req: Request) {
           return clean;
         };
 
+        // Defensive update semantics: for fields that scrapers sometimes
+        // can't populate (title / description / thumbnail), ONLY write the
+        // new value when the scraper actually supplied one. A scraper that
+        // fell into a lean fallback path (e.g. Instagram's private API was
+        // rate-limited) shouldn't be able to wipe a caption we already
+        // stored from an earlier, full-data run. Metrics are already
+        // zero-safe further down (only written when value > 0).
+        const cleanTitle = sanitize(post.title, 200);
+        const cleanDescription = sanitize(post.description);
+        const cleanThumbnail = post.thumbnailUrl || null;
+
         await prisma.post.upsert({
           where: {
             socialAccountId_postId: {
@@ -117,17 +128,19 @@ export async function POST(req: Request) {
             platform: platform,
             postId: post.postId,
             postType: (post.postType as "video" | "short" | "image" | "carousel" | "text") || "video",
-            title: sanitize(post.title, 200),
-            description: sanitize(post.description),
+            title: cleanTitle,
+            description: cleanDescription,
             contentUrl: post.contentUrl,
-            thumbnailUrl: post.thumbnailUrl || null,
+            thumbnailUrl: cleanThumbnail,
             publishedAt: new Date(post.publishedAt),
             attachedVideoId: post.attachedVideoId ?? null,
           },
           update: {
-            title: sanitize(post.title, 200),
-            description: sanitize(post.description),
-            thumbnailUrl: post.thumbnailUrl || null,
+            // Only write fields that the scraper actually supplied — never
+            // clobber existing good data with null / empty string.
+            ...(cleanTitle && { title: cleanTitle }),
+            ...(cleanDescription && { description: cleanDescription }),
+            ...(cleanThumbnail && { thumbnailUrl: cleanThumbnail }),
             publishedAt: new Date(post.publishedAt),
             lastMetricRefreshAt: new Date(),
             // Only update attachedVideoId when the sync actually provided it —
