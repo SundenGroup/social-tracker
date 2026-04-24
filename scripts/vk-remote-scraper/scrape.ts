@@ -15,7 +15,7 @@
  * Followers / member count comes from the group's og:metadata.
  *
  * Env (see .env.example):
- *   INGEST_URL, INGEST_TOKEN, VK_ACCOUNTS, MAX_POSTS_PER_RUN, HEADLESS
+ *   INGEST_URL, API_TOKEN, VK_ACCOUNTS, MAX_POSTS_PER_RUN, HEADLESS
  *
  * Usage:
  *   npm install && npx playwright install chromium
@@ -39,13 +39,13 @@ if (existsSync(envPath)) {
 }
 
 const INGEST_URL = process.env.INGEST_URL ?? "https://social.clutch.game/api/sync/ingest";
-const INGEST_TOKEN = process.env.INGEST_TOKEN ?? "";
+const API_TOKEN = process.env.API_TOKEN ?? "";
 const VK_ACCOUNTS = (process.env.VK_ACCOUNTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const MAX_POSTS = Number(process.env.MAX_POSTS_PER_RUN ?? 30);
 const HEADLESS = (process.env.HEADLESS ?? "true").toLowerCase() !== "false";
 
-if (!INGEST_TOKEN) {
-  console.error("[VK] Missing INGEST_TOKEN — aborting. See .env.example.");
+if (!API_TOKEN) {
+  console.error("[VK] Missing API_TOKEN — aborting. See .env.example.");
   process.exit(1);
 }
 if (VK_ACCOUNTS.length === 0) {
@@ -302,7 +302,7 @@ async function pushToIngest(accountId: string, result: ScrapeResult): Promise<vo
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${INGEST_TOKEN}`,
+      authorization: `Bearer ${API_TOKEN}`,
     },
     body: JSON.stringify(body),
   });
