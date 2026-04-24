@@ -15,7 +15,7 @@
  * Followers / member count comes from the group's og:metadata.
  *
  * Env (see .env.example):
- *   INGEST_URL, API_TOKEN, VK_ACCOUNTS, MAX_POSTS_PER_RUN, HEADLESS
+ *   API_URL, API_TOKEN, VK_ACCOUNTS, MAX_POSTS_PER_RUN, HEADLESS
  *
  * Usage:
  *   npm install && npx playwright install chromium
@@ -38,7 +38,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const INGEST_URL = process.env.INGEST_URL ?? "https://social.clutch.game/api/sync/ingest";
+const API_URL = process.env.API_URL ?? "https://social.clutch.game";
 const API_TOKEN = process.env.API_TOKEN ?? "";
 const VK_ACCOUNTS = (process.env.VK_ACCOUNTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const MAX_POSTS = Number(process.env.MAX_POSTS_PER_RUN ?? 30);
@@ -298,7 +298,7 @@ async function pushToIngest(accountId: string, result: ScrapeResult): Promise<vo
   console.log(
     `[VK:${accountId}] POSTing ${result.posts.length} posts + followers=${result.followers} → ingest...`
   );
-  const res = await fetch(INGEST_URL, {
+  const res = await fetch(`${API_URL}/api/sync/ingest`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
