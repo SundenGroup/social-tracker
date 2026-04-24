@@ -45,15 +45,24 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const [isLoading, setIsLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
-  // Scoped viewers are locked to a single profile and can't switch away.
-  const forcedProfileId =
-    session?.user?.role === "viewer" && session.user.profileId
-      ? session.user.profileId
-      : null;
+  // Viewer scope list — empty array means unrestricted (acts like admin on
+  // this axis). One entry = locked to that single profile (old behavior).
+  // Two or more entries = picker shows only those profiles plus "All of mine"
+  // as an aggregate.
+  const viewerScopes =
+    session?.user?.role === "viewer" ? session.user.profileIds ?? [] : [];
+  const isSingleLocked = viewerScopes.length === 1;
+  const forcedProfileId = isSingleLocked ? viewerScopes[0] : null;
 
   const setSelectedProfileId = useCallback((id: string | null) => {
-    // Scoped viewers can't pick — silently ignore any attempt to change.
-    if (forcedProfileId) return;
+    // Single-profile viewers can't pick — silently ignore any attempt to change.
+    if (isSingleLocked) return;
+
+    // Multi-profile viewers may only select one of their assigned profiles,
+    // or null = "all of mine" (aggregate across their scope).
+    if (viewerScopes.length > 1 && id !== null && !viewerScopes.includes(id)) {
+      return;
+    }
 
     setSelectedProfileIdState(id);
 
@@ -73,7 +82,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
     }
     const qs = params.toString();
     router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
-  }, [searchParams, router, pathname, forcedProfileId]);
+  }, [searchParams, router, pathname, isSingleLocked, viewerScopes]);
 
   const fetchProfiles = useCallback(async () => {
     setIsLoading(true);
@@ -106,11 +115,26 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
     if (status === "loading") return;
 
     if (forcedProfileId) {
+      // Single-profile viewer — force their only profile.
       setSelectedProfileIdState(forcedProfileId);
       try {
         localStorage.setItem(STORAGE_KEY, forcedProfileId);
       } catch {
         // storage can be unavailable (private mode); non-fatal
+      }
+    } else if (viewerScopes.length > 1) {
+      // Multi-profile viewer — accept URL / storage choice only if it's one
+      // of their assigned profiles; otherwise default to "all of mine" (null).
+      const urlProfile = searchParams.get("profile");
+      let stored: string | null = null;
+      try {
+        stored = localStorage.getItem(STORAGE_KEY);
+      } catch { /* ignore */ }
+      const candidate = urlProfile ?? stored;
+      if (candidate && viewerScopes.includes(candidate)) {
+        setSelectedProfileIdState(candidate);
+      } else {
+        setSelectedProfileIdState(null);
       }
     } else {
       const urlProfile = searchParams.get("profile");
@@ -128,7 +152,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
       }
     }
     setInitialized(true);
-  }, [searchParams, initialized, forcedProfileId, status]);
+  }, [searchParams, initialized, forcedProfileId, status, viewerScopes]);
 
   // If stored profile doesn't exist in the list, clear it
   useEffect(() => {

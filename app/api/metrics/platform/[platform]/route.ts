@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
-import { effectiveProfileId } from "@/lib/profile-scope";
+import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
 import type { Platform, PostType } from "@prisma/client";
 
 const VALID_PLATFORMS = ["youtube", "twitter", "instagram", "tiktok", "vk"] as const;
@@ -63,7 +63,7 @@ export const GET = apiHandler(
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
     const contentType = url.searchParams.get("contentType"); // e.g. "short", "video", "image"
-    const profileId = effectiveProfileId(session!, url.searchParams.get("profileId"));
+    const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
 
     const end = endDate ? new Date(endDate) : new Date();
     end.setHours(23, 59, 59, 999);
@@ -80,7 +80,7 @@ export const GET = apiHandler(
 
     // Get accounts for this platform (optionally filtered by profile)
     const accounts = await prisma.socialAccount.findMany({
-      where: { organizationId: orgId, platform: platform as Platform, isActive: true, ...(profileId ? { profileId } : {}) },
+      where: { organizationId: orgId, platform: platform as Platform, isActive: true, ...profileIdsWhere(profileIds) },
       select: { id: true, accountName: true, syncStatus: true, lastSyncedAt: true },
     });
 

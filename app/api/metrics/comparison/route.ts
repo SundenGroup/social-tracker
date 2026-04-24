@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
-import { effectiveProfileId } from "@/lib/profile-scope";
+import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
 import type { Platform } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok", "vk"];
@@ -14,7 +14,7 @@ export const GET = apiHandler(
     const orgId = session!.user.organizationId;
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
-    const profileId = effectiveProfileId(session!, url.searchParams.get("profileId"));
+    const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
 
     const end = endDate ? new Date(endDate) : new Date();
     end.setHours(23, 59, 59, 999);
@@ -31,7 +31,7 @@ export const GET = apiHandler(
 
     // Get all active accounts grouped by platform (optionally filtered by profile)
     const accounts = await prisma.socialAccount.findMany({
-      where: { organizationId: orgId, isActive: true, ...(profileId ? { profileId } : {}) },
+      where: { organizationId: orgId, isActive: true, ...profileIdsWhere(profileIds) },
       select: { id: true, platform: true, accountName: true },
     });
 

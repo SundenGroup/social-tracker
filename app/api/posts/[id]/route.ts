@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
-import { isScoped } from "@/lib/profile-scope";
+import { isScoped, profileIdsWhere } from "@/lib/profile-scope";
 
 // PATCH /api/posts/[id] - Toggle post properties (e.g. isSponsored)
 export const PATCH = apiHandler(
@@ -13,10 +13,10 @@ export const PATCH = apiHandler(
     const orgId = session!.user.organizationId;
 
     // Verify the post belongs to the user's org, not deleted, and — if the
-    // caller is scoped to a profile — lives inside that profile.
+    // caller is scoped to one or more profiles — lives inside that set.
     const accountFilter: Record<string, unknown> = { organizationId: orgId };
     if (isScoped(session!)) {
-      accountFilter.profileId = session!.user.profileId;
+      Object.assign(accountFilter, profileIdsWhere(session!.user.profileIds ?? []));
     }
     const post = await prisma.post.findFirst({
       where: {

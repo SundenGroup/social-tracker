@@ -13,8 +13,12 @@ declare module "next-auth" {
       name: string;
       role: UserRole;
       organizationId: string;
-      /** If set, this viewer is scoped to a single profile within their org. */
-      profileId: string | null;
+      /**
+       * Profile ids this viewer is scoped to. Empty array = "all profiles
+       * in the org" (the default). One or more entries = hard-restricted
+       * to those profiles. Ignored for admins — they always see everything.
+       */
+      profileIds: string[];
       image?: string | null;
     };
   }
@@ -22,7 +26,7 @@ declare module "next-auth" {
   interface User {
     role: UserRole;
     organizationId: string;
-    profileId?: string | null;
+    profileIds?: string[];
   }
 }
 
@@ -31,7 +35,7 @@ declare module "@auth/core/jwt" {
     id: string;
     role: UserRole;
     organizationId: string;
-    profileId: string | null;
+    profileIds: string[];
   }
 }
 
@@ -39,7 +43,7 @@ declare module "@auth/core/adapters" {
   interface AdapterUser {
     role: UserRole;
     organizationId: string;
-    profileId?: string | null;
+    profileIds?: string[];
   }
 }
 
@@ -80,6 +84,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const user = await prisma.user.findUnique({
           where: { email },
+          include: {
+            profileScopes: { select: { profileId: true } },
+          },
         });
 
         if (!user || !user.isActive) return null;
@@ -93,7 +100,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           role: user.role,
           organizationId: user.organizationId,
-          profileId: user.profileId,
+          profileIds: user.profileScopes.map((s) => s.profileId),
         };
       },
     }),
@@ -104,7 +111,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id as string;
         token.role = user.role;
         token.organizationId = user.organizationId;
-        token.profileId = user.profileId ?? null;
+        token.profileIds = user.profileIds ?? [];
       }
 
       // When the client calls session.update() (e.g. after editing profile),
@@ -121,17 +128,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { isActive: true, role: true, organizationId: true, profileId: true, name: true },
+            select: {
+              isActive: true,
+              role: true,
+              organizationId: true,
+              name: true,
+              profileScopes: { select: { profileId: true } },
+            },
           });
           if (dbUser && dbUser.isActive) {
             token.role = dbUser.role;
             token.organizationId = dbUser.organizationId;
-            token.profileId = dbUser.profileId ?? null;
+            token.profileIds = dbUser.profileScopes.map((s) => s.profileId);
             token.name = dbUser.name;
             token.lastChecked = now;
           } else if (dbUser && !dbUser.isActive) {
             // User definitively deactivated — force sign-out
-            return { ...token, id: "", role: "viewer", organizationId: "", profileId: null };
+            return { ...token, id: "", role: "viewer", organizationId: "", profileIds: [] };
           }
           // dbUser === null: user not found. Could be a race with a fresh login
           // or a stale read — don't wipe the session, just retry next cycle.
@@ -149,7 +162,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.id = token.id as string;
       session.user.role = token.role as UserRole;
       session.user.organizationId = token.organizationId as string;
-      session.user.profileId = (token.profileId as string | null) ?? null;
+      // Tolerate old tokens issued before the multi-profile migration —
+      // they'll have `profileId` (singular) and no `profileIds`. One more
+      // revalidation cycle (5 min) and the JWT heals itself.
+      const t = token as unknown as { profileIds?: string[]; profileId?: string | null };
+      session.user.profileIds = Array.isArray(t.profileIds)
+        ? t.profileIds
+        : t.profileId
+          ? [t.profileId]
+          : [];
       return session;
     },
   },

@@ -23,7 +23,7 @@ const ingestSchema = z.object({
       comments: z.number().int().nonnegative().optional(),
       shares: z.number().int().nonnegative().optional(),
     }),
-  })).max(500),
+  })).max(10000),
   stats: z.object({
     followers: z.number().int().nonnegative().optional(),
     following: z.number().int().nonnegative().optional(),

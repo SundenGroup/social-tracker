@@ -8,20 +8,39 @@ import { createInviteToken, buildInviteUrl } from "@/lib/invites";
 import { sendInviteEmail, isEmailConfigured } from "@/lib/email";
 
 /**
- * Validate that a provided profileId (if any) belongs to the admin's org.
- * Returns the cleaned value (null = "all profiles"). Throws ValidationError
- * if the profile exists but lives in a different org — we don't leak cross-org
- * profile IDs this way.
+ * Validate a set of requested profile scope ids against the admin's org.
+ * Returns the cleaned array (empty = "all profiles"). Throws ValidationError
+ * if any id is missing or lives in a different org — we don't leak cross-org
+ * profile ids this way.
+ *
+ * Accepts either the legacy single-id shape (string | null) or the new
+ * array shape (string[]) so older clients don't break mid-deploy.
  */
-async function resolveProfileId(raw: unknown, orgId: string): Promise<string | null> {
-  if (raw == null || raw === "" || raw === "all") return null;
-  if (typeof raw !== "string") throw new ValidationError("Invalid profile");
-  const profile = await prisma.profile.findFirst({
-    where: { id: raw, organizationId: orgId },
+async function resolveProfileIds(
+  rawIds: unknown,
+  legacySingle: unknown,
+  orgId: string
+): Promise<string[]> {
+  // Coalesce into a flat array
+  let list: string[] = [];
+  if (Array.isArray(rawIds)) {
+    list = rawIds.filter((x) => typeof x === "string") as string[];
+  } else if (typeof legacySingle === "string" && legacySingle !== "" && legacySingle !== "all") {
+    list = [legacySingle];
+  } else if (legacySingle == null || legacySingle === "" || legacySingle === "all") {
+    list = [];
+  }
+  list = Array.from(new Set(list.map((s) => s.trim()).filter(Boolean)));
+  if (list.length === 0) return [];
+
+  const profiles = await prisma.profile.findMany({
+    where: { id: { in: list }, organizationId: orgId },
     select: { id: true },
   });
-  if (!profile) throw new ValidationError("Profile not found in this organization");
-  return profile.id;
+  if (profiles.length !== list.length) {
+    throw new ValidationError("One or more profiles not found in this organization");
+  }
+  return profiles.map((p) => p.id);
 }
 
 // GET /api/users - List all users in org (with invitation status)
@@ -37,8 +56,11 @@ export const GET = apiHandler(
         email: true,
         role: true,
         isActive: true,
-        profileId: true,
-        profile: { select: { name: true } },
+        profileScopes: {
+          select: {
+            profile: { select: { id: true, name: true } },
+          },
+        },
         createdAt: true,
       },
       orderBy: { createdAt: "asc" },
@@ -68,8 +90,8 @@ export const GET = apiHandler(
         email: u.email,
         role: u.role,
         isActive: u.isActive,
-        profileId: u.profileId,
-        profileName: u.profile?.name ?? null,
+        profileIds: u.profileScopes.map((s) => s.profile.id),
+        profileNames: u.profileScopes.map((s) => s.profile.name),
         createdAt: u.createdAt.toISOString(),
         invitationStatus: u.isActive
           ? "active"
@@ -89,10 +111,11 @@ export const GET = apiHandler(
 export const POST = apiHandler(
   async (req, session) => {
     const body = await req.json();
-    const { email, name, role, profileId: rawProfileId } = body as {
+    const { email, name, role, profileIds: rawProfileIds, profileId: rawProfileId } = body as {
       email?: string;
       name?: string;
       role?: string;
+      profileIds?: string[];
       profileId?: string | null;
     };
 
@@ -114,10 +137,10 @@ export const POST = apiHandler(
     const orgId = session!.user.organizationId;
 
     // Admins always see everything — profile scope is ignored for them.
-    // Validate the provided profile either way so bad input doesn't silently
+    // Validate the provided profiles either way so bad input doesn't silently
     // get accepted.
-    const scopedProfileId =
-      role === "admin" ? null : await resolveProfileId(rawProfileId, orgId);
+    const scopedProfileIds =
+      role === "admin" ? [] : await resolveProfileIds(rawProfileIds, rawProfileId, orgId);
 
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
@@ -143,47 +166,39 @@ export const POST = apiHandler(
     const unusable = crypto.randomBytes(48).toString("hex");
     const passwordHash = await bcrypt.hash(unusable, 12);
 
-    const user = existing
-      ? await prisma.user.update({
-          where: { id: existing.id },
-          data: {
-            name: cleanName,
-            role: (role as "admin" | "viewer") ?? existing.role,
-            profileId: scopedProfileId,
-            // Keep the placeholder hash — we don't want a stale one lying around.
-            passwordHash,
-            isActive: false,
-          },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            isActive: true,
-            profileId: true,
-            createdAt: true,
-          },
-        })
-      : await prisma.user.create({
-          data: {
-            email: cleanEmail,
-            name: cleanName,
-            role: (role as "admin" | "viewer") ?? "viewer",
-            organizationId: orgId,
-            profileId: scopedProfileId,
-            passwordHash,
-            isActive: false,
-          },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            isActive: true,
-            profileId: true,
-            createdAt: true,
-          },
+    const user = await prisma.$transaction(async (tx) => {
+      const u = existing
+        ? await tx.user.update({
+            where: { id: existing.id },
+            data: {
+              name: cleanName,
+              role: (role as "admin" | "viewer") ?? existing.role,
+              // Keep the placeholder hash — we don't want a stale one lying around.
+              passwordHash,
+              isActive: false,
+            },
+          })
+        : await tx.user.create({
+            data: {
+              email: cleanEmail,
+              name: cleanName,
+              role: (role as "admin" | "viewer") ?? "viewer",
+              organizationId: orgId,
+              passwordHash,
+              isActive: false,
+            },
+          });
+
+      // Replace the user's profile scopes wholesale. Admins always have 0.
+      await tx.userProfileScope.deleteMany({ where: { userId: u.id } });
+      if (scopedProfileIds.length > 0) {
+        await tx.userProfileScope.createMany({
+          data: scopedProfileIds.map((pid) => ({ userId: u.id, profileId: pid })),
         });
+      }
+
+      return u;
+    });
 
     const { token } = await createInviteToken(cleanEmail);
     const inviteUrl = buildInviteUrl(cleanEmail, token);
@@ -199,7 +214,12 @@ export const POST = apiHandler(
     return NextResponse.json(
       {
         data: {
-          ...user,
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isActive: user.isActive,
+          profileIds: scopedProfileIds,
           createdAt: user.createdAt.toISOString(),
           invitationStatus: "pending" as const,
           emailDelivered,

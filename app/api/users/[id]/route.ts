@@ -17,8 +17,9 @@ export const GET = apiHandler(
         email: true,
         role: true,
         isActive: true,
-        profileId: true,
-        profile: { select: { name: true } },
+        profileScopes: {
+          select: { profile: { select: { id: true, name: true } } },
+        },
         createdAt: true,
       },
     });
@@ -32,8 +33,8 @@ export const GET = apiHandler(
         email: user.email,
         role: user.role,
         isActive: user.isActive,
-        profileId: user.profileId,
-        profileName: user.profile?.name ?? null,
+        profileIds: user.profileScopes.map((s) => s.profile.id),
+        profileNames: user.profileScopes.map((s) => s.profile.name),
         createdAt: user.createdAt.toISOString(),
       },
     });
@@ -47,10 +48,11 @@ export const PUT = apiHandler(
     const id = new URL(req.url).pathname.split("/").pop()!;
     const orgId = session!.user.organizationId;
     const body = await req.json();
-    const { name, role, isActive, profileId: rawProfileId } = body as {
+    const { name, role, isActive, profileIds: rawProfileIds, profileId: rawProfileId } = body as {
       name?: string;
       role?: string;
       isActive?: boolean;
+      profileIds?: string[];
       profileId?: string | null;
     };
 
@@ -78,42 +80,55 @@ export const PUT = apiHandler(
     if (role !== undefined) data.role = role;
     if (isActive !== undefined) data.isActive = isActive;
 
-    // Profile scope: only meaningful on viewers. Promoting to admin wipes scope.
+    // Profile scopes: only meaningful on viewers. Promoting to admin wipes scopes.
     const effectiveRole = (role ?? existing.role) as "admin" | "viewer";
+    let nextScopes: string[] | null = null; // null = don't touch
     if (effectiveRole === "admin") {
       // Whenever the user will be (or stay) an admin, clear any scope.
-      if (existing.profileId !== null || rawProfileId !== undefined) {
-        data.profileId = null;
-      }
-    } else if (rawProfileId !== undefined) {
-      // Viewer with a provided scope — validate and apply.
-      if (rawProfileId == null || rawProfileId === "" || rawProfileId === "all") {
-        data.profileId = null;
-      } else if (typeof rawProfileId === "string") {
-        const profile = await prisma.profile.findFirst({
-          where: { id: rawProfileId, organizationId: orgId },
+      nextScopes = [];
+    } else if (rawProfileIds !== undefined || rawProfileId !== undefined) {
+      // Caller explicitly sent new scopes — validate and replace.
+      const list = Array.isArray(rawProfileIds)
+        ? rawProfileIds.filter((x) => typeof x === "string")
+        : typeof rawProfileId === "string" && rawProfileId !== "" && rawProfileId !== "all"
+          ? [rawProfileId]
+          : [];
+      const deduped = Array.from(new Set(list.map((s) => s.trim()).filter(Boolean)));
+      if (deduped.length === 0) {
+        nextScopes = [];
+      } else {
+        const profiles = await prisma.profile.findMany({
+          where: { id: { in: deduped }, organizationId: orgId },
           select: { id: true },
         });
-        if (!profile) throw new ValidationError("Profile not found in this organization");
-        data.profileId = profile.id;
-      } else {
-        throw new ValidationError("Invalid profile");
+        if (profiles.length !== deduped.length) {
+          throw new ValidationError("One or more profiles not found in this organization");
+        }
+        nextScopes = profiles.map((p) => p.id);
       }
     }
 
-    const user = await prisma.user.update({
-      where: { id },
-      data,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        isActive: true,
-        profileId: true,
-        profile: { select: { name: true } },
-        createdAt: true,
-      },
+    const user = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id },
+        data,
+        select: {
+          id: true, name: true, email: true, role: true, isActive: true, createdAt: true,
+        },
+      });
+      if (nextScopes !== null) {
+        await tx.userProfileScope.deleteMany({ where: { userId: id } });
+        if (nextScopes.length > 0) {
+          await tx.userProfileScope.createMany({
+            data: nextScopes.map((pid) => ({ userId: id, profileId: pid })),
+          });
+        }
+      }
+      const scopes = await tx.userProfileScope.findMany({
+        where: { userId: id },
+        select: { profile: { select: { id: true, name: true } } },
+      });
+      return { ...u, scopes };
     });
 
     return NextResponse.json({
@@ -123,8 +138,8 @@ export const PUT = apiHandler(
         email: user.email,
         role: user.role,
         isActive: user.isActive,
-        profileId: user.profileId,
-        profileName: user.profile?.name ?? null,
+        profileIds: user.scopes.map((s) => s.profile.id),
+        profileNames: user.scopes.map((s) => s.profile.name),
         createdAt: user.createdAt.toISOString(),
       },
     });

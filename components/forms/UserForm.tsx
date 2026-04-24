@@ -8,7 +8,11 @@ interface UserData {
   email: string;
   role: string;
   isActive?: boolean;
-  profileId?: string | null;
+  /**
+   * Viewer scope — empty array = "all profiles in the org"; one or more
+   * entries = locked to that set. Ignored for admins.
+   */
+  profileIds?: string[];
 }
 
 interface UserFormProps {
@@ -28,9 +32,9 @@ export default function UserForm({ user, onSubmit, isLoading }: UserFormProps) {
   const [email, setEmail] = useState(user?.email ?? "");
   const [role, setRole] = useState(user?.role ?? "viewer");
   const [isActive, setIsActive] = useState(user?.isActive ?? true);
-  // "all" = no profile scope. Any other value is a concrete profileId.
-  const [profileSelection, setProfileSelection] = useState<string>(
-    user?.profileId ?? "all"
+  // Empty set = "all profiles". Any entries = locked to that subset.
+  const [selectedProfileIds, setSelectedProfileIds] = useState<Set<string>>(
+    () => new Set(user?.profileIds ?? [])
   );
   const [profiles, setProfiles] = useState<ProfileOption[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
@@ -73,12 +77,19 @@ export default function UserForm({ user, onSubmit, isLoading }: UserFormProps) {
         role,
         isActive,
         // Admins always see everything — clear any scope on submit.
-        // "all" is our sentinel for no-scope.
-        profileId: role === "admin" || profileSelection === "all" ? null : profileSelection,
+        profileIds: role === "admin" ? [] : Array.from(selectedProfileIds),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     }
+  };
+
+  const toggleProfile = (id: string) => {
+    setSelectedProfileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   const showProfileField = role === "viewer";
@@ -140,29 +151,59 @@ export default function UserForm({ user, onSubmit, isLoading }: UserFormProps) {
         </p>
       </div>
 
-      {/* Profile scope — viewers only. Admins always see everything. */}
+      {/* Profile scope — viewers only. Admins always see everything.
+          Empty selection = "all profiles". Tick one or more boxes to lock
+          the viewer to that specific set. */}
       {showProfileField && (
         <div>
           <label className="mb-1 block text-xs font-medium text-clutch-grey">
             Profile access
           </label>
-          <select
-            value={profileSelection}
-            onChange={(e) => setProfileSelection(e.target.value)}
-            disabled={profilesLoading}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
-          >
-            <option value="all">All profiles</option>
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          {profilesLoading ? (
+            <div className="rounded-lg border border-gray-300 px-3 py-2 text-xs text-clutch-grey/60">
+              Loading profiles…
+            </div>
+          ) : profiles.length === 0 ? (
+            <div className="rounded-lg border border-gray-300 px-3 py-2 text-xs text-clutch-grey/60">
+              No profiles yet — viewer will see the whole organization.
+            </div>
+          ) : (
+            <div className="rounded-lg border border-gray-300 p-2 max-h-64 overflow-y-auto">
+              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-gray-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedProfileIds.size === 0}
+                  onChange={() => setSelectedProfileIds(new Set())}
+                  className="rounded"
+                />
+                <span className="font-medium">All profiles</span>
+                <span className="text-[10px] text-clutch-grey/60 ml-auto">
+                  organisation-wide
+                </span>
+              </label>
+              <div className="my-1 border-t border-gray-200" />
+              {profiles.map((p) => (
+                <label
+                  key={p.id}
+                  className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedProfileIds.has(p.id)}
+                    onChange={() => toggleProfile(p.id)}
+                    className="rounded"
+                  />
+                  {p.name}
+                </label>
+              ))}
+            </div>
+          )}
           <p className="mt-1 text-[10px] text-clutch-grey/50">
-            {profileSelection === "all"
-              ? "Sees data across every profile in the organization."
-              : "Locked to this profile only — other profiles' data is invisible to them."}
+            {selectedProfileIds.size === 0
+              ? "Sees data across every profile in the organisation."
+              : selectedProfileIds.size === 1
+                ? "Locked to this one profile — other profiles are invisible."
+                : `Locked to these ${selectedProfileIds.size} profiles — other profiles are invisible.`}
           </p>
         </div>
       )}

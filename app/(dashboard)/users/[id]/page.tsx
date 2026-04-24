@@ -12,7 +12,8 @@ interface UserData {
   email: string;
   role: string;
   isActive: boolean;
-  profileId: string | null;
+  profileIds: string[];
+  profileNames?: string[];
   createdAt: string;
 }
 
@@ -49,7 +50,7 @@ export default function EditUserPage() {
     name: string;
     role: string;
     isActive?: boolean;
-    profileId?: string | null;
+    profileIds?: string[];
   }) => {
     setIsSaving(true);
     try {

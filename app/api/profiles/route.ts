@@ -5,7 +5,7 @@ import { profileSchema } from "@/lib/validators";
 import { isScoped } from "@/lib/profile-scope";
 
 // GET /api/profiles - List profiles for organization
-// Scoped viewers only see the single profile they have access to, so the
+// Scoped viewers only see the profiles they have access to, so the
 // profile picker and related UI can't hint at siblings they can't open.
 //
 // Response includes a `platforms: string[]` on each profile (distinct
@@ -17,10 +17,13 @@ export const GET = apiHandler(
   async (_req, session) => {
     const orgId = session!.user.organizationId;
     const scoped = isScoped(session!);
+    const viewerProfileIds = session!.user.profileIds ?? [];
 
     const where: Record<string, unknown> = { organizationId: orgId };
     if (scoped) {
-      where.id = session!.user.profileId;
+      where.id = viewerProfileIds.length === 1
+        ? viewerProfileIds[0]
+        : { in: viewerProfileIds };
     }
 
     const profiles = await prisma.profile.findMany({
@@ -53,7 +56,9 @@ export const GET = apiHandler(
       isActive: true,
     };
     if (scoped) {
-      orgAccountsWhere.profileId = session!.user.profileId;
+      orgAccountsWhere.profileId = viewerProfileIds.length === 1
+        ? viewerProfileIds[0]
+        : { in: viewerProfileIds };
     }
     const orgAccounts = await prisma.socialAccount.findMany({
       where: orgAccountsWhere,

@@ -13,8 +13,8 @@ interface UserRow {
   email: string;
   role: string;
   isActive: boolean;
-  profileId: string | null;
-  profileName: string | null;
+  profileIds: string[];
+  profileNames: string[];
   createdAt: string;
   invitationStatus: InvitationStatus;
 }
@@ -247,7 +247,7 @@ export default function UsersPage() {
                 <RoleBadge role={u.role} />
               </div>
               <div>
-                <AccessBadge role={u.role} profileName={u.profileName} />
+                <AccessBadge role={u.role} profileNames={u.profileNames} />
               </div>
               <div>
                 <StatusBadge status={u.invitationStatus} />
@@ -329,16 +329,20 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
-function AccessBadge({ role, profileName }: { role: string; profileName: string | null }) {
-  // Admins always see everything. Unscoped viewers also see everything. Only
-  // scoped viewers show their specific profile.
-  if (role === "admin" || !profileName) {
+function AccessBadge({ role, profileNames }: { role: string; profileNames: string[] }) {
+  // Admins always see everything. Unscoped viewers also see everything (empty
+  // list). Scoped viewers show the one or more profiles they're locked to.
+  if (role === "admin" || profileNames.length === 0) {
     return (
       <span style={{ fontSize: 11, color: "var(--fg-muted)", fontStyle: "italic" }}>
         All profiles
       </span>
     );
   }
+  const label = profileNames.length === 1
+    ? profileNames[0]
+    : `${profileNames[0]} +${profileNames.length - 1}`;
+  const title = profileNames.join(", ");
   return (
     <span
       style={{
@@ -356,9 +360,9 @@ function AccessBadge({ role, profileName }: { role: string; profileName: string 
         whiteSpace: "nowrap",
         maxWidth: "100%",
       }}
-      title={profileName}
+      title={title}
     >
-      {profileName}
+      {label}
     </span>
   );
 }

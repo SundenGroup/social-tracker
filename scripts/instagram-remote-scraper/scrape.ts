@@ -371,7 +371,16 @@ async function scrape(username: string): Promise<ScrapeResult> {
       let prevTotalCount = allPostLinks.size;
       let staleScrolls = 0;
 
-      for (let i = 0; i < 30; i++) {
+      // Iteration cap scales with MAX_POSTS — at ~10 new posts per scroll
+      // we need roughly MAX_POSTS/10 scrolls, plus headroom for IG's lazy
+      // loader pausing between virtual-scroll chunks. Hard ceiling of 2000
+      // prevents runaway loops if IG starts serving the same page forever.
+      const maxScrolls = Math.min(2000, Math.max(30, Math.ceil(MAX_POSTS / 5)));
+      // Be more patient with stale scrolls when the user asked for a lot
+      // of posts — IG throttles lazy-load after the first few hundred.
+      const staleLimit = MAX_POSTS > 500 ? 15 : 5;
+
+      for (let i = 0; i < maxScrolls; i++) {
         await page.evaluate("window.scrollBy(0, window.innerHeight * 2)");
         await page.waitForTimeout(1500 + Math.random() * 1500);
 
@@ -381,10 +390,21 @@ async function scrape(username: string): Promise<ScrapeResult> {
         if (allPostLinks.size >= MAX_POSTS) break;
         if (allPostLinks.size === prevTotalCount) {
           staleScrolls++;
-          if (staleScrolls >= 5) break;
+          // Nudge: scroll up a bit, then back down — sometimes wakes up
+          // IG's virtual scroller when it goes quiet.
+          if (staleScrolls === Math.floor(staleLimit / 2)) {
+            await page.evaluate("window.scrollBy(0, -window.innerHeight)");
+            await page.waitForTimeout(800);
+            await page.evaluate("window.scrollBy(0, window.innerHeight * 3)");
+            await page.waitForTimeout(2000);
+            await collectLinksFromPage();
+          }
+          if (staleScrolls >= staleLimit) break;
         } else {
           staleScrolls = 0;
-          if (i % 5 === 0) console.log(`[Scraper] ... ${allPostLinks.size} posts collected (${tab.label})`);
+          if (i % 10 === 0) {
+            console.log(`[Scraper] ... scroll ${i}: ${allPostLinks.size} posts collected (${tab.label})`);
+          }
         }
         prevTotalCount = allPostLinks.size;
       }

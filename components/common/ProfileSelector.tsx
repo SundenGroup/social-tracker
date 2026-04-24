@@ -25,10 +25,15 @@ export default function ProfileSelector() {
   if (profiles.length === 0) return null;
 
   const selected = profiles.find((p) => p.id === selectedProfileId);
-  const label = selected?.name ?? "All profiles";
-  // Viewers scoped to a single profile can't pick — render a static pill
+  const viewerScopes =
+    session?.user?.role === "viewer" ? session.user.profileIds ?? [] : [];
+  // Label for the "show all" case. For multi-scope viewers it's their personal
+  // aggregate; for admins/unscoped viewers it's the whole org.
+  const allLabel = viewerScopes.length > 1 ? "All my profiles" : "All profiles";
+  const label = selected?.name ?? allLabel;
+  // Viewers scoped to exactly one profile can't pick — render a static pill
   // that shows which profile their account is locked to.
-  const isLocked = session?.user?.role === "viewer" && !!session.user.profileId;
+  const isLocked = viewerScopes.length === 1;
 
   if (isLocked) {
     return (
@@ -106,7 +111,7 @@ export default function ProfileSelector() {
               color: "var(--fg)",
             }}
           >
-            All profiles
+            {allLabel}
           </button>
           {profiles.map((p) => (
             <button

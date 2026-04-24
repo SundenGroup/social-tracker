@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
-import { effectiveProfileId } from "@/lib/profile-scope";
+import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
 import type { Platform, PostType } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok", "vk"];
@@ -184,7 +184,7 @@ export const GET = apiHandler(
   async (req, session) => {
     const url = new URL(req.url);
     const orgId = session!.user.organizationId;
-    const profileId = effectiveProfileId(session!, url.searchParams.get("profileId"));
+    const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
     const contentType = url.searchParams.get("contentType");
     const startDateA = url.searchParams.get("startDateA");
     const endDateA = url.searchParams.get("endDateA");
@@ -208,7 +208,7 @@ export const GET = apiHandler(
 
     // Get account IDs
     const accounts = await prisma.socialAccount.findMany({
-      where: { organizationId: orgId, isActive: true, ...(profileId ? { profileId } : {}) },
+      where: { organizationId: orgId, isActive: true, ...profileIdsWhere(profileIds) },
       select: { id: true },
     });
     const accountIds = accounts.map((a) => a.id);

@@ -22,7 +22,7 @@ export default function NewUserPage() {
     name: string;
     email: string;
     role: string;
-    profileId?: string | null;
+    profileIds?: string[];
   }) => {
     setIsLoading(true);
     setError(null);
