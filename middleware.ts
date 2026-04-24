@@ -77,6 +77,6 @@ export const config = {
     //     and any future static asset — without this, unauthenticated users
     //     on /login saw the logo request get redirected to /login too,
     //     silently breaking the <img> tag)
-    "/((?!api/auth|api/health|api/sync/trigger|api/sync/ingest|_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf)$).*)",
+    "/((?!api/auth|api/health|api/sync/trigger|api/sync/ingest|api/sync/ig-missing-data|_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf)$).*)",
   ],
 };
