@@ -95,13 +95,25 @@ async function main() {
   await page.evaluate("window.scrollTo(0, 0)");
   await page.waitForTimeout(800);
 
-  // Extract everything: every reel thumbnail's link + the two overlay
-  // numbers (and a few raw aria-labels in case those contain "views").
+  // Extract views via SVG aria-label="View count icon" — the only
+  // reliable selector for the grid's view counter (confirmed by user
+  // DOM inspection on /pubgesports/reels/, post DXiaXRuiKuQ = 3,081 views).
   const reels = await page.evaluate(`
     (() => {
+      const parseCount = (s) => {
+        if (!s) return 0;
+        const cleaned = String(s).replace(/[,\\s]/g, "");
+        const m = cleaned.match(/([\\d.]+)([KMBkmb])?/);
+        if (!m) return 0;
+        const num = parseFloat(m[1]);
+        const suf = (m[2] || "").toUpperCase();
+        if (suf === "K") return Math.round(num * 1000);
+        if (suf === "M") return Math.round(num * 1000000);
+        if (suf === "B") return Math.round(num * 1000000000);
+        return Math.round(num);
+      };
+
       const results = [];
-      // Reel thumbnails are anchors that link to /reel/<shortcode>/ or
-      // /p/<shortcode>/. Collect all such anchors.
       const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"]');
       const seen = new Set();
       for (const a of Array.from(anchors)) {
@@ -112,44 +124,59 @@ async function main() {
         if (seen.has(shortcode)) continue;
         seen.add(shortcode);
 
-        // Walk down for any <ul> overlay containing numbers
-        const ul = a.querySelector("ul");
-        const numbers = [];
-        const ariaLabels = [];
-        if (ul) {
-          const items = ul.querySelectorAll("li");
-          for (const li of Array.from(items)) {
-            const text = (li.textContent || "").trim();
-            const aria = li.getAttribute("aria-label") || "";
-            if (aria) ariaLabels.push(aria);
-            // Capture the visible compact number (e.g. "46", "1.2K", "1,234")
+        // ===== Views: walk from each "View count icon" SVG up to a
+        // small ancestor whose textContent contains the number =====
+        let views = 0;
+        const viewSvgs = a.querySelectorAll('svg[aria-label="View count icon"]');
+        for (const svg of Array.from(viewSvgs)) {
+          // Try walking up to several levels; pick the first ancestor
+          // (within the anchor) whose textContent has a number.
+          let cur = svg.parentElement;
+          for (let hop = 0; hop < 5 && cur && cur !== a; hop++) {
+            const text = cur.textContent || "";
             const numMatch = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
-            if (numMatch) numbers.push(numMatch[0]);
+            if (numMatch) {
+              const n = parseCount(numMatch[0]);
+              if (n > 0) { views = n; break; }
+            }
+            cur = cur.parentElement;
           }
+          if (views > 0) break;
         }
 
-        // Also scan all descendants for aria-label="X views" / "X plays"
+        // Debug context: collect all bare numbers + relevant aria-labels
+        const numbers = [];
+        const ariaLabels = [];
+        const allSpans = a.querySelectorAll("span");
+        for (const sp of Array.from(allSpans)) {
+          const text = (sp.textContent || "").trim();
+          if (text && /^[\\d.,]+\\s*[KkMmBb]?$/.test(text)) numbers.push(text);
+        }
         const descs = a.querySelectorAll("[aria-label]");
         for (const d of Array.from(descs)) {
           const aria = d.getAttribute("aria-label") || "";
           if (/(view|play|like|comment)/i.test(aria)) ariaLabels.push(aria);
         }
 
-        results.push({ shortcode, href, numbers, ariaLabels: Array.from(new Set(ariaLabels)) });
+        results.push({ shortcode, href, views, numbers, ariaLabels: Array.from(new Set(ariaLabels)) });
       }
       return results;
     })()
-  `) as Array<{ shortcode: string; href: string; numbers: string[]; ariaLabels: string[] }>;
+  `) as Array<{ shortcode: string; href: string; views: number; numbers: string[]; ariaLabels: string[] }>;
 
   console.log(`\n[Reels] Found ${reels.length} reel/post links\n`);
 
-  // Print first 12 with both numbers + any aria labels (for visual verification)
+  // Print first 12 — primary column is `views` (extracted via SVG aria-label),
+  // followed by any other bare numbers spotted in the thumbnail (for cross-check).
   for (const r of reels.slice(0, 12)) {
-    const nums = r.numbers.length === 0 ? "(no numbers)" : r.numbers.join("  +  ");
+    const otherNums = r.numbers.filter((n) => n !== String(r.views) && n !== r.views.toLocaleString()).slice(0, 3);
+    const nums = otherNums.length > 0 ? `   other=[${otherNums.join(", ")}]` : "";
     const aria = r.ariaLabels.length > 0 ? `   aria=[${r.ariaLabels.join(" | ")}]` : "";
-    console.log(`  ${r.shortcode}  ${nums}${aria}`);
+    console.log(`  ${r.shortcode}  views=${r.views}${nums}${aria}`);
   }
   if (reels.length > 12) console.log(`  ... and ${reels.length - 12} more`);
+  const withViews = reels.filter((r) => r.views > 0).length;
+  console.log(`\n[Reels] ${withViews}/${reels.length} thumbnails yielded a non-zero view count`);
 
   // Save full data
   const outPath = path.join(SCRIPT_DIR, `debug-reels-${username}.json`);
