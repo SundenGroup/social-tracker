@@ -325,6 +325,11 @@ async function scrape(username: string): Promise<ScrapeResult> {
     // Instagram uses virtual scrolling — it removes off-screen elements from the DOM.
     // We must collect links DURING scrolling, not just at the end.
     const allPostLinks = new Map<string, { shortcode: string; href: string; type: string }>();
+    // Map<shortcode, views> harvested from /<user>/reels/ grid overlay.
+    // We populate this during the Reels-tab scroll pass below, then look
+    // up each post's view count in step 5 because IG no longer exposes
+    // play_count on the per-post API/page.
+    const reelsViewMap: Record<string, number> = {};
 
     const collectLinksFromPage = async () => {
       const links: { shortcode: string; href: string; type: string }[] = await page.$$eval(
@@ -390,6 +395,52 @@ async function scrape(username: string): Promise<ScrapeResult> {
       }
 
       console.log(`[Scraper] ${allPostLinks.size} total unique posts after ${tab.label} tab`);
+
+      // ===== NEW: While we're on the Reels tab, harvest view counts =====
+      // Instagram only renders view counts on the profile's /reels/ grid
+      // overlay (logged-in viewers). The single-post page no longer
+      // includes it. Pull the {shortcode -> views} map here before we
+      // navigate away.
+      if (tab.label === "Reels") {
+        const grid = await page.evaluate(`
+          (() => {
+            const out = {};
+            const parseCount = (s) => {
+              if (!s) return 0;
+              const cleaned = String(s).replace(/[,\\s]/g, "");
+              const m = cleaned.match(/([\\d.]+)([KMBkmb])?/);
+              if (!m) return 0;
+              const num = parseFloat(m[1]);
+              const suf = (m[2] || "").toUpperCase();
+              if (suf === "K") return Math.round(num * 1000);
+              if (suf === "M") return Math.round(num * 1000000);
+              if (suf === "B") return Math.round(num * 1000000000);
+              return Math.round(num);
+            };
+            const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]');
+            for (const a of Array.from(anchors)) {
+              const href = a.getAttribute("href") || "";
+              const m = href.match(/\\/(reel|p|tv)\\/([A-Za-z0-9_-]+)/);
+              if (!m) continue;
+              const shortcode = m[2];
+              if (out[shortcode] != null) continue; // first thumbnail wins
+              const ul = a.querySelector("ul");
+              if (!ul) continue;
+              // First <li> on each thumbnail overlay is views (icon
+              // aria-label = "View count icon"). Second is comments.
+              const firstLi = ul.querySelector("li");
+              if (!firstLi) continue;
+              const text = (firstLi.textContent || "").trim();
+              const numTxt = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
+              if (!numTxt) continue;
+              out[shortcode] = parseCount(numTxt[0]);
+            }
+            return out;
+          })()
+        `) as Record<string, number>;
+        Object.assign(reelsViewMap, grid);
+        console.log(`[Scraper] Captured grid view counts for ${Object.keys(grid).length} reels`);
+      }
     }
 
     const postLinks = Array.from(allPostLinks.values());
@@ -481,6 +532,9 @@ async function scrape(username: string): Promise<ScrapeResult> {
             })()
           `);
 
+          // Prefer the grid-overlay views we already collected (per-post
+          // pages no longer expose play_count). Fall back to 0.
+          const gridViews = reelsViewMap[shortcode] ?? 0;
           posts.push({
             postId: shortcode,
             title: "",
@@ -490,7 +544,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
             publishedAt: fallbackData.publishedAt || new Date().toISOString(),
             postType: type === "video" ? "video" : "image",
             metrics: {
-              views: 0,
+              views: gridViews,
               likes: fallbackData.likes,
               comments: fallbackData.comments,
               shares: 0,
@@ -498,7 +552,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
           });
         } else {
           // API succeeded — use the full data
-          const views = apiResult.play_count || apiResult.video_view_count || 0;
+          const apiViews = apiResult.play_count || apiResult.video_view_count || 0;
           const likes = apiResult.like_count || 0;
           const commentCount = apiResult.comment_count || 0;
           const shares = apiResult.share_count || apiResult.reshare_count || 0;
@@ -510,6 +564,11 @@ async function scrape(username: string): Promise<ScrapeResult> {
           if (mediaType === 2) postType = "video";
           else if (mediaType === 8) postType = "carousel";
           else if (mediaType === 1) postType = "image";
+
+          // The private API used to return `play_count` reliably, but as
+          // of late April 2026 it's been silently stripped from the
+          // response for non-business clients. Fall back to the grid map.
+          const views = apiViews || reelsViewMap[shortcode] || 0;
 
           posts.push({
             postId: shortcode,
