@@ -80,24 +80,38 @@ export const EXTRACT_POST_PAGE_JS = `
     }
 
     // ----- Caption -----
-    // og:title shape (most reliable):
+    // og:title shape (most reliable when present):
     //   "Brand Name | Display Name on Instagram: \\"caption text\\""
-    // Match "on Instagram:" literally, then a quote of any flavour
-    // (straight, curly), then capture greedily-but-non-greedily until
-    // the closing quote at end of string.
-    let caption = "";
-    const titleStr = og["og:title"] || "";
-    const titleMatch = titleStr.match(/on Instagram[:\\s]+["\\u201C\\u2018]([\\s\\S]*?)["\\u201D\\u2019]\\s*$/);
-    if (titleMatch) caption = titleMatch[1];
-
     // og:description shape (fallback):
     //   "130 likes, 1 comments - username on April 16, 2026: \\"caption\\""
-    // The literal " on " is preceded by username and followed by a
-    // date or "Instagram", then the colon + quoted caption.
+    //
+    // Approach: find the "on <something>:" delimiter (works for both
+    // shapes — "on Instagram:" in og:title, "on April 16, 2026:" in
+    // og:description), grab everything after it, then strip one outer
+    // quote pair (straight or curly). Handles captions that contain
+    // internal quotes — a regex with quote delimiters would stop
+    // prematurely on those.
+    const stripOuterQuotes = (s) => {
+      let out = (s || "").trim();
+      out = out.replace(/^["\\u201C\\u2018]/, "");
+      out = out.replace(/["\\u201D\\u2019]\\s*$/, "");
+      return out.trim();
+    };
+
+    let caption = "";
+    const titleStr = og["og:title"] || "";
+    // The IG-injected "on Instagram:" appears once in og:title — grab
+    // everything after it.
+    const titleIdx = titleStr.lastIndexOf("on Instagram:");
+    if (titleIdx >= 0) {
+      caption = stripOuterQuotes(titleStr.slice(titleIdx + "on Instagram:".length));
+    }
+
     const ogDesc = og["og:description"] || "";
-    if (!caption) {
-      const descMatch = ogDesc.match(/on\\s+[A-Za-z][\\w\\s,]+:\\s*["\\u201C\\u2018]([\\s\\S]*?)["\\u201D\\u2019]\\s*$/);
-      if (descMatch) caption = descMatch[1];
+    if (!caption && ogDesc) {
+      // Anchor on " on <Month> <day>, <year>:" or " on Instagram:"
+      const descMatch = ogDesc.match(/\\son\\s+(?:[A-Z][a-z]+\\s+\\d{1,2},\\s*\\d{4}|Instagram)[:\\s]+([\\s\\S]+)$/);
+      if (descMatch) caption = stripOuterQuotes(descMatch[1]);
     }
 
     // ----- Likes / comments -----

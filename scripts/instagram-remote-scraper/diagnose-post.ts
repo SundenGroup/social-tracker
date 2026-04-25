@@ -22,6 +22,7 @@
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
+import { EXTRACT_POST_PAGE_JS, type PostPageExtraction } from "./extract-post-page";
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CDP_FILE = path.join(SCRIPT_DIR, ".browser-cdp");
@@ -199,6 +200,23 @@ async function main() {
   console.log("\nFirst <time> elements:", JSON.stringify(dump.timeEls.slice(0, 3)));
   console.log("\nFirst 200 chars of body text:", dump.bodySnippet.slice(0, 200));
   console.log("=============================");
+
+  // ----- Run the actual extractor that scrape.ts and backfill-details.ts use -----
+  const extracted = (await page.evaluate(EXTRACT_POST_PAGE_JS)) as PostPageExtraction;
+  console.log("\n========== EXTRACTOR OUTPUT ==========");
+  console.log("caption:        ", JSON.stringify(extracted.caption.slice(0, 120)) + (extracted.caption.length > 120 ? "..." : ""));
+  console.log("caption length: ", extracted.caption.length);
+  console.log("isVideo:        ", extracted.isVideo);
+  console.log("views:          ", extracted.views);
+  console.log("likes:          ", extracted.likes);
+  console.log("comments:       ", extracted.comments);
+  console.log("publishedAt:    ", extracted.publishedAt);
+  console.log("thumbnailUrl:   ", extracted.thumbnailUrl ? extracted.thumbnailUrl.slice(0, 80) + "..." : "null");
+  console.log("======================================");
+  console.log("\nIf caption + views look correct above, the backfill will fill them in.");
+  console.log("If views = 0 but the post is a real video, IG is no longer embedding");
+  console.log("play_count in inline JSON for logged-out sessions — we'd need to log in");
+  console.log("via the browser-server's persistent profile to get them.");
 
   if (standalone && !browser) {
     try { await context.close(); } catch { /* ignore */ }

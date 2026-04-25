@@ -8,3 +8,5 @@ checkpoint-*.json
 checkpoint-*.json.tmp
 backfill-checkpoint-*.json
 backfill-checkpoint-*.json.tmp
+debug-post-*.html
+debug-post-*.json
