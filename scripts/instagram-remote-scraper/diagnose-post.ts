@@ -75,8 +75,10 @@ async function main() {
   console.log(`[Diag] Inspecting ${url}`);
   const { browser, context, standalone } = await connect();
 
-  const pages = context.pages();
-  const page = pages.length > 0 ? pages[0] : await context.newPage();
+  // Always open a fresh tab. Reusing the browser-server's first page
+  // can fail if the user has been clicking around / closing tabs;
+  // a brand-new page is reliable.
+  const page = await context.newPage();
 
   // Warm up on home so cookies/session are live
   await page.goto("https://www.instagram.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -323,10 +325,16 @@ async function main() {
   console.log("play_count in inline JSON for logged-out sessions — we'd need to log in");
   console.log("via the browser-server's persistent profile to get them.");
 
+  // Close the diagnostic's own tab so we don't leak tabs in the
+  // long-running browser-server. Don't close the context/browser
+  // when CDP-attached — those belong to browser-server.
   if (standalone && !browser) {
     try { await context.close(); } catch { /* ignore */ }
-  } else if (browser) {
-    try { await browser.close(); } catch { /* ignore */ }
+  } else {
+    try { await page.close(); } catch { /* ignore */ }
+    if (browser) {
+      try { await browser.close(); } catch { /* ignore */ }
+    }
   }
 }
 
