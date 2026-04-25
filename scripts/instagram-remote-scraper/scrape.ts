@@ -23,6 +23,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
+import { EXTRACT_POST_PAGE_JS, type PostPageExtraction } from "./extract-post-page";
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
 
@@ -600,112 +601,16 @@ async function scrape(username: string): Promise<ScrapeResult> {
         `);
 
         if (!apiResult.ok) {
-          // Private API blocked (IG rate-limit). Fall back to visiting the
-          // post page and reading the embedded Schema.org JSON-LD, which
-          // carries the full caption + interaction stats (views, likes,
-          // comments) for video / reel posts. If the JSON-LD isn't there
-          // (rare — some image posts), we still pull what we can from
-          // og:description + og:image.
+          // Private API blocked (IG rate-limit). Fall back to visiting
+          // the post page and using the shared extractor — pulls caption
+          // from og:title (since IG dropped JSON-LD on logged-out
+          // sessions) and views from inline GraphQL JSON via regex.
           await page.goto(href, { waitUntil: "domcontentloaded", timeout: 20000 });
-          await page.waitForTimeout(2000 + Math.random() * 1500);
+          await page.waitForTimeout(2500 + Math.random() * 1000);
 
-          const fallbackData = await page.evaluate(`
-            (() => {
-              const pc = (s) => {
-                if (!s) return 0;
-                const cleaned = String(s).replace(/[,\\s]/g, "");
-                const m = cleaned.match(/([\\d.]+)([KMBkmb])?/);
-                if (!m) return 0;
-                const num = parseFloat(m[1]);
-                const suf = (m[2] || "").toUpperCase();
-                if (suf === "K") return Math.round(num * 1000);
-                if (suf === "M") return Math.round(num * 1000000);
-                if (suf === "B") return Math.round(num * 1000000000);
-                return Math.round(num);
-              };
+          const fallbackData = (await page.evaluate(EXTRACT_POST_PAGE_JS)) as PostPageExtraction;
 
-              // --- Primary: JSON-LD (present on every video/reel page) ---
-              // IG renders one or more <script type="application/ld+json">
-              // blocks. The VideoObject / ImageObject one has caption +
-              // interactionStatistic. Iterate all blocks and pick the first
-              // that has a recognizable media type.
-              let jsonLd = null;
-              const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
-              for (const sc of Array.from(ldScripts)) {
-                try {
-                  const raw = JSON.parse(sc.textContent || "{}");
-                  const nodes = Array.isArray(raw) ? raw : (Array.isArray(raw["@graph"]) ? raw["@graph"] : [raw]);
-                  for (const n of nodes) {
-                    const t = n && n["@type"];
-                    if (t === "VideoObject" || t === "SocialMediaPosting" || t === "ImageObject") {
-                      jsonLd = n;
-                      break;
-                    }
-                  }
-                  if (jsonLd) break;
-                } catch (e) { /* skip bad JSON */ }
-              }
-
-              let caption = "";
-              let ldViews = 0;
-              let ldLikes = 0;
-              let ldComments = 0;
-              let ldThumb = null;
-              let ldPublishedAt = "";
-              let isVideoObject = false;
-
-              if (jsonLd) {
-                isVideoObject = jsonLd["@type"] === "VideoObject";
-                caption = jsonLd.caption || jsonLd.articleBody || jsonLd.description || "";
-                ldThumb = jsonLd.thumbnailUrl || (Array.isArray(jsonLd.thumbnailUrl) ? jsonLd.thumbnailUrl[0] : null) || null;
-                ldPublishedAt = jsonLd.uploadDate || jsonLd.datePublished || "";
-
-                const stats = jsonLd.interactionStatistic;
-                const arr = Array.isArray(stats) ? stats : (stats ? [stats] : []);
-                for (const st of arr) {
-                  const t = st && st.interactionType;
-                  const typeStr = typeof t === "string" ? t : (t && t["@type"]) || "";
-                  const count = Number(st.userInteractionCount) || 0;
-                  if (/WatchAction/i.test(typeStr)) ldViews = count;
-                  else if (/LikeAction/i.test(typeStr)) ldLikes = count;
-                  else if (/CommentAction|ReplyAction/i.test(typeStr)) ldComments = count;
-                }
-              }
-
-              // --- Secondary: og: meta tags (fills gaps from JSON-LD) ---
-              const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
-              const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute("content") || null;
-              const timeEl = document.querySelector("time[datetime]");
-
-              // If JSON-LD didn't give us a caption, parse one from og:desc.
-              // Format seen in the wild (varies with IG version):
-              //   "X Likes, Y Comments - username on Instagram: \\"caption text\\""
-              //   "username on Instagram: \\"caption\\""
-              //   "username shared a post on Instagram..." (no caption — image/multi-photo post)
-              if (!caption && ogDesc) {
-                const captionMatch = ogDesc.match(/on Instagram[:\\s]*["'\\u201C\\u201D]([\\s\\S]*?)["'\\u201C\\u201D](?:\\s*$|\\s*\\.\\s*$|\\s*Follow\\b)/i);
-                if (captionMatch) caption = captionMatch[1];
-              }
-
-              // Likes/comments from og:desc as backup
-              const likeM = ogDesc.match(/([\\d,.KMBkmb]+)\\s*likes?/i);
-              const commentM = ogDesc.match(/([\\d,.KMBkmb]+)\\s*comments?/i);
-              const ogLikes = likeM ? pc(likeM[1]) : 0;
-              const ogComments = commentM ? pc(commentM[1]) : 0;
-
-              return {
-                caption,
-                isVideoObject,
-                views: ldViews,
-                likes: ldLikes || ogLikes,
-                comments: ldComments || ogComments,
-                publishedAt: ldPublishedAt || timeEl?.getAttribute("datetime") || "",
-                thumbnailUrl: ldThumb || ogImage,
-              };
-            })()
-          `);
-
-          const fbPostType = fallbackData.isVideoObject
+          const fbPostType = fallbackData.isVideo
             ? "video"
             : (type === "video" ? "video" : "image");
 
