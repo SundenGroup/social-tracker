@@ -127,13 +127,32 @@ export const EXTRACT_POST_PAGE_JS = `
     const comments = ogComments || findMax("comment_count");
 
     // ----- Views (videos / reels only) -----
-    // Logged-out Instagram (April 2026+) does NOT embed play_count in
-    // the rendered HTML. This regex will return 0 for those sessions —
-    // expected. To actually capture views, you need either (a) the
-    // private /api/v1/media/.../info/ path that scrape.ts tries first
-    // (works on a fresh non-rate-limited session), or (b) a logged-in
-    // browser session in the persistent profile.
-    const views = findMax("play_count") || findMax("video_view_count") || findMax("video_play_count") || 0;
+    // Primary: a logged-in single-post page renders the view count next
+    // to a small <svg aria-label="View count icon"> in the player UI.
+    // The number is the textContent of the surrounding wrapper div.
+    // This is account-agnostic — every reel page that exposes views
+    // tags its count icon with that exact aria-label / <title>.
+    let svgViews = 0;
+    const viewSvgs = document.querySelectorAll('svg[aria-label="View count icon"]');
+    for (const svg of Array.from(viewSvgs)) {
+      // Walk up two levels: svg → icon-wrapper div → row div containing
+      // both the icon and the number.
+      const grand = svg.parentElement && svg.parentElement.parentElement;
+      if (!grand) continue;
+      const text = grand.textContent || "";
+      const m = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
+      if (!m) continue;
+      const n = parseCount(m[0]);
+      if (n > 0) { svgViews = n; break; }
+    }
+
+    // Fallback: inline GraphQL JSON keys. Logged-out IG (April 2026+)
+    // strips play_count from this surface, but a logged-in session
+    // sometimes gets it back. Cheaper than the SVG walk so still worth
+    // trying as a backup.
+    const inlineViews = findMax("play_count") || findMax("video_view_count") || findMax("video_play_count") || 0;
+
+    const views = svgViews || inlineViews || 0;
 
     // ----- Published at -----
     // og:description's date is the actual post date (e.g. "April 16, 2026").
