@@ -115,28 +115,42 @@ export const EXTRACT_POST_PAGE_JS = `
     }
 
     // ----- Likes / comments -----
-    const inlineLikes = findMax("like_count");
-    const inlineComments = findMax("comment_count");
+    // og:description is POST-LEVEL truth. The inline-JSON findMax()
+    // approach can pollute with comment-level counts (a single popular
+    // comment's like count outranking the post's), so use og first and
+    // only fall back to inline if og didn't yield anything.
     const likeM = ogDesc.match(/([\\d,.KMBkmb]+)\\s*likes?/i);
     const commentM = ogDesc.match(/([\\d,.KMBkmb]+)\\s*comments?/i);
     const ogLikes = likeM ? parseCount(likeM[1]) : 0;
     const ogComments = commentM ? parseCount(commentM[1]) : 0;
-    const likes = inlineLikes || ogLikes;
-    const comments = inlineComments || ogComments;
+    const likes = ogLikes || findMax("like_count");
+    const comments = ogComments || findMax("comment_count");
 
     // ----- Views (videos / reels only) -----
+    // Logged-out Instagram (April 2026+) does NOT embed play_count in
+    // the rendered HTML. This regex will return 0 for those sessions —
+    // expected. To actually capture views, you need either (a) the
+    // private /api/v1/media/.../info/ path that scrape.ts tries first
+    // (works on a fresh non-rate-limited session), or (b) a logged-in
+    // browser session in the persistent profile.
     const views = findMax("play_count") || findMax("video_view_count") || findMax("video_play_count") || 0;
 
     // ----- Published at -----
-    const timeEl = document.querySelector("time[datetime]");
-    let publishedAt = (timeEl && timeEl.getAttribute("datetime")) || "";
-    if (!publishedAt && ogDesc) {
-      // og:description has the date as e.g. "on April 16, 2026"
+    // og:description's date is the actual post date (e.g. "April 16, 2026").
+    // The page's <time datetime> elements are usually recent comment /
+    // UI timestamps, NOT the post itself — so we only fall back to them
+    // if og gave us nothing.
+    let publishedAt = "";
+    if (ogDesc) {
       const dateM = ogDesc.match(/on\\s+([A-Z][a-z]+\\s+\\d{1,2},\\s+\\d{4})/);
       if (dateM) {
         const parsed = new Date(dateM[1] + " 12:00:00 UTC");
         if (!isNaN(parsed.getTime())) publishedAt = parsed.toISOString();
       }
+    }
+    if (!publishedAt) {
+      const timeEl = document.querySelector("time[datetime]");
+      publishedAt = (timeEl && timeEl.getAttribute("datetime")) || "";
     }
 
     // ----- Post type -----
