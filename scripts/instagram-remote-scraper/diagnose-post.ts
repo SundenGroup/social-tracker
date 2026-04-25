@@ -82,9 +82,15 @@ async function main() {
   await page.goto("https://www.instagram.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(2000);
 
-  // Visit target
+  // Visit target — wait LONG enough for IG's React app to hydrate and
+  // pull the GraphQL data that backs the rendered view-count text.
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.waitForTimeout(3500);
+  await page.waitForTimeout(7000);
+
+  // Save a screenshot so we can see exactly where view count appears.
+  const screenshotPath = path.join(SCRIPT_DIR, `debug-post-${shortcode}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`[Diag] Screenshot: ${screenshotPath}`);
 
   const dump = await page.evaluate(`
     (() => {
@@ -133,6 +139,78 @@ async function main() {
       // First few <article> texts (might contain caption)
       const articleSnippets = Array.from(document.querySelectorAll("article")).slice(0, 2).map((a) => (a.textContent || "").slice(0, 500));
 
+      // ===== Hunt for the view count in the rendered DOM =====
+      // The user can see "X plays" / "X views" on the page, so it MUST
+      // be in the DOM somewhere. Search every element's text content
+      // for the pattern, and capture context around the first matches.
+      const VIEW_RX = /(\\d+(?:[.,]\\d+)?\\s*[KkMmBb]?)\\s*(views?|plays?)/gi;
+      const fullBody = document.body?.innerText || "";
+      const bodyMatches = [];
+      let m;
+      while ((m = VIEW_RX.exec(fullBody)) !== null && bodyMatches.length < 10) {
+        const start = Math.max(0, m.index - 30);
+        const end = Math.min(fullBody.length, m.index + m[0].length + 30);
+        bodyMatches.push({
+          number: m[1],
+          unit: m[2],
+          context: fullBody.slice(start, end).replace(/\\n+/g, " | "),
+        });
+      }
+
+      // Scan every element. For any whose direct text matches the
+      // view-count pattern, grab its tag, classes, parent path, aria
+      // labels, and innerText. This tells us EXACTLY which selector
+      // we should target in the extractor.
+      const domHits = [];
+      const all = document.querySelectorAll("span, div, a, button, section");
+      for (const el of Array.from(all)) {
+        if (domHits.length >= 8) break;
+        const text = (el.textContent || "").trim();
+        if (text.length > 200) continue; // skip big containers
+        const RX = /^\\s*\\d+(?:[.,]\\d+)?\\s*[KkMmBb]?\\s*(views?|plays?)\\s*$/i;
+        if (!RX.test(text)) continue;
+        // Walk up to 4 ancestors to build a useful selector path
+        const path = [];
+        let cur = el;
+        for (let i = 0; i < 5 && cur; i++) {
+          const cls = (cur.getAttribute && cur.getAttribute("class")) || "";
+          const role = (cur.getAttribute && cur.getAttribute("role")) || "";
+          const aria = (cur.getAttribute && cur.getAttribute("aria-label")) || "";
+          path.push({
+            tag: cur.tagName.toLowerCase(),
+            classes: cls.slice(0, 60),
+            role,
+            aria: aria.slice(0, 60),
+          });
+          cur = cur.parentElement;
+        }
+        domHits.push({
+          text,
+          ariaLabel: el.getAttribute("aria-label") || null,
+          dataAttrs: (() => {
+            const out = {};
+            for (const a of Array.from(el.attributes)) {
+              if (a.name.startsWith("data-")) out[a.name] = a.value;
+            }
+            return out;
+          })(),
+          path,
+        });
+      }
+
+      // Also catch elements with aria-label containing "view" or "play"
+      const ariaHits = [];
+      for (const el of Array.from(document.querySelectorAll("[aria-label]"))) {
+        const aria = el.getAttribute("aria-label") || "";
+        if (!/(view|play)/i.test(aria)) continue;
+        if (ariaHits.length >= 8) break;
+        ariaHits.push({
+          aria,
+          tag: el.tagName.toLowerCase(),
+          text: (el.textContent || "").trim().slice(0, 80),
+        });
+      }
+
       return {
         finalUrl: location.href,
         wasRedirected,
@@ -147,8 +225,11 @@ async function main() {
         hasLoginButton,
         hasLoginText,
         isMainPostPage,
-        // First 2KB of body for reference
         bodySnippet: (document.body?.innerText || "").slice(0, 2000),
+        // NEW: views diagnostics
+        bodyMatches,
+        domHits,
+        ariaHits,
       };
     })()
   `);
@@ -200,6 +281,30 @@ async function main() {
   console.log("\nFirst <time> elements:", JSON.stringify(dump.timeEls.slice(0, 3)));
   console.log("\nFirst 200 chars of body text:", dump.bodySnippet.slice(0, 200));
   console.log("=============================");
+
+  // ----- View-count hunt -----
+  const d = dump as typeof dump & {
+    bodyMatches?: Array<{ number: string; unit: string; context: string }>;
+    domHits?: Array<{ text: string; ariaLabel: string | null; dataAttrs: Record<string, string>; path: Array<{ tag: string; classes: string; role: string; aria: string }> }>;
+    ariaHits?: Array<{ aria: string; tag: string; text: string }>;
+  };
+  console.log("\n========== VIEW COUNT HUNT ==========");
+  console.log(`Body-text matches for /(N) (views|plays)/ → ${d.bodyMatches?.length ?? 0}`);
+  for (const bm of d.bodyMatches ?? []) {
+    console.log(`  ${bm.number} ${bm.unit}    "${bm.context}"`);
+  }
+  console.log(`\nDOM elements whose entire text is "<N> views/plays" → ${d.domHits?.length ?? 0}`);
+  for (const h of d.domHits ?? []) {
+    console.log(`  text: "${h.text}"`);
+    console.log(`    aria-label: ${h.ariaLabel || "(none)"}`);
+    if (Object.keys(h.dataAttrs).length > 0) console.log(`    data-attrs: ${JSON.stringify(h.dataAttrs)}`);
+    console.log(`    path: ${h.path.map((p) => `${p.tag}${p.classes ? "." + p.classes.split(" ").slice(0, 2).join(".") : ""}${p.role ? `[role=${p.role}]` : ""}${p.aria ? `[aria-label="${p.aria}"]` : ""}`).join(" > ")}`);
+  }
+  console.log(`\naria-label="...view..." or "...play..." → ${d.ariaHits?.length ?? 0}`);
+  for (const a of d.ariaHits ?? []) {
+    console.log(`  <${a.tag}> aria-label="${a.aria}"  text="${a.text}"`);
+  }
+  console.log("=====================================");
 
   // ----- Run the actual extractor that scrape.ts and backfill-details.ts use -----
   const extracted = (await page.evaluate(EXTRACT_POST_PAGE_JS)) as PostPageExtraction;
