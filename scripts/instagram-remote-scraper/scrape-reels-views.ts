@@ -1,0 +1,174 @@
+#!/usr/bin/env npx tsx
+/**
+ * Proof-of-concept: scrape the Reels grid page for view counts.
+ *
+ * Instagram's /<username>/reels/ page shows every reel as a thumbnail
+ * with a small overlay containing two numbers (a view count and a
+ * like count). The overlay is only rendered for LOGGED-IN viewers —
+ * which is why our previous extraction (running on a logged-out / under-
+ * authenticated session) was getting 0 for views.
+ *
+ * Usage:
+ *   1. Start the persistent browser & log in once if you haven't:
+ *        npm run browser
+ *      (then in the Chrome window: log into Instagram)
+ *   2. Run this:
+ *        npx tsx scrape-reels-views.ts pubgesports_kr
+ *
+ * Output:
+ *   - prints {shortcode, [num1, num2]} for every reel found
+ *   - writes debug-reels-<username>.json with the same data
+ *
+ * Once we eyeball one row and confirm which of num1/num2 is views vs
+ * likes, this becomes the basis for integrating views back into the
+ * main scraper.
+ */
+import { chromium, type Browser, type BrowserContext } from "playwright";
+import * as fs from "fs";
+import * as path from "path";
+
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const CDP_FILE = path.join(SCRIPT_DIR, ".browser-cdp");
+const PROFILE_DIR = path.join(SCRIPT_DIR, "browser-profile");
+
+const username = process.argv[2];
+if (!username) {
+  console.error("Usage: npx tsx scrape-reels-views.ts <username>");
+  process.exit(1);
+}
+
+async function connect(): Promise<{ browser: Browser | null; context: BrowserContext; standalone: boolean }> {
+  if (fs.existsSync(CDP_FILE)) {
+    const endpoint = fs.readFileSync(CDP_FILE, "utf-8").trim();
+    try {
+      const browser = await chromium.connectOverCDP(endpoint);
+      const contexts = browser.contexts();
+      const context = contexts.length > 0 ? contexts[0] : await browser.newContext();
+      console.log("[Reels] Connected to running browser-server.");
+      return { browser, context, standalone: false };
+    } catch {
+      console.log("[Reels] Browser-server not reachable, launching standalone...");
+    }
+  } else {
+    console.log("[Reels] No browser-server, launching standalone with persistent profile...");
+  }
+  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
+    channel: "chrome",
+    headless: false,
+    args: ["--disable-blink-features=AutomationControlled"],
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    viewport: { width: 1280, height: 900 },
+    locale: "en-US",
+  }).catch(async () =>
+    chromium.launchPersistentContext(PROFILE_DIR, {
+      headless: false,
+      args: ["--disable-blink-features=AutomationControlled"],
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 900 },
+      locale: "en-US",
+    })
+  );
+  return { browser: null, context, standalone: true };
+}
+
+async function main() {
+  const { browser, context, standalone } = await connect();
+  const pages = context.pages();
+  const page = pages.length > 0 ? pages[0] : await context.newPage();
+
+  // Warm up so cookies are live
+  await page.goto("https://www.instagram.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.waitForTimeout(2000);
+
+  const url = `https://www.instagram.com/${username}/reels/`;
+  console.log(`[Reels] Loading ${url}`);
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.waitForTimeout(4000);
+
+  // Scroll a bit to load more reels (lazy-loaded). 8 scrolls covers
+  // ~80-150 reels which is plenty for confirming the approach works.
+  console.log("[Reels] Scrolling to load reels...");
+  for (let i = 0; i < 8; i++) {
+    await page.evaluate("window.scrollBy(0, window.innerHeight * 1.5)");
+    await page.waitForTimeout(1200 + Math.random() * 800);
+  }
+  await page.evaluate("window.scrollTo(0, 0)");
+  await page.waitForTimeout(800);
+
+  // Extract everything: every reel thumbnail's link + the two overlay
+  // numbers (and a few raw aria-labels in case those contain "views").
+  const reels = await page.evaluate(`
+    (() => {
+      const results = [];
+      // Reel thumbnails are anchors that link to /reel/<shortcode>/ or
+      // /p/<shortcode>/. Collect all such anchors.
+      const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"]');
+      const seen = new Set();
+      for (const a of Array.from(anchors)) {
+        const href = a.getAttribute("href") || "";
+        const m = href.match(/\\/(reel|p|tv)\\/([A-Za-z0-9_-]+)/);
+        if (!m) continue;
+        const shortcode = m[2];
+        if (seen.has(shortcode)) continue;
+        seen.add(shortcode);
+
+        // Walk down for any <ul> overlay containing numbers
+        const ul = a.querySelector("ul");
+        const numbers = [];
+        const ariaLabels = [];
+        if (ul) {
+          const items = ul.querySelectorAll("li");
+          for (const li of Array.from(items)) {
+            const text = (li.textContent || "").trim();
+            const aria = li.getAttribute("aria-label") || "";
+            if (aria) ariaLabels.push(aria);
+            // Capture the visible compact number (e.g. "46", "1.2K", "1,234")
+            const numMatch = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
+            if (numMatch) numbers.push(numMatch[0]);
+          }
+        }
+
+        // Also scan all descendants for aria-label="X views" / "X plays"
+        const descs = a.querySelectorAll("[aria-label]");
+        for (const d of Array.from(descs)) {
+          const aria = d.getAttribute("aria-label") || "";
+          if (/(view|play|like|comment)/i.test(aria)) ariaLabels.push(aria);
+        }
+
+        results.push({ shortcode, href, numbers, ariaLabels: Array.from(new Set(ariaLabels)) });
+      }
+      return results;
+    })()
+  `) as Array<{ shortcode: string; href: string; numbers: string[]; ariaLabels: string[] }>;
+
+  console.log(`\n[Reels] Found ${reels.length} reel/post links\n`);
+
+  // Print first 12 with both numbers + any aria labels (for visual verification)
+  for (const r of reels.slice(0, 12)) {
+    const nums = r.numbers.length === 0 ? "(no numbers)" : r.numbers.join("  +  ");
+    const aria = r.ariaLabels.length > 0 ? `   aria=[${r.ariaLabels.join(" | ")}]` : "";
+    console.log(`  ${r.shortcode}  ${nums}${aria}`);
+  }
+  if (reels.length > 12) console.log(`  ... and ${reels.length - 12} more`);
+
+  // Save full data
+  const outPath = path.join(SCRIPT_DIR, `debug-reels-${username}.json`);
+  fs.writeFileSync(outPath, JSON.stringify(reels, null, 2));
+  console.log(`\n[Reels] Wrote ${outPath}`);
+
+  // Take a screenshot
+  const shotPath = path.join(SCRIPT_DIR, `debug-reels-${username}.png`);
+  await page.screenshot({ path: shotPath, fullPage: false });
+  console.log(`[Reels] Screenshot: ${shotPath}`);
+
+  if (standalone && !browser) {
+    try { await context.close(); } catch { /* ignore */ }
+  } else if (browser) {
+    try { await browser.close(); } catch { /* ignore */ }
+  }
+}
+
+main().catch((err) => {
+  console.error("[Reels] Fatal:", err);
+  process.exit(1);
+});
