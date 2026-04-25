@@ -106,6 +106,42 @@ function shortcodeToMediaId(code: string): string {
 }
 
 /**
+ * Extract a post's caption from the og:title meta of its post page.
+ *
+ * As of late April 2026, IG's private /api/v1/media/<id>/info/ response
+ * stopped including caption.text for non-business clients (similar to
+ * the play_count strip). The page itself still has the caption inside
+ * <meta property="og:title">, formatted as:
+ *
+ *   "Display Name | Brand on Instagram: \"actual caption text\""
+ *
+ * We slice everything after the literal "on Instagram:" delimiter and
+ * strip a leading/trailing quote. Returns "" on failure (caller decides
+ * whether to keep the previously-extracted value).
+ */
+async function fetchCaptionFromPage(page: Page, href: string): Promise<string> {
+  try {
+    await page.goto(href, { waitUntil: "domcontentloaded", timeout: 15000 });
+    await page.waitForTimeout(1500 + Math.random() * 800);
+    const caption = await page.evaluate(`
+      (() => {
+        const og = document.querySelector('meta[property="og:title"]');
+        const content = (og && og.getAttribute("content")) || "";
+        const idx = content.lastIndexOf("on Instagram:");
+        if (idx < 0) return "";
+        let raw = content.slice(idx + "on Instagram:".length).trim();
+        raw = raw.replace(/^["\\u201C\\u2018]/, "");
+        raw = raw.replace(/["\\u201D\\u2019]\\s*$/, "");
+        return raw.trim();
+      })()
+    `);
+    return (caption as string) || "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Connect to the running browser, or launch one if browser-server isn't running.
  */
 async function getBrowser(): Promise<{
@@ -518,12 +554,24 @@ async function scrape(username: string): Promise<ScrapeResult> {
               };
 
               const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
+              const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
               const likeM = ogDesc.match(/([\\d,.KMBkmb]+)\\s*likes?/i);
               const commentM = ogDesc.match(/([\\d,.KMBkmb]+)\\s*comments?/i);
               const timeEl = document.querySelector("time[datetime]");
               const thumbnailUrl = document.querySelector('meta[property="og:image"]')?.getAttribute("content") || null;
 
+              // Caption from og:title (format: "Brand on Instagram: \\"caption\\"")
+              let caption = "";
+              const idx = ogTitle.lastIndexOf("on Instagram:");
+              if (idx >= 0) {
+                let raw = ogTitle.slice(idx + "on Instagram:".length).trim();
+                raw = raw.replace(/^["\\u201C\\u2018]/, "");
+                raw = raw.replace(/["\\u201D\\u2019]\\s*$/, "");
+                caption = raw.trim();
+              }
+
               return {
+                caption,
                 likes: likeM ? pc(likeM[1]) : 0,
                 comments: commentM ? pc(commentM[1]) : 0,
                 publishedAt: timeEl?.getAttribute("datetime") || "",
@@ -537,8 +585,8 @@ async function scrape(username: string): Promise<ScrapeResult> {
           const gridViews = reelsViewMap[shortcode] ?? 0;
           posts.push({
             postId: shortcode,
-            title: "",
-            description: "",
+            title: (fallbackData.caption || "").slice(0, 200),
+            description: fallbackData.caption || "",
             contentUrl: href,
             thumbnailUrl: fallbackData.thumbnailUrl,
             publishedAt: fallbackData.publishedAt || new Date().toISOString(),
@@ -558,12 +606,20 @@ async function scrape(username: string): Promise<ScrapeResult> {
           const shares = apiResult.share_count || apiResult.reshare_count || 0;
           const takenAt = apiResult.taken_at || 0;
           const mediaType = apiResult.media_type || 0;
-          const caption = apiResult.caption || "";
+          let caption = apiResult.caption || "";
 
           let postType = type;
           if (mediaType === 2) postType = "video";
           else if (mediaType === 8) postType = "carousel";
           else if (mediaType === 1) postType = "image";
+
+          // Same erosion as play_count: IG silently dropped caption.text
+          // from the API response for non-business clients in late April
+          // 2026. When that happens, fetch the post page and read
+          // og:title — the caption is still rendered there.
+          if (!caption) {
+            caption = await fetchCaptionFromPage(page, href);
+          }
 
           // The private API used to return `play_count` reliably, but as
           // of late April 2026 it's been silently stripped from the
