@@ -361,6 +361,11 @@ async function scrape(username: string): Promise<ScrapeResult> {
     // Instagram uses virtual scrolling — it removes off-screen elements from the DOM.
     // We must collect links DURING scrolling, not just at the end.
     const allPostLinks = new Map<string, { shortcode: string; href: string; type: string }>();
+    // Map<shortcode, views> harvested from /<user>/reels/ grid via the
+    // SVG aria-label="View count icon" walk. Populated below during the
+    // Reels-tab scroll pass; looked up in the per-post loop because IG
+    // strips play_count from the per-post API response.
+    const reelsViewMap: Record<string, number> = {};
 
     const collectLinksFromPage = async () => {
       const links: { shortcode: string; href: string; type: string }[] = await page.$$eval(
@@ -427,10 +432,60 @@ async function scrape(username: string): Promise<ScrapeResult> {
 
       console.log(`[Scraper] ${allPostLinks.size} total unique posts after ${tab.label} tab`);
 
-      // (Grid view-count extraction was here but the layout assumption
-      // was wrong — first <li> turned out to be likes for some accounts,
-      // which corrupted today's view metrics. Reverted until we have a
-      // confirmed selector via DOM inspection.)
+      // ===== Grid view-count harvest (Reels tab only) =====
+      // Each thumbnail's view count sits next to a tiny SVG icon with
+      // aria-label="View count icon". Walk up from each such SVG (within
+      // the thumbnail's <a>) until we find an ancestor whose textContent
+      // contains a number — that's the view count. Position-agnostic, so
+      // it doesn't matter where IG places the count in the grid layout.
+      // Validated empirically on /pubgesports/reels/:
+      //   DXPukGODktA → views=1,000,000 ✓ (real)
+      //   DXiaXRuiKuQ → views=3,118 ✓ (matches user's eyes minus drift)
+      if (tab.label === "Reels") {
+        const grid = await page.evaluate(`
+          (() => {
+            const parseCount = (s) => {
+              if (!s) return 0;
+              const cleaned = String(s).replace(/[,\\s]/g, "");
+              const m = cleaned.match(/([\\d.]+)([KMBkmb])?/);
+              if (!m) return 0;
+              const num = parseFloat(m[1]);
+              const suf = (m[2] || "").toUpperCase();
+              if (suf === "K") return Math.round(num * 1000);
+              if (suf === "M") return Math.round(num * 1000000);
+              if (suf === "B") return Math.round(num * 1000000000);
+              return Math.round(num);
+            };
+            const out = {};
+            const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]');
+            for (const a of Array.from(anchors)) {
+              const href = a.getAttribute("href") || "";
+              const m = href.match(/\\/(reel|p|tv)\\/([A-Za-z0-9_-]+)/);
+              if (!m) continue;
+              const shortcode = m[2];
+              if (out[shortcode] != null) continue; // first thumbnail wins
+              const viewSvgs = a.querySelectorAll('svg[aria-label="View count icon"]');
+              for (const svg of Array.from(viewSvgs)) {
+                let cur = svg.parentElement;
+                let found = 0;
+                for (let hop = 0; hop < 5 && cur && cur !== a; hop++) {
+                  const text = cur.textContent || "";
+                  const numMatch = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
+                  if (numMatch) {
+                    const n = parseCount(numMatch[0]);
+                    if (n > 0) { found = n; break; }
+                  }
+                  cur = cur.parentElement;
+                }
+                if (found > 0) { out[shortcode] = found; break; }
+              }
+            }
+            return out;
+          })()
+        `) as Record<string, number>;
+        Object.assign(reelsViewMap, grid);
+        console.log(`[Scraper] Captured grid view counts for ${Object.keys(grid).length} reels`);
+      }
     }
 
     const postLinks = Array.from(allPostLinks.values());
@@ -534,6 +589,10 @@ async function scrape(username: string): Promise<ScrapeResult> {
             })()
           `);
 
+          // Look up views from the /reels/ grid SVG-walk we did earlier.
+          // Returns 0 for non-reel posts (images / image-carousels), which
+          // the ingest's `value > 0` guard then drops without writing.
+          const gridViews = reelsViewMap[shortcode] ?? 0;
           posts.push({
             postId: shortcode,
             title: (fallbackData.caption || "").slice(0, 200),
@@ -543,8 +602,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
             publishedAt: fallbackData.publishedAt || new Date().toISOString(),
             postType: type === "video" ? "video" : "image",
             metrics: {
-              // Grid view-count extraction reverted — see scrapeTabs loop.
-              views: 0,
+              views: gridViews,
               likes: fallbackData.likes,
               comments: fallbackData.comments,
               shares: 0,
@@ -573,15 +631,12 @@ async function scrape(username: string): Promise<ScrapeResult> {
             caption = await fetchCaptionFromPage(page, href);
           }
 
-          // The private API used to return `play_count` reliably, but as
-          // of late April 2026 it's been silently stripped from the
-          // response for non-business clients. We attempted a /reels/
-          // grid-overlay fallback but it surfaced likes (not views) for
-          // some accounts, corrupting data — reverted until we have a
-          // confirmed selector. Until then, views land as 0 (skipped by
-          // the ingest's value > 0 guard, so no historical metrics get
-          // overwritten).
-          const views = apiViews;
+          // The private API stopped returning play_count for non-business
+          // clients in April 2026. Fall back to the /reels/ grid view
+          // count (extracted via SVG aria-label="View count icon" walk
+          // earlier in the run). For non-reel posts the map is empty,
+          // so views=0 and the ingest's value > 0 guard drops the write.
+          const views = apiViews || reelsViewMap[shortcode] || 0;
 
           posts.push({
             postId: shortcode,
