@@ -125,14 +125,32 @@ async function fetchCaptionFromPage(page: Page, href: string): Promise<string> {
     await page.waitForTimeout(1500 + Math.random() * 800);
     const caption = await page.evaluate(`
       (() => {
-        const og = document.querySelector('meta[property="og:title"]');
-        const content = (og && og.getAttribute("content")) || "";
-        const idx = content.lastIndexOf("on Instagram:");
-        if (idx < 0) return "";
-        let raw = content.slice(idx + "on Instagram:".length).trim();
-        raw = raw.replace(/^["\\u201C\\u2018]/, "");
-        raw = raw.replace(/["\\u201D\\u2019]\\s*$/, "");
-        return raw.trim();
+        const stripQuotes = (s) => {
+          let out = (s || "").trim();
+          out = out.replace(/^["\\u201C\\u2018]/, "");
+          out = out.replace(/["\\u201D\\u2019]\\s*$/, "");
+          return out.trim();
+        };
+
+        // Primary: og:title — "<Account> on Instagram: \\"caption\\""
+        const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
+        const titleIdx = ogTitle.lastIndexOf("on Instagram:");
+        if (titleIdx >= 0) {
+          const candidate = stripQuotes(ogTitle.slice(titleIdx + "on Instagram:".length));
+          if (candidate) return candidate;
+        }
+
+        // Fallback: og:description — "X likes, Y comments - <user> on
+        // Month DD, YYYY: \\"caption\\"". Some image posts don't include
+        // the caption in og:title but DO put it in og:description.
+        const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
+        const descMatch = ogDesc.match(/\\son\\s+(?:[A-Z][a-z]+\\s+\\d{1,2},\\s*\\d{4}|Instagram)[:\\s]+([\\s\\S]+)$/);
+        if (descMatch) {
+          const candidate = stripQuotes(descMatch[1]);
+          if (candidate) return candidate;
+        }
+
+        return "";
       })()
     `);
     return (caption as string) || "";
@@ -569,14 +587,24 @@ async function scrape(username: string): Promise<ScrapeResult> {
               const timeEl = document.querySelector("time[datetime]");
               const thumbnailUrl = document.querySelector('meta[property="og:image"]')?.getAttribute("content") || null;
 
-              // Caption from og:title (format: "Brand on Instagram: \\"caption\\"")
+              // Caption: try og:title first ("Brand on Instagram: \\"caption\\"")
+              // then og:description ("X likes, Y comments - user on Month DD,
+              // YYYY: \\"caption\\"") — some image posts only include the
+              // caption in one of the two.
+              const stripQuotes = (s) => {
+                let out = (s || "").trim();
+                out = out.replace(/^["\\u201C\\u2018]/, "");
+                out = out.replace(/["\\u201D\\u2019]\\s*$/, "");
+                return out.trim();
+              };
               let caption = "";
-              const idx = ogTitle.lastIndexOf("on Instagram:");
-              if (idx >= 0) {
-                let raw = ogTitle.slice(idx + "on Instagram:".length).trim();
-                raw = raw.replace(/^["\\u201C\\u2018]/, "");
-                raw = raw.replace(/["\\u201D\\u2019]\\s*$/, "");
-                caption = raw.trim();
+              const titleIdx = ogTitle.lastIndexOf("on Instagram:");
+              if (titleIdx >= 0) {
+                caption = stripQuotes(ogTitle.slice(titleIdx + "on Instagram:".length));
+              }
+              if (!caption) {
+                const descMatch = ogDesc.match(/\\son\\s+(?:[A-Z][a-z]+\\s+\\d{1,2},\\s*\\d{4}|Instagram)[:\\s]+([\\s\\S]+)$/);
+                if (descMatch) caption = stripQuotes(descMatch[1]);
               }
 
               return {
