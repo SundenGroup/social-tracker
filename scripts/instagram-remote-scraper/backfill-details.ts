@@ -108,6 +108,10 @@ interface Checkpoint {
   updatedAt: string;
   candidates: Candidate[];
   processed: string[]; // postIds we've already finished
+  // Map of shortcode -> view count, harvested by the deep /reels/ grid
+  // scroll at the start of the run. Stored in the checkpoint so a
+  // Ctrl+C / crash doesn't waste the (multi-minute) grid scroll work.
+  reelsViewMap?: Record<string, number>;
 }
 
 function checkpointPath(username: string): string {
@@ -198,6 +202,125 @@ async function connectToBrowser(): Promise<{
   return { browser: null, context, standalone: true };
 }
 
+// ───────── /reels/ grid view-count harvest ─────────
+//
+// Views are only rendered on /<username>/reels/ — never on individual
+// post pages. So before going post-by-post, we deep-scroll the reels
+// grid to build a {shortcode -> views} map covering every reel the
+// account has. Per-post visits then look up views from this map.
+//
+// Each reel thumbnail has a small <svg aria-label="View count icon">
+// next to the count. Walking up from each such SVG to the smallest
+// ancestor with a numeric textContent gives the view count, position-
+// agnostic (so layout reshuffles don't break us).
+
+async function fetchReelsViewMap(page: Page, username: string): Promise<Record<string, number>> {
+  const url = `https://www.instagram.com/${username}/reels/`;
+  console.log(`[Backfill] Loading ${url} for deep grid scroll...`);
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.waitForTimeout(3500);
+
+  // Aggressive scroll — backfill needs ALL reels, not just today's most
+  // recent. 500 max iterations with high stale-tolerance covers ~1500-
+  // 2500 reels per account before IG runs out of content to serve.
+  const MAX_SCROLLS = 500;
+  const STALE_LIMIT = 30;
+  let prevCount = 0;
+  let stale = 0;
+
+  // Track how many unique shortcodes we've seen on each scroll, to
+  // know when IG has stopped serving more.
+  const countShortcodes = async (): Promise<number> => {
+    return await page.evaluate(`
+      (() => {
+        const seen = new Set();
+        const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]');
+        for (const a of Array.from(anchors)) {
+          const href = a.getAttribute("href") || "";
+          const m = href.match(/\\/(reel|p|tv)\\/([A-Za-z0-9_-]+)/);
+          if (m) seen.add(m[2]);
+        }
+        return seen.size;
+      })()
+    `) as number;
+  };
+
+  for (let i = 0; i < MAX_SCROLLS; i++) {
+    if (interrupted) break;
+    await page.evaluate("window.scrollBy(0, window.innerHeight * 1.6)");
+    await page.waitForTimeout(900 + Math.random() * 700);
+
+    const count = await countShortcodes();
+    if (count === prevCount) {
+      stale++;
+      if (stale === Math.floor(STALE_LIMIT / 2)) {
+        // Wake-up nudge: scroll up a viewport, then back down further
+        await page.evaluate("window.scrollBy(0, -window.innerHeight)");
+        await page.waitForTimeout(500);
+        await page.evaluate("window.scrollBy(0, window.innerHeight * 3)");
+        await page.waitForTimeout(1500);
+      }
+      if (stale >= STALE_LIMIT) {
+        console.log(`[Backfill]   stale-scroll limit (${STALE_LIMIT}) hit at ${count} reels; assuming end of grid`);
+        break;
+      }
+    } else {
+      stale = 0;
+      if (i % 10 === 0) {
+        console.log(`[Backfill]   scroll ${i}: ${count} reels loaded so far`);
+      }
+    }
+    prevCount = count;
+  }
+
+  // Now extract the {shortcode -> views} map from the loaded grid.
+  console.log(`[Backfill]   extracting view counts via SVG aria-label walk...`);
+  const grid = await page.evaluate(`
+    (() => {
+      const parseCount = (s) => {
+        if (!s) return 0;
+        const cleaned = String(s).replace(/[,\\s]/g, "");
+        const m = cleaned.match(/([\\d.]+)([KMBkmb])?/);
+        if (!m) return 0;
+        const num = parseFloat(m[1]);
+        const suf = (m[2] || "").toUpperCase();
+        if (suf === "K") return Math.round(num * 1000);
+        if (suf === "M") return Math.round(num * 1000000);
+        if (suf === "B") return Math.round(num * 1000000000);
+        return Math.round(num);
+      };
+      const out = {};
+      const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]');
+      for (const a of Array.from(anchors)) {
+        const href = a.getAttribute("href") || "";
+        const m = href.match(/\\/(reel|p|tv)\\/([A-Za-z0-9_-]+)/);
+        if (!m) continue;
+        const shortcode = m[2];
+        if (out[shortcode] != null) continue;
+        const viewSvgs = a.querySelectorAll('svg[aria-label="View count icon"]');
+        for (const svg of Array.from(viewSvgs)) {
+          let cur = svg.parentElement;
+          let found = 0;
+          for (let hop = 0; hop < 5 && cur && cur !== a; hop++) {
+            const text = cur.textContent || "";
+            const numMatch = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
+            if (numMatch) {
+              const n = parseCount(numMatch[0]);
+              if (n > 0) { found = n; break; }
+            }
+            cur = cur.parentElement;
+          }
+          if (found > 0) { out[shortcode] = found; break; }
+        }
+      }
+      return out;
+    })()
+  `) as Record<string, number>;
+
+  console.log(`[Backfill] Grid scroll done. Captured view counts for ${Object.keys(grid).length} reels.`);
+  return grid;
+}
+
 // ───────── post extraction ─────────
 
 interface ExtractedPost {
@@ -216,19 +339,27 @@ interface ExtractedPost {
   };
 }
 
-async function extractFromPage(page: Page, c: Candidate): Promise<ExtractedPost | null> {
+async function extractFromPage(
+  page: Page,
+  c: Candidate,
+  reelsViewMap: Record<string, number>
+): Promise<ExtractedPost | null> {
   try {
     await page.goto(c.contentUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
-    // Slightly longer wait — IG hydrates the inline GraphQL JSON
-    // (containing play_count etc.) after initial DOMContentLoaded.
     await page.waitForTimeout(2500 + Math.random() * 1000);
 
     const data = (await page.evaluate(EXTRACT_POST_PAGE_JS)) as PostPageExtraction;
 
+    // Single-post page never has views — pull them from the grid map
+    // we built before the per-post loop. Falls back to whatever the
+    // extractor returned (usually 0) if not in map.
+    const gridViews = reelsViewMap[c.postId] ?? 0;
+    const views = gridViews || data.views;
+
     // Prefer the extractor's video detection; fall back to the candidate
     // hint we got from the API list (carousel/image stay as-is unless
     // we found views, in which case it's clearly a video).
-    const postType = data.isVideo ? "video" : c.postType || "image";
+    const postType = data.isVideo || gridViews > 0 ? "video" : c.postType || "image";
 
     return {
       postId: c.postId,
@@ -239,7 +370,7 @@ async function extractFromPage(page: Page, c: Candidate): Promise<ExtractedPost 
       thumbnailUrl: data.thumbnailUrl,
       publishedAt: data.publishedAt || new Date().toISOString(),
       metrics: {
-        views: data.views,
+        views,
         likes: data.likes,
         comments: data.comments,
         shares: 0,
@@ -333,7 +464,21 @@ async function main() {
   await page.goto("https://www.instagram.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(2000);
 
-  // 4. Per-post loop
+  // 4. Deep grid scroll — populate the {shortcode -> views} map so each
+  //    per-post extraction has an authoritative view count to merge.
+  //    Reuse from checkpoint if present (saves repeating the multi-min
+  //    scroll on resume).
+  let reelsViewMap: Record<string, number>;
+  if (cp.reelsViewMap && Object.keys(cp.reelsViewMap).length > 0) {
+    reelsViewMap = cp.reelsViewMap;
+    console.log(`[Backfill] Reusing reels view map from checkpoint (${Object.keys(reelsViewMap).length} entries)`);
+  } else {
+    reelsViewMap = await fetchReelsViewMap(page, USERNAME);
+    cp.reelsViewMap = reelsViewMap;
+    saveCheckpoint(cp);
+  }
+
+  // 5. Per-post loop
   const remaining = candidates.filter((c) => !processed.has(c.postId));
   console.log(`[Backfill] Processing ${remaining.length} posts (checkpoint every ${CHECKPOINT_EVERY}, push every ${PUSH_EVERY})`);
 
@@ -348,7 +493,7 @@ async function main() {
       break;
     }
     const c = remaining[i];
-    const extracted = await extractFromPage(page, c);
+    const extracted = await extractFromPage(page, c, reelsViewMap);
     if (extracted) {
       batch.push(extracted);
       successes++;
