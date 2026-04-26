@@ -225,105 +225,105 @@ async function fetchReelsViewMap(page: Page, username: string): Promise<Record<s
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(3500);
 
-  // Aggressive scroll — backfill needs ALL reels, not just today's most
-  // recent. 500 max iterations with high stale-tolerance covers ~1500-
-  // 2500 reels per account before IG runs out of content to serve.
-  const MAX_SCROLLS = 500;
-  const STALE_LIMIT = 30;
-  let prevCount = 0;
+  // IG virtualises the reels grid — only a ~30-thumbnail viewport is
+  // mounted at any moment, with older entries removed as new ones
+  // appear. So we MUST extract view counts on every scroll iteration
+  // (capturing each thumbnail while still visible) and merge into a
+  // running map, rather than scraping once at the end.
+
+  const MAX_SCROLLS = 1000;
+  const STALE_LIMIT = 25; // consecutive scrolls without finding any new shortcodes
+  const accumulated: Record<string, number> = {};
   let stale = 0;
 
-  // Track how many unique shortcodes we've seen on each scroll, to
-  // know when IG has stopped serving more.
-  const countShortcodes = async (): Promise<number> => {
-    return await page.evaluate(`
+  // Page-side helper: extract every reel currently in the DOM, returning
+  // {shortcode -> views} for any thumbnail that has the View-count SVG.
+  // Posts that don't have a view counter (carousel/image grid items)
+  // are simply omitted from the result.
+  const extractCurrentlyVisible = async (): Promise<Record<string, number>> => {
+    return (await page.evaluate(`
       (() => {
-        const seen = new Set();
+        const parseCount = (s) => {
+          if (!s) return 0;
+          const cleaned = String(s).replace(/[,\\s]/g, "");
+          const m = cleaned.match(/([\\d.]+)([KMBkmb])?/);
+          if (!m) return 0;
+          const num = parseFloat(m[1]);
+          const suf = (m[2] || "").toUpperCase();
+          if (suf === "K") return Math.round(num * 1000);
+          if (suf === "M") return Math.round(num * 1000000);
+          if (suf === "B") return Math.round(num * 1000000000);
+          return Math.round(num);
+        };
+        const out = {};
         const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]');
         for (const a of Array.from(anchors)) {
           const href = a.getAttribute("href") || "";
           const m = href.match(/\\/(reel|p|tv)\\/([A-Za-z0-9_-]+)/);
-          if (m) seen.add(m[2]);
+          if (!m) continue;
+          const shortcode = m[2];
+          const viewSvgs = a.querySelectorAll('svg[aria-label="View count icon"]');
+          for (const svg of Array.from(viewSvgs)) {
+            let cur = svg.parentElement;
+            let found = 0;
+            for (let hop = 0; hop < 5 && cur && cur !== a; hop++) {
+              const text = cur.textContent || "";
+              const numMatch = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
+              if (numMatch) {
+                const n = parseCount(numMatch[0]);
+                if (n > 0) { found = n; break; }
+              }
+              cur = cur.parentElement;
+            }
+            if (found > 0) { out[shortcode] = found; break; }
+          }
         }
-        return seen.size;
+        return out;
       })()
-    `) as number;
+    `)) as Record<string, number>;
   };
+
+  // Capture initial visible chunk before any scrolling
+  Object.assign(accumulated, await extractCurrentlyVisible());
 
   for (let i = 0; i < MAX_SCROLLS; i++) {
     if (interrupted) break;
     await page.evaluate("window.scrollBy(0, window.innerHeight * 1.6)");
     await page.waitForTimeout(900 + Math.random() * 700);
 
-    const count = await countShortcodes();
-    if (count === prevCount) {
+    const sizeBefore = Object.keys(accumulated).length;
+    const partial = await extractCurrentlyVisible();
+    Object.assign(accumulated, partial);
+    const sizeAfter = Object.keys(accumulated).length;
+    const newOnes = sizeAfter - sizeBefore;
+
+    if (newOnes === 0) {
       stale++;
+      // Wake-up nudge halfway through the stale tolerance — scroll up
+      // briefly, then aggressively down. Sometimes resets IG's lazy-load.
       if (stale === Math.floor(STALE_LIMIT / 2)) {
-        // Wake-up nudge: scroll up a viewport, then back down further
         await page.evaluate("window.scrollBy(0, -window.innerHeight)");
         await page.waitForTimeout(500);
         await page.evaluate("window.scrollBy(0, window.innerHeight * 3)");
         await page.waitForTimeout(1500);
+        const moreAfterNudge = await extractCurrentlyVisible();
+        Object.assign(accumulated, moreAfterNudge);
       }
       if (stale >= STALE_LIMIT) {
-        console.log(`[Backfill]   stale-scroll limit (${STALE_LIMIT}) hit at ${count} reels; assuming end of grid`);
+        console.log(`[Backfill]   stale-scroll limit (${STALE_LIMIT}) hit at ${sizeAfter} unique reels; assuming end of grid`);
         break;
       }
     } else {
       stale = 0;
-      if (i % 10 === 0) {
-        console.log(`[Backfill]   scroll ${i}: ${count} reels loaded so far`);
-      }
     }
-    prevCount = count;
+
+    if (i % 10 === 0) {
+      console.log(`[Backfill]   scroll ${i}: ${sizeAfter} unique reels with views captured (+${newOnes} this scroll)`);
+    }
   }
 
-  // Now extract the {shortcode -> views} map from the loaded grid.
-  console.log(`[Backfill]   extracting view counts via SVG aria-label walk...`);
-  const grid = await page.evaluate(`
-    (() => {
-      const parseCount = (s) => {
-        if (!s) return 0;
-        const cleaned = String(s).replace(/[,\\s]/g, "");
-        const m = cleaned.match(/([\\d.]+)([KMBkmb])?/);
-        if (!m) return 0;
-        const num = parseFloat(m[1]);
-        const suf = (m[2] || "").toUpperCase();
-        if (suf === "K") return Math.round(num * 1000);
-        if (suf === "M") return Math.round(num * 1000000);
-        if (suf === "B") return Math.round(num * 1000000000);
-        return Math.round(num);
-      };
-      const out = {};
-      const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]');
-      for (const a of Array.from(anchors)) {
-        const href = a.getAttribute("href") || "";
-        const m = href.match(/\\/(reel|p|tv)\\/([A-Za-z0-9_-]+)/);
-        if (!m) continue;
-        const shortcode = m[2];
-        if (out[shortcode] != null) continue;
-        const viewSvgs = a.querySelectorAll('svg[aria-label="View count icon"]');
-        for (const svg of Array.from(viewSvgs)) {
-          let cur = svg.parentElement;
-          let found = 0;
-          for (let hop = 0; hop < 5 && cur && cur !== a; hop++) {
-            const text = cur.textContent || "";
-            const numMatch = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
-            if (numMatch) {
-              const n = parseCount(numMatch[0]);
-              if (n > 0) { found = n; break; }
-            }
-            cur = cur.parentElement;
-          }
-          if (found > 0) { out[shortcode] = found; break; }
-        }
-      }
-      return out;
-    })()
-  `) as Record<string, number>;
-
-  console.log(`[Backfill] Grid scroll done. Captured view counts for ${Object.keys(grid).length} reels.`);
-  return grid;
+  console.log(`[Backfill] Grid scroll done. Captured view counts for ${Object.keys(accumulated).length} reels.`);
+  return accumulated;
 }
 
 // ───────── post extraction ─────────
