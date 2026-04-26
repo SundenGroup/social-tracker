@@ -114,9 +114,15 @@ interface Checkpoint {
   candidates: Candidate[];
   processed: string[]; // postIds we've already finished
   // Map of shortcode -> view count, harvested by the deep /reels/ grid
-  // scroll at the start of the run. Stored in the checkpoint so a
-  // Ctrl+C / crash doesn't waste the (multi-minute) grid scroll work.
+  // scroll at the start of the run. Persisted incrementally during the
+  // scroll (every ~20 iterations) so a Ctrl+C / crash mid-scroll doesn't
+  // waste the work captured so far.
   reelsViewMap?: Record<string, number>;
+  // True once fetchReelsViewMap has run to completion (stale-scroll
+  // limit hit, meaning IG has stopped serving more reels). On resume
+  // we use this to decide: skip the scroll entirely (true), or re-run
+  // it seeded with whatever partial map we have (false / undefined).
+  gridScrollComplete?: boolean;
 }
 
 function checkpointPath(username: string): string {
@@ -219,7 +225,11 @@ async function connectToBrowser(): Promise<{
 // ancestor with a numeric textContent gives the view count, position-
 // agnostic (so layout reshuffles don't break us).
 
-async function fetchReelsViewMap(page: Page, username: string): Promise<Record<string, number>> {
+async function fetchReelsViewMap(
+  page: Page,
+  username: string,
+  cp: Checkpoint
+): Promise<Record<string, number>> {
   const url = `https://www.instagram.com/${username}/reels/`;
   console.log(`[Backfill] Loading ${url} for deep grid scroll...`);
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -230,10 +240,21 @@ async function fetchReelsViewMap(page: Page, username: string): Promise<Record<s
   // appear. So we MUST extract view counts on every scroll iteration
   // (capturing each thumbnail while still visible) and merge into a
   // running map, rather than scraping once at the end.
+  //
+  // The map is persisted to the checkpoint file every CHECKPOINT_SCROLLS
+  // iterations so a Ctrl+C / crash mid-scroll preserves work. On resume
+  // we seed with the prior partial map so re-runs are idempotent (the
+  // shortcodes we already saw just get the same view count overwritten,
+  // and we eventually progress past them as the grid scrolls deeper).
 
   const MAX_SCROLLS = 1000;
   const STALE_LIMIT = 25; // consecutive scrolls without finding any new shortcodes
-  const accumulated: Record<string, number> = {};
+  const CHECKPOINT_SCROLLS = 20; // save partial map to disk every N iterations
+  // Seed with anything captured by a prior partial run (resume case).
+  const accumulated: Record<string, number> = { ...(cp.reelsViewMap ?? {}) };
+  if (Object.keys(accumulated).length > 0) {
+    console.log(`[Backfill]   resuming with ${Object.keys(accumulated).length} reels already captured from prior run`);
+  }
   let stale = 0;
 
   // Page-side helper: extract every reel currently in the DOM, returning
@@ -320,7 +341,23 @@ async function fetchReelsViewMap(page: Page, username: string): Promise<Record<s
     if (i % 10 === 0) {
       console.log(`[Backfill]   scroll ${i}: ${sizeAfter} unique reels with views captured (+${newOnes} this scroll)`);
     }
+
+    // Persist progress every CHECKPOINT_SCROLLS iterations so a crash
+    // here doesn't lose the captured view counts.
+    if ((i + 1) % CHECKPOINT_SCROLLS === 0) {
+      cp.reelsViewMap = accumulated;
+      saveCheckpoint(cp);
+    }
   }
+
+  // Final persist + mark complete only if we actually finished (didn't
+  // bail due to interrupt). Resume after interrupt will re-run and pick
+  // up where the partial map left off.
+  cp.reelsViewMap = accumulated;
+  if (!interrupted) {
+    cp.gridScrollComplete = true;
+  }
+  saveCheckpoint(cp);
 
   console.log(`[Backfill] Grid scroll done. Captured view counts for ${Object.keys(accumulated).length} reels.`);
   return accumulated;
@@ -471,16 +508,22 @@ async function main() {
 
   // 4. Deep grid scroll — populate the {shortcode -> views} map so each
   //    per-post extraction has an authoritative view count to merge.
-  //    Reuse from checkpoint if present (saves repeating the multi-min
-  //    scroll on resume).
+  //    Resume policy:
+  //      - gridScrollComplete=true: skip the scroll entirely, reuse the
+  //        completed map from checkpoint
+  //      - reelsViewMap exists but not complete: re-run the scroll but
+  //        seeded with the prior partial map (it'll re-walk to the
+  //        same point quickly thanks to IG caching, then continue)
+  //      - neither: fresh scroll
   let reelsViewMap: Record<string, number>;
-  if (cp.reelsViewMap && Object.keys(cp.reelsViewMap).length > 0) {
+  if (cp.gridScrollComplete && cp.reelsViewMap && Object.keys(cp.reelsViewMap).length > 0) {
     reelsViewMap = cp.reelsViewMap;
-    console.log(`[Backfill] Reusing reels view map from checkpoint (${Object.keys(reelsViewMap).length} entries)`);
+    console.log(`[Backfill] Reusing complete reels view map from checkpoint (${Object.keys(reelsViewMap).length} entries)`);
   } else {
-    reelsViewMap = await fetchReelsViewMap(page, USERNAME);
-    cp.reelsViewMap = reelsViewMap;
-    saveCheckpoint(cp);
+    if (cp.reelsViewMap && Object.keys(cp.reelsViewMap).length > 0) {
+      console.log(`[Backfill] Prior partial scroll found (${Object.keys(cp.reelsViewMap).length} reels) — resuming`);
+    }
+    reelsViewMap = await fetchReelsViewMap(page, USERNAME, cp);
   }
 
   // 5. Per-post loop
