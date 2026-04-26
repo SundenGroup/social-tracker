@@ -56,7 +56,12 @@ if (fs.existsSync(envPath)) {
 const API_URL = process.env.API_URL || "https://social.clutch.game";
 const API_TOKEN = process.env.API_TOKEN || "";
 const CHECKPOINT_EVERY = parseInt(process.env.CHECKPOINT_EVERY || "25", 10);
-const PUSH_EVERY = parseInt(process.env.PUSH_EVERY || "50", 10); // push every 50 by default for backfill
+// Push every N successfully-extracted posts to /api/sync/ingest. Higher
+// values mean fewer round-trips (faster) but a bigger blast radius if
+// something dies between pushes. 300 is a sweet spot for long-running
+// historical backfills — fast enough but you only ever lose ~5 minutes
+// of work if the process is killed.
+const PUSH_EVERY = parseInt(process.env.PUSH_EVERY || "300", 10);
 const CHECKPOINT_TTL_MS = 7 * 24 * 3600_000;
 const USERNAME = process.argv[2] || process.env.BACKFILL_USERNAME || "";
 
