@@ -27,6 +27,10 @@ interface ContentPerformanceTableProps {
   hideToolbar?: boolean;
   /** Max rows to show. Defaults to all. */
   maxRows?: number;
+  /** Optional slot rendered inside the toolbar, between the platform
+   *  filters and the search input. Used by /posts to surface the tag
+   *  pill in-row instead of as a floating strip above the table. */
+  tagFilter?: React.ReactNode;
 }
 
 const PLATFORM_FILTERS = [
@@ -53,6 +57,7 @@ export default function ContentPerformanceTable({
   lockedPlatform,
   hideToolbar,
   maxRows,
+  tagFilter,
 }: ContentPerformanceTableProps) {
   // Pull org-wide tag list so the per-post popover can offer
   // autocomplete suggestions when adding manual tags. Cheap — the
@@ -144,6 +149,7 @@ export default function ContentPerformanceTable({
             </div>
           )}
           <div style={{ flex: 1 }} />
+          {tagFilter}
           <div
             style={{
               display: "flex",

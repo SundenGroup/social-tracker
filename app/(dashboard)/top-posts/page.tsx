@@ -10,6 +10,7 @@ import { useDashboard } from "@/hooks/useDashboard";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useProfiles } from "@/hooks/useProfiles";
 import { PlatformGlyph, PLATFORM_COLOR } from "@/components/icons/PlatformGlyph";
+import TagFilterPills from "@/components/common/TagFilterPills";
 
 type Metric = "views" | "engagements" | "rate";
 
@@ -138,79 +139,50 @@ export default function TopPostsPage() {
               })}
             </div>
 
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {PLATFORM_FILTERS.map((f) => {
-                const color = f.key === "all" ? null : PLATFORM_COLOR[f.key];
-                const active = platform === f.key;
-                return (
-                  <button
-                    key={f.key}
-                    onClick={() => setPlatform(f.key)}
-                    style={{
-                      padding: "7px 12px",
-                      borderRadius: 8,
-                      border: "1px solid var(--border)",
-                      background: active ? "var(--fg)" : "var(--bg-elev)",
-                      color: active ? "var(--bg-elev)" : "var(--fg-muted)",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    {color && (
-                      <span style={{ color: active ? "inherit" : color }}>
-                        <PlatformGlyph platform={f.key} size={12} />
-                      </span>
-                    )}
-                    {f.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Tag filter strip — right-aligned, below the metric/platform
-              row so the layout stays clean. Same hide rules as elsewhere. */}
-          {availableTags.length > 0 &&
-            !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            {/* Platform filters + tag pills share a flex row so the
+                tag pill sits inline next to the platform filters
+                (right edge of the row) instead of floating above the
+                gallery on its own. */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {(availableTags.length === 1
-                  ? [{ label: availableTags[0], value: availableTags[0] }]
-                  : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
-                ).map((opt) => {
-                  const active = (tag ?? null) === opt.value;
-                  const onClick = () => {
-                    if (availableTags.length === 1) {
-                      setTag(active ? null : opt.value);
-                    } else {
-                      setTag(opt.value);
-                    }
-                  };
+                {PLATFORM_FILTERS.map((f) => {
+                  const color = f.key === "all" ? null : PLATFORM_COLOR[f.key];
+                  const active = platform === f.key;
                   return (
                     <button
-                      key={opt.value ?? "__all_tags__"}
-                      onClick={onClick}
+                      key={f.key}
+                      onClick={() => setPlatform(f.key)}
                       style={{
                         padding: "7px 12px",
                         borderRadius: 8,
                         border: "1px solid var(--border)",
-                        background: active ? "var(--accent)" : "var(--bg-elev)",
-                        color: active ? "#fff" : "var(--fg-muted)",
+                        background: active ? "var(--fg)" : "var(--bg-elev)",
+                        color: active ? "var(--bg-elev)" : "var(--fg-muted)",
                         fontSize: 12,
                         fontWeight: 600,
-                        textTransform: opt.value ? "capitalize" : undefined,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
                       }}
                     >
-                      {opt.label}
+                      {color && (
+                        <span style={{ color: active ? "inherit" : color }}>
+                          <PlatformGlyph platform={f.key} size={12} />
+                        </span>
+                      )}
+                      {f.label}
                     </button>
                   );
                 })}
               </div>
+              <TagFilterPills
+                availableTags={availableTags}
+                hasUntaggedPostsInScope={hasUntaggedPostsInScope}
+                tag={tag}
+                setTag={setTag}
+              />
             </div>
-          )}
+          </div>
 
           {/* Gallery grid */}
           {sorted.length === 0 ? (
