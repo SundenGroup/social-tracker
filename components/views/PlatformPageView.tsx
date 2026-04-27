@@ -249,15 +249,28 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
 
           {/* Tag filter strip — composes multiplicatively with content type
               ("Esports" + "Reels"). Only rendered when the current scope
-              has tagged content. */}
+              has tagged content. Single-tag scopes collapse to one
+              togglable pill (clicking applies; clicking again clears) —
+              "All tags / Esports" with only one tag would just be a fancy
+              on/off switch. */}
           {availableTags.length > 0 && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {[{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))].map((opt) => {
+              {(availableTags.length === 1
+                ? [{ label: availableTags[0], value: availableTags[0] }]
+                : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
+              ).map((opt) => {
                 const active = (tag ?? null) === opt.value;
+                const onClick = () => {
+                  if (availableTags.length === 1) {
+                    setTag(active ? null : opt.value);
+                  } else {
+                    setTag(opt.value);
+                  }
+                };
                 return (
                   <button
                     key={opt.value ?? "__all_tags__"}
-                    onClick={() => setTag(opt.value)}
+                    onClick={onClick}
                     style={{
                       padding: "7px 12px",
                       borderRadius: 8,

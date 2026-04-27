@@ -241,15 +241,32 @@ export default function DashboardPage() {
           {/* Tag filter strip — separate from the content-type strip so the
               two compose multiplicatively (e.g. "Esports" + "Short-form").
               Only rendered when the current scope actually has tags;
-              admins on profiles with zero tagged content see nothing. */}
+              admins on profiles with zero tagged content see nothing.
+              Single-tag scopes get a single togglable pill ("Esports" on/off)
+              instead of an "All tags / Esports" pair, which would just be a
+              two-button on/off control. With 2+ tags the strip is needed so
+              the user can switch between them and back to "all". */}
           {availableTags.length > 0 && (
             <div className="hscroll" style={{ display: "flex", gap: 6, flexWrap: "nowrap", maxWidth: "100%", marginTop: 8 }}>
-              {[{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))].map((opt) => {
+              {(availableTags.length === 1
+                ? [{ label: availableTags[0], value: availableTags[0] }]
+                : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
+              ).map((opt) => {
+                // Single-tag mode: clicking the pill toggles the filter on/off
+                // (active when set, click again clears). Multi-tag mode keeps
+                // the original radio-style behavior.
                 const active = (tag ?? null) === opt.value;
+                const onClick = () => {
+                  if (availableTags.length === 1) {
+                    setTag(active ? null : opt.value);
+                  } else {
+                    setTag(opt.value);
+                  }
+                };
                 return (
                   <button
                     key={opt.value ?? "__all_tags__"}
-                    onClick={() => setTag(opt.value)}
+                    onClick={onClick}
                     style={{
                       padding: "7px 12px",
                       borderRadius: 8,
