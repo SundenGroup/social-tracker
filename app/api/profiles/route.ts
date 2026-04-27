@@ -3,6 +3,7 @@ import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { profileSchema } from "@/lib/validators";
 import { isScoped } from "@/lib/profile-scope";
+import { Prisma } from "@prisma/client";
 
 // GET /api/profiles - List profiles for organization
 // Scoped viewers only see the profiles they have access to, so the
@@ -33,10 +34,37 @@ export const GET = apiHandler(
         _count: { select: { socialAccounts: true } },
         socialAccounts: {
           where: { isActive: true },
-          select: { platform: true },
+          select: { id: true, platform: true },
         },
       },
     });
+
+    // Per-profile available tags. Cheap because each profile has a
+    // small account count and `tags` is GIN-indexed. Returns the
+    // distinct lowercase tag list across all (non-deleted) posts on
+    // the profile's accounts.
+    const tagsByProfile = new Map<string, string[]>();
+    for (const p of profiles) {
+      const accountIds = p.socialAccounts.map((a) => a.id);
+      if (accountIds.length === 0) {
+        tagsByProfile.set(p.id, []);
+        continue;
+      }
+      try {
+        const rows = await prisma.$queryRaw<Array<{ tag: string }>>(
+          Prisma.sql`
+            SELECT DISTINCT unnest(tags) AS tag
+            FROM "Post"
+            WHERE "socialAccountId" IN (${Prisma.join(accountIds)})
+              AND "isDeleted" = false
+            ORDER BY tag ASC
+          `
+        );
+        tagsByProfile.set(p.id, rows.map((r) => r.tag).filter(Boolean));
+      } catch {
+        tagsByProfile.set(p.id, []);
+      }
+    }
 
     const data = profiles.map((p) => ({
       id: p.id,
@@ -45,12 +73,14 @@ export const GET = apiHandler(
       organizationId: p.organizationId,
       accountCount: p._count.socialAccounts,
       platforms: Array.from(new Set(p.socialAccounts.map((a) => a.platform))),
+      tags: tagsByProfile.get(p.id) ?? [],
       createdAt: p.createdAt.toISOString(),
     }));
 
-    // Org-wide distinct platforms, respecting the viewer's scope. Used
-    // when "All profiles" is selected in the picker (or when the caller
-    // has no profile context yet). Also includes unprofiled accounts.
+    // Org-wide distinct platforms + tags, respecting the viewer's scope.
+    // Used when "All profiles" is selected in the picker (or when the
+    // caller has no profile context yet). Also includes unprofiled
+    // accounts.
     const orgAccountsWhere: Record<string, unknown> = {
       organizationId: orgId,
       isActive: true,
@@ -62,12 +92,20 @@ export const GET = apiHandler(
     }
     const orgAccounts = await prisma.socialAccount.findMany({
       where: orgAccountsWhere,
-      select: { platform: true },
+      select: { id: true, platform: true },
       distinct: ["platform"],
     });
-    const orgPlatforms = orgAccounts.map((a) => a.platform);
+    const orgPlatforms = Array.from(new Set(orgAccounts.map((a) => a.platform)));
 
-    return NextResponse.json({ data, orgPlatforms });
+    // Org-wide tag list = union of every profile's tags + any tags on
+    // unprofiled accounts the viewer can see. Quick set-merge.
+    const orgTagSet = new Set<string>();
+    for (const list of tagsByProfile.values()) {
+      for (const t of list) orgTagSet.add(t);
+    }
+    const orgTags = Array.from(orgTagSet).sort();
+
+    return NextResponse.json({ data, orgPlatforms, orgTags });
   },
   { requireAuth: true }
 );

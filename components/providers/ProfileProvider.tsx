@@ -20,6 +20,13 @@ interface ProfileContextValue {
    * so we don't collapse the nav before we know the answer.
    */
   activePlatforms: string[];
+  /**
+   * Distinct tags applied to any non-deleted post in the current scope.
+   * Drives the dashboard tag-filter strip — only rendered when non-empty.
+   * Selected profile: uses that profile's `tags`; otherwise: org-wide
+   * union (`orgTags`).
+   */
+  availableTags: string[];
 }
 
 export const ProfileContext = createContext<ProfileContextValue>({
@@ -30,6 +37,7 @@ export const ProfileContext = createContext<ProfileContextValue>({
   initialized: false,
   refetch: async () => {},
   activePlatforms: [],
+  availableTags: [],
 });
 
 const STORAGE_KEY = "clutch-selected-profile";
@@ -41,6 +49,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [profiles, setProfiles] = useState<ProfileResponse[]>([]);
   const [orgPlatforms, setOrgPlatforms] = useState<string[]>([]);
+  const [orgTags, setOrgTags] = useState<string[]>([]);
   const [selectedProfileId, setSelectedProfileIdState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -92,6 +101,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
       if (res.ok && json.data) {
         setProfiles(json.data);
         setOrgPlatforms(Array.isArray(json.orgPlatforms) ? json.orgPlatforms : []);
+        setOrgTags(Array.isArray(json.orgTags) ? json.orgTags : []);
       }
     } catch {
       // silently fail — profiles are optional
@@ -177,6 +187,9 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const activePlatforms = selectedProfile
     ? (selectedProfile.platforms ?? [])
     : orgPlatforms;
+  const availableTags = selectedProfile
+    ? (selectedProfile.tags ?? [])
+    : orgTags;
 
   return (
     <ProfileContext.Provider
@@ -188,6 +201,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         initialized,
         refetch: fetchProfiles,
         activePlatforms,
+        availableTags,
       }}
     >
       {children}

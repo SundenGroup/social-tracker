@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import ExportButton from "@/components/common/ExportButton";
 import { useDateRange } from "@/hooks/useDateRange";
 import { usePlatformDashboard } from "@/hooks/usePlatformDashboard";
+import { useProfiles } from "@/hooks/useProfiles";
 import { Block } from "@/components/ui/Block";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import ContentPerformanceTable from "@/components/tables/ContentPerformanceTable";
@@ -73,12 +74,23 @@ const PLATFORM_CONTENT_TABS: Record<Platform, { label: string; value: string }[]
 export default function PlatformPageView({ platform, title, handle }: PlatformPageViewProps) {
   const { startDate, endDate, setDateRange } = useDateRange();
   const [contentType, setContentType] = useState("all");
+  const [tag, setTag] = useState<string | null>(null);
+  const { availableTags } = useProfiles();
   const { data, isLoading, error, refetch } = usePlatformDashboard(
     platform,
     startDate,
     endDate,
-    contentType
+    contentType,
+    tag
   );
+
+  // Reset tag selection if it disappears from the available list (e.g.
+  // after the profile context narrows or the tag is removed upstream).
+  useEffect(() => {
+    if (tag && !availableTags.includes(tag)) {
+      setTag(null);
+    }
+  }, [tag, availableTags]);
 
   const [sections, setSections] = useState<Record<SectionKey, boolean>>({
     types: true,
@@ -229,6 +241,35 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
                     }}
                   >
                     {ct.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Tag filter strip — composes multiplicatively with content type
+              ("Esports" + "Reels"). Only rendered when the current scope
+              has tagged content. */}
+          {availableTags.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))].map((opt) => {
+                const active = (tag ?? null) === opt.value;
+                return (
+                  <button
+                    key={opt.value ?? "__all_tags__"}
+                    onClick={() => setTag(opt.value)}
+                    style={{
+                      padding: "7px 12px",
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                      background: active ? "var(--accent)" : "var(--bg-elev)",
+                      color: active ? "#fff" : "var(--fg-muted)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      textTransform: opt.value ? "capitalize" : undefined,
+                    }}
+                  >
+                    {opt.label}
                   </button>
                 );
               })}

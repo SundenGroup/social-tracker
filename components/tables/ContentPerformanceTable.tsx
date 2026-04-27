@@ -12,6 +12,8 @@ import {
   ArrowDownIcon,
   SearchIcon,
 } from "@/components/icons/PlatformGlyph";
+import PostPropsPopover from "./PostPropsPopover";
+import { useProfiles } from "@/hooks/useProfiles";
 
 type SortKey = "views" | "engagementRate" | "publishedAt" | "likes" | "comments";
 
@@ -52,6 +54,10 @@ export default function ContentPerformanceTable({
   hideToolbar,
   maxRows,
 }: ContentPerformanceTableProps) {
+  // Pull org-wide tag list so the per-post popover can offer
+  // autocomplete suggestions when adding manual tags. Cheap — the
+  // ProfileProvider has already fetched it once.
+  const { availableTags } = useProfiles();
   const [sortKey, setSortKey] = useState<SortKey>("publishedAt");
   const [sortAsc, setSortAsc] = useState(false);
   const [page, setPage] = useState(0);
@@ -68,18 +74,11 @@ export default function ContentPerformanceTable({
     setPage(0);
   }
 
-  async function handleToggleSponsored(postId: string, current: boolean) {
-    try {
-      const res = await fetch(`/api/posts/${postId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isSponsored: !current }),
-      });
-      if (res.ok && onToggleSponsored) onToggleSponsored(postId, !current);
-    } catch {
-      // silently ignore
-    }
-  }
+  // Sponsored toggling now lives inside PostPropsPopover (alongside
+  // the manual-tags editor). The local PATCH helper is gone —
+  // `onToggleSponsored` is still called as the post-save signal so the
+  // dashboard refetches, but the icon-button → fetch path moved into
+  // the popover component.
 
   const filtered = posts.filter((p) => {
     if (lockedPlatform && p.platform !== lockedPlatform) return false;
@@ -245,7 +244,8 @@ export default function ContentPerformanceTable({
                 post={p}
                 zebra={i % 2 === 1}
                 lockedPlatform={lockedPlatform}
-                onToggleSponsored={() => handleToggleSponsored(p.id, p.isSponsored)}
+                availableTags={availableTags}
+                onSaved={() => onToggleSponsored?.(p.id, p.isSponsored)}
               />
             ))}
 
@@ -345,12 +345,16 @@ function PostRow({
   post,
   zebra,
   lockedPlatform,
-  onToggleSponsored,
+  availableTags,
+  onSaved,
 }: {
   post: PostPerformance;
   zebra: boolean;
   lockedPlatform?: string;
-  onToggleSponsored: () => void;
+  /** Org-wide tag list for the popover's autocomplete suggestions. */
+  availableTags: string[];
+  /** Called after the popover saves successfully — typically refetch. */
+  onSaved: () => void;
 }) {
   const color = PLATFORM_COLOR[post.platform] ?? "var(--fg-muted)";
   const short = PLATFORM_SHORT[post.platform] ?? post.platform.slice(0, 2).toUpperCase();
@@ -464,37 +468,19 @@ function PostRow({
         {formatDate(post.publishedAt)}
       </div>
 
-      {/* sponsored */}
+      {/* Per-post properties popover. The trigger icon doubles as the
+          sponsored indicator (yellow when isSponsored, accent when any
+          manual tags). Click opens the editor for both fields at once
+          rather than separate icons / forms. */}
       <div style={{ textAlign: "right" }}>
-        <button
-          onClick={onToggleSponsored}
-          title={post.isSponsored ? "Sponsored (click to remove)" : "Mark as sponsored"}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 2,
-            background: "transparent",
-            border: "none",
-            color: post.isSponsored ? "#E09B00" : "var(--fg-subtle)",
-            opacity: post.isSponsored ? 1 : 0.4,
-          }}
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill={post.isSponsored ? "currentColor" : "none"}
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-          >
-            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-            <line x1="7" y1="7" x2="7.01" y2="7" />
-          </svg>
-        </button>
+        <PostPropsPopover
+          postId={post.id}
+          isSponsored={post.isSponsored}
+          manualTags={post.manualTags ?? []}
+          autoTags={(post.tags ?? []).filter((t) => !(post.manualTags ?? []).includes(t))}
+          availableTags={availableTags}
+          onSaved={onSaved}
+        />
       </div>
     </div>
   );

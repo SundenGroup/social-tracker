@@ -3,6 +3,7 @@ import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
+import { tagFilterWhere } from "@/lib/tagging";
 import type { Platform, PostType } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok", "vk"];
@@ -186,6 +187,7 @@ export const GET = apiHandler(
     const orgId = session!.user.organizationId;
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
     const contentType = url.searchParams.get("contentType");
+    const tag = url.searchParams.get("tag");
     const startDateA = url.searchParams.get("startDateA");
     const endDateA = url.searchParams.get("endDateA");
     const startDateB = url.searchParams.get("startDateB");
@@ -212,12 +214,16 @@ export const GET = apiHandler(
       select: { id: true },
     });
     const accountIds = accounts.map((a) => a.id);
-    const postTypeFilter = buildPostTypeFilter(contentType);
+    // Merge content-type + tag into the single `extraFilter` aggregatePeriod
+    // already accepts. The function spreads it at the top-level of where{}
+    // alongside socialAccountId / publishedAt / isDeleted, so an OR-shaped
+    // contentType (short-form) ANDs with the tag filter as expected.
+    const extraFilter = { ...buildPostTypeFilter(contentType), ...tagFilterWhere(tag) };
 
     // Aggregate both periods in parallel
     const [periodA, periodB] = await Promise.all([
-      aggregatePeriod(accountIds, startA, endA, hideSponsored, postTypeFilter),
-      aggregatePeriod(accountIds, startB, endB, hideSponsored, postTypeFilter),
+      aggregatePeriod(accountIds, startA, endA, hideSponsored, extraFilter),
+      aggregatePeriod(accountIds, startB, endB, hideSponsored, extraFilter),
     ]);
 
     // Compute changes

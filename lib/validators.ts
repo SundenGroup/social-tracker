@@ -16,6 +16,23 @@ export const registerSchema = z.object({
     .regex(/[0-9]/, "Password must contain at least one number"),
 });
 
+/**
+ * One auto-tag rule. A rule must specify at least one of hashtags /
+ * mentions / keywords — an empty rule would tag nothing, so reject it
+ * at write time rather than letting users create dud rules.
+ */
+export const tagRuleSchema = z
+  .object({
+    tag: z.string().min(1, "Rule tag is required").max(50),
+    hashtags: z.array(z.string().max(100)).optional().default([]),
+    mentions: z.array(z.string().max(100)).optional().default([]),
+    keywords: z.array(z.string().max(200)).optional().default([]),
+  })
+  .refine(
+    (r) => (r.hashtags?.length ?? 0) + (r.mentions?.length ?? 0) + (r.keywords?.length ?? 0) > 0,
+    { message: "Rule must specify at least one of hashtags, mentions, or keywords" }
+  );
+
 export const socialAccountSchema = z.object({
   platform: z.enum(["youtube", "twitter", "instagram", "tiktok", "vk"]),
   accountId: z.string().min(1, "Account ID is required"),
@@ -25,6 +42,11 @@ export const socialAccountSchema = z.object({
   apiKey: z.string().optional(),
   authToken: z.string().optional(),
   refreshToken: z.string().optional(),
+  // Per-account auto-tagging configuration. Both optional — accounts
+  // without rules just don't auto-tag. defaultTags applies to every
+  // post; tagRules conditional on caption matches.
+  defaultTags: z.array(z.string().min(1).max(50)).optional().default([]),
+  tagRules: z.array(tagRuleSchema).optional(),
 });
 
 export const profileSchema = z.object({
@@ -44,5 +66,6 @@ export const dateRangeSchema = z
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type SocialAccountInput = z.infer<typeof socialAccountSchema>;
+export type TagRuleInput = z.infer<typeof tagRuleSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
 export type DateRangeInput = z.infer<typeof dateRangeSchema>;

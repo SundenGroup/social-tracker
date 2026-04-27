@@ -82,7 +82,8 @@ export function usePlatformDashboard(
   platform: string,
   startDate: string,
   endDate: string,
-  contentType?: string
+  contentType?: string,
+  tag?: string | null
 ) {
   const { selectedProfileId, initialized } = useProfiles();
   const [data, setData] = useState<PlatformDashboardData | null>(null);
@@ -101,6 +102,9 @@ export function usePlatformDashboard(
       if (selectedProfileId) {
         params.set("profileId", selectedProfileId);
       }
+      if (tag) {
+        params.set("tag", tag);
+      }
       const res = await fetch(`/api/metrics/platform/${platform}?${params}`, { signal });
       const json = await res.json();
       if (!res.ok) {
@@ -114,7 +118,7 @@ export function usePlatformDashboard(
     } finally {
       setIsLoading(false);
     }
-  }, [platform, startDate, endDate, contentType, selectedProfileId, initialized]);
+  }, [platform, startDate, endDate, contentType, tag, selectedProfileId, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

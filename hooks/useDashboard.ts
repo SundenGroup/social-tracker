@@ -55,7 +55,7 @@ interface DashboardData {
   accounts: AccountHealth[];
 }
 
-export function useDashboard(startDate: string, endDate: string, contentType?: string) {
+export function useDashboard(startDate: string, endDate: string, contentType?: string, tag?: string | null) {
   const { selectedProfileId, initialized } = useProfiles();
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,6 +73,9 @@ export function useDashboard(startDate: string, endDate: string, contentType?: s
       if (selectedProfileId) {
         params.set("profileId", selectedProfileId);
       }
+      if (tag) {
+        params.set("tag", tag);
+      }
       const res = await fetch(`/api/metrics/dashboard?${params}`, { signal });
       const json = await res.json();
       if (!res.ok) {
@@ -86,7 +89,7 @@ export function useDashboard(startDate: string, endDate: string, contentType?: s
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, contentType, selectedProfileId, initialized]);
+  }, [startDate, endDate, contentType, tag, selectedProfileId, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

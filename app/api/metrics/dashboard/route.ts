@@ -3,6 +3,7 @@ import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
+import { buildPostFilters } from "@/lib/post-filters";
 
 // GET /api/metrics/dashboard - Aggregated dashboard data
 export const GET = apiHandler(
@@ -12,6 +13,7 @@ export const GET = apiHandler(
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
     const contentType = url.searchParams.get("contentType");
+    const tag = url.searchParams.get("tag");
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
 
     const orgId = session!.user.organizationId;
@@ -39,33 +41,12 @@ export const GET = apiHandler(
 
     const accountIds = accounts.map((a) => a.id);
 
-    // Build optional postType filter
-    // "short-form" = YouTube shorts + TikTok videos + Instagram reels (video)
-    // "long-form" = YouTube long-form videos only
-    let postTypeFilter: Record<string, unknown> = {};
-    if (contentType === "video") {
-      postTypeFilter = {
-        postType: { in: ["video", "short"] as import("@prisma/client").PostType[] },
-      };
-    } else if (contentType === "short-form") {
-      postTypeFilter = {
-        OR: [
-          { postType: "short" as import("@prisma/client").PostType },
-          { platform: "tiktok" as import("@prisma/client").Platform, postType: "video" as import("@prisma/client").PostType },
-          { platform: "instagram" as import("@prisma/client").Platform, postType: "video" as import("@prisma/client").PostType },
-        ],
-      };
-    } else if (contentType === "long-form") {
-      postTypeFilter = {
-        platform: "youtube" as import("@prisma/client").Platform,
-        postType: "video" as import("@prisma/client").PostType,
-      };
-    } else if (contentType && contentType !== "all") {
-      postTypeFilter = { postType: contentType as import("@prisma/client").PostType };
-    }
-
-    // Build sponsored filter for aggregation queries
-    const sponsoredFilter = hideSponsored ? { isSponsored: false } : {};
+    // Centralised filter builder — combines contentType (incl. short-/
+    // long-form composites), tag, and hideSponsored into a single
+    // spread-fragment. Replaces the previous separate postTypeFilter +
+    // sponsoredFilter pair so adding new filters (the tag filter is
+    // the latest) requires touching only lib/post-filters.ts.
+    const postFilters = buildPostFilters({ contentType, tag, hideSponsored });
 
     // Previous period dates (needed for parallel query)
     const rangeDuration = end.getTime() - start.getTime();
@@ -81,8 +62,7 @@ export const GET = apiHandler(
           socialAccountId: { in: accountIds },
           publishedAt: { gte: start, lte: end },
           isDeleted: false,
-          ...postTypeFilter,
-          ...sponsoredFilter,
+          ...postFilters,
         },
         orderBy: { publishedAt: "desc" },
         take: 5000,
@@ -92,8 +72,7 @@ export const GET = apiHandler(
           socialAccountId: { in: accountIds },
           publishedAt: { gte: prevStart, lte: prevEnd },
           isDeleted: false,
-          ...postTypeFilter,
-          ...sponsoredFilter,
+          ...postFilters,
         },
         select: { id: true },
       }),
@@ -146,6 +125,8 @@ export const GET = apiHandler(
         publishedAt: post.publishedAt.toISOString(),
         isTrending: post.isTrending,
         isSponsored: post.isSponsored,
+        tags: post.tags ?? [],
+        manualTags: post.manualTags ?? [],
         views,
         likes,
         comments,

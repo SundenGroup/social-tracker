@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { accountTagConfig, computeAutoTags, effectiveTags } from "@/lib/tagging";
 
 const ingestSchema = z.object({
   platform: z.enum(["tiktok", "youtube", "instagram", "twitter", "vk"]),
@@ -63,6 +64,12 @@ export async function POST(req: Request) {
       where: { platform, accountId },
     });
 
+    // Pre-load the account's tag config once per request (used in the
+    // per-post loop below). See lib/tagging.ts for engine details.
+    const tagConfig = account
+      ? accountTagConfig({ defaultTags: account.defaultTags, tagRules: account.tagRules })
+      : { defaultTags: [], tagRules: null };
+
     if (!account) {
       return NextResponse.json(
         { error: `Account not found: ${platform}/${accountId}` },
@@ -98,7 +105,6 @@ export async function POST(req: Request) {
         // Sanitize text
         const sanitize = (text: string | undefined | null, max = 500) => {
           if (!text) return null;
-          // eslint-disable-next-line no-control-regex
           let clean = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
           clean = clean.replace(/\\/g, "");
           if (clean.length > max) clean = clean.substring(0, max);
@@ -115,6 +121,28 @@ export async function POST(req: Request) {
         const cleanTitle = sanitize(post.title, 200);
         const cleanDescription = sanitize(post.description);
         const cleanThumbnail = post.thumbnailUrl || null;
+
+        // Auto-tag computation runs against the RAW (pre-sanitize) text
+        // so hashtags at the end of long captions still register even
+        // when the description gets truncated to 500 chars below.
+        const autoTags = computeAutoTags(
+          { title: post.title, description: post.description },
+          tagConfig
+        );
+
+        // Look up existing manualTags so we can union them in. If the
+        // post is new, manualTags is [] (default).
+        const existing = await prisma.post.findUnique({
+          where: {
+            socialAccountId_postId: {
+              socialAccountId: account.id,
+              postId: post.postId,
+            },
+          },
+          select: { manualTags: true },
+        });
+        const manualTags = existing?.manualTags ?? [];
+        const finalTags = effectiveTags(autoTags, manualTags);
 
         await prisma.post.upsert({
           where: {
@@ -134,6 +162,9 @@ export async function POST(req: Request) {
             thumbnailUrl: cleanThumbnail,
             publishedAt: new Date(post.publishedAt),
             attachedVideoId: post.attachedVideoId ?? null,
+            tags: finalTags,
+            // manualTags defaults to [] for new posts. Only the per-post
+            // PATCH endpoint mutates it.
           },
           update: {
             // Only write fields that the scraper actually supplied — never
@@ -146,6 +177,9 @@ export async function POST(req: Request) {
             // Only update attachedVideoId when the sync actually provided it —
             // don't accidentally wipe it on a partial update.
             ...(post.attachedVideoId != null && { attachedVideoId: post.attachedVideoId }),
+            // Recompute tags every ingest — auto tags reflect the latest
+            // caption + rules, manual tags are preserved via union above.
+            tags: finalTags,
           },
         });
         postsSynced++;

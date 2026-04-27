@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { generateExcel, type ExportRow } from "@/lib/utils/export";
 import { ValidationError } from "@/lib/errors";
 import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
+import { tagFilterWhere } from "@/lib/tagging";
 import type { Platform } from "@prisma/client";
 
 const ALL_COLUMNS = [
@@ -16,12 +17,13 @@ const ALL_COLUMNS = [
 export const POST = apiHandler(
   async (req, session) => {
     const body = await req.json();
-    const { platform, startDate, endDate, metrics, profileId: requestedProfileId } = body as {
+    const { platform, startDate, endDate, metrics, profileId: requestedProfileId, tag } = body as {
       platform?: string;
       startDate: string;
       endDate: string;
       metrics?: string[];
       profileId?: string | null;
+      tag?: string | null;
     };
 
     if (!startDate || !endDate) {
@@ -54,6 +56,7 @@ export const POST = apiHandler(
         socialAccountId: { in: accountIds },
         publishedAt: { gte: start, lte: end },
         isDeleted: false,
+        ...tagFilterWhere(tag),
       },
       include: {
         metrics: {

@@ -47,7 +47,22 @@ export interface ProfileResponse {
   /** Distinct platforms this profile has active connections for.
    *  Used by the Sidebar to hide platform nav items with no data here. */
   platforms?: string[];
+  /** Distinct tags applied to any non-deleted post under this profile.
+   *  Used by the dashboard tag-filter strip; only rendered when
+   *  non-empty. */
+  tags?: string[];
   createdAt: string;
+}
+
+/**
+ * One auto-tag rule attached to a SocialAccount. Mirrored from
+ * lib/tagging.ts for typing convenience on the frontend.
+ */
+export interface TagRule {
+  tag: string;
+  hashtags?: string[];
+  mentions?: string[];
+  keywords?: string[];
 }
 
 export interface SocialAccountResponse {
@@ -61,6 +76,11 @@ export interface SocialAccountResponse {
   syncStatus: SyncStatus;
   profileId?: string;
   profileName?: string;
+  /** Tags applied to every post from this account (e.g. ["esports"]). */
+  defaultTags?: string[];
+  /** Auto-tag rules — each emits a tag when caption matches its
+   *  hashtags / mentions / keywords. */
+  tagRules?: TagRule[] | null;
   createdAt: string;
 }
 
@@ -130,6 +150,11 @@ export interface PostPerformance {
   publishedAt: string;
   isTrending: boolean;
   isSponsored: boolean;
+  /** Effective tags (auto + manual) — used for filtering. */
+  tags?: string[];
+  /** Tags pinned manually via the per-post popover. Source of truth
+   *  for human intent; preserved across rule recomputes. */
+  manualTags?: string[];
   views: number;
   likes: number;
   comments: number;

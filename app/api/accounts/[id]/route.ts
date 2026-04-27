@@ -5,6 +5,8 @@ import { socialAccountSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/api-keys";
 import { NotFoundError } from "@/lib/errors";
 import { buildCookiePayload } from "@/lib/utils/browser-cookies";
+import { recomputeAccountTags, parseTagRules } from "@/lib/tagging";
+import { Prisma } from "@prisma/client";
 
 // GET /api/accounts/[id] - Get account details
 export const GET = apiHandler(
@@ -28,6 +30,8 @@ export const GET = apiHandler(
         profileId: true,
         profile: { select: { name: true } },
         createdAt: true,
+        defaultTags: true,
+        tagRules: true,
       },
     });
 
@@ -80,9 +84,33 @@ export const PUT = apiHandler(
       );
     }
 
-    const { platform, accountId, accountName, contentFilter, profileId, apiKey, refreshToken } =
+    const { platform, accountId, accountName, contentFilter, profileId, apiKey, refreshToken, defaultTags, tagRules } =
       result.data;
     let { authToken } = result.data;
+
+    // Detect whether the tag configuration actually changed; only then
+    // do we trigger the post-save recompute. Cheap rough comparison —
+    // the recompute is idempotent so a false positive just costs a
+    // single pass over the account's posts.
+    const prevDefault = (existing.defaultTags ?? []).slice().sort().join(",");
+    const nextDefault = (defaultTags ?? []).slice().sort().join(",");
+    const prevRules = JSON.stringify(existing.tagRules ?? null);
+    const nextRules = JSON.stringify(tagRules ?? null);
+    const tagConfigChanged = prevDefault !== nextDefault || prevRules !== nextRules;
+
+    // Validate the rule shape via the engine (canonicalises hashtags
+    // and mentions, strips empty rules, etc.). Throws on bad input.
+    let canonicalRules: ReturnType<typeof parseTagRules> | null = null;
+    if (tagRules !== undefined) {
+      try {
+        canonicalRules = parseTagRules(tagRules);
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "Invalid tagRules" },
+          { status: 400 }
+        );
+      }
+    }
 
     // For Instagram/TikTok, convert raw cookie header string to structured JSON
     if (authToken && (platform === "instagram" || platform === "tiktok" || platform === "twitter")) {
@@ -130,6 +158,12 @@ export const PUT = apiHandler(
         ...(refreshToken !== undefined && {
           refreshToken: refreshToken ? encrypt(refreshToken) : null,
         }),
+        ...(defaultTags !== undefined && { defaultTags: defaultTags.map((t) => t.trim().toLowerCase()).filter(Boolean) }),
+        // Prisma's JSON column accepts InputJsonValue or DbNull; widen
+        // the typed TagRule[] through unknown rather than threading
+        // Prisma's exact JSON-input types into our pure tagging engine.
+        ...(canonicalRules !== null && { tagRules: canonicalRules as unknown as Prisma.InputJsonValue }),
+        ...(tagRules === null && { tagRules: Prisma.JsonNull }),
       },
       select: {
         id: true,
@@ -143,8 +177,25 @@ export const PUT = apiHandler(
         profileId: true,
         profile: { select: { name: true } },
         createdAt: true,
+        defaultTags: true,
+        tagRules: true,
       },
     });
+
+    // Recompute tags on every post for this account when the tag
+    // configuration changed. Idempotent + chunked, so safe to run
+    // synchronously; for very large accounts (10K+ posts) consider
+    // moving to a background job later.
+    let postsRetagged: number | undefined;
+    if (tagConfigChanged) {
+      try {
+        postsRetagged = await recomputeAccountTags(id);
+      } catch (err) {
+        // Don't fail the PUT — the new config is saved, ingest will
+        // pick up new posts correctly. Surface a non-fatal warning.
+        console.error("[accounts PUT] recomputeAccountTags failed:", err);
+      }
+    }
 
     return NextResponse.json({
       data: {
@@ -153,6 +204,7 @@ export const PUT = apiHandler(
         profile: undefined,
         lastSyncedAt: account.lastSyncedAt?.toISOString() ?? null,
         createdAt: account.createdAt.toISOString(),
+        ...(postsRetagged !== undefined && { postsRetagged }),
       },
     });
   },

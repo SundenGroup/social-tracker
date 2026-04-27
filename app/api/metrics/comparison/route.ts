@@ -3,6 +3,7 @@ import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
+import { tagFilterWhere } from "@/lib/tagging";
 import type { Platform } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok", "vk"];
@@ -14,7 +15,9 @@ export const GET = apiHandler(
     const orgId = session!.user.organizationId;
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
+    const tag = url.searchParams.get("tag");
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
+    const tagWhere = tagFilterWhere(tag);
 
     const end = endDate ? new Date(endDate) : new Date();
     end.setHours(23, 59, 59, 999);
@@ -72,6 +75,7 @@ export const GET = apiHandler(
         socialAccountId: { in: accountIds },
         publishedAt: { gte: start, lte: end },
         isDeleted: false,
+        ...tagWhere,
       };
       if (hideSponsored) {
         postWhere.isSponsored = false;
@@ -147,6 +151,7 @@ export const GET = apiHandler(
       socialAccountId: { in: accounts.map((a) => a.id) },
       publishedAt: { gte: start, lte: end },
       isDeleted: false,
+      ...tagWhere,
     };
     if (hideSponsored) {
       trendPostWhere.isSponsored = false;

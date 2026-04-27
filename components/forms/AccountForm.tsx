@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { socialAccountSchema } from "@/lib/validators";
 import { useToast } from "@/components/common/Toast";
 import { useProfiles } from "@/hooks/useProfiles";
-import type { SocialAccountResponse } from "@/types";
+import type { SocialAccountResponse, TagRule } from "@/types";
 
 interface AccountFormProps {
   account?: SocialAccountResponse;
@@ -38,6 +38,37 @@ export default function AccountForm({ account }: AccountFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
 
+  // Auto-tagging configuration. defaultTags is a free-form chip input
+  // shown as a comma-separated string for editing; converted to/from a
+  // string[] on submit. tagRules is a repeater of `{tag, hashtags?,
+  // mentions?, keywords?}` rules — each row has 4 inputs.
+  const [defaultTagsText, setDefaultTagsText] = useState<string>(
+    (account?.defaultTags ?? []).join(", ")
+  );
+  const [tagRules, setTagRules] = useState<TagRule[]>(
+    (account?.tagRules ?? []).map((r) => ({
+      tag: r.tag,
+      hashtags: r.hashtags ?? [],
+      mentions: r.mentions ?? [],
+      keywords: r.keywords ?? [],
+    }))
+  );
+
+  const updateRule = (idx: number, patch: Partial<TagRule>) => {
+    setTagRules((rules) => rules.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
+  const addRule = () => {
+    setTagRules((rules) => [...rules, { tag: "", hashtags: [], mentions: [], keywords: [] }]);
+  };
+  const removeRule = (idx: number) => {
+    setTagRules((rules) => rules.filter((_, i) => i !== idx));
+  };
+
+  // Helper: split a comma- or whitespace-separated string into a
+  // canonicalised string[].
+  const splitTokens = (s: string): string[] =>
+    s.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
+
   async function handleTestConnection() {
     setIsTesting(true);
     try {
@@ -63,6 +94,19 @@ export default function AccountForm({ account }: AccountFormProps) {
     e.preventDefault();
     setError("");
 
+    // Build the tag config payload only when editing — creation flow
+    // doesn't surface the rule editor (no point setting rules before
+    // any posts exist).
+    const cleanDefaultTags = splitTokens(defaultTagsText).map((t) => t.toLowerCase());
+    const cleanTagRules: TagRule[] = tagRules
+      .map((r) => ({
+        tag: r.tag.trim().toLowerCase(),
+        hashtags: (r.hashtags ?? []).map((h) => h.replace(/^#+/, "").trim().toLowerCase()).filter(Boolean),
+        mentions: (r.mentions ?? []).map((m) => m.replace(/^@+/, "").trim().toLowerCase()).filter(Boolean),
+        keywords: (r.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean),
+      }))
+      .filter((r) => r.tag.length > 0);
+
     const payload = {
       platform,
       accountId,
@@ -71,6 +115,8 @@ export default function AccountForm({ account }: AccountFormProps) {
       ...(profileId && { profileId }),
       ...(apiKey && { apiKey }),
       ...(authToken && { authToken }),
+      ...(isEditing && { defaultTags: cleanDefaultTags }),
+      ...(isEditing && { tagRules: cleanTagRules }),
     };
 
     const result = socialAccountSchema.safeParse(payload);
@@ -220,6 +266,105 @@ export default function AccountForm({ account }: AccountFormProps) {
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* Auto-tagging — only on edit. Creating a fresh account has no
+          posts yet, so configuring rules upfront would be useless;
+          surface it after creation when there's content to tag. */}
+      {isEditing && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <h3 className="mb-1 text-sm font-bold text-clutch-black">Auto-tagging</h3>
+          <p className="mb-4 text-xs text-clutch-grey/70">
+            Tag posts automatically by hashtag, mention or keyword. Saving
+            triggers a one-pass over every existing post on this account so
+            historical data picks up new rules immediately.
+          </p>
+
+          <div className="mb-4">
+            <label className="mb-1 block text-xs font-medium text-clutch-black">
+              Default tags <span className="text-clutch-grey/50 font-normal">(applied to every post from this account)</span>
+            </label>
+            <input
+              type="text"
+              value={defaultTagsText}
+              onChange={(e) => setDefaultTagsText(e.target.value)}
+              placeholder="e.g. esports"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+            />
+            <p className="mt-1 text-[10px] text-clutch-grey/50">
+              Comma- or space-separated. Use this for accounts that are 100%
+              one category (e.g. dedicated esports accounts get just &quot;esports&quot;).
+            </p>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="block text-xs font-medium text-clutch-black">
+                Auto-tag rules
+              </label>
+              <button
+                type="button"
+                onClick={addRule}
+                className="text-xs font-medium text-clutch-blue hover:underline"
+              >
+                + Add rule
+              </button>
+            </div>
+            {tagRules.length === 0 && (
+              <p className="text-xs text-clutch-grey/50">
+                No rules. Click <em>+ Add rule</em> to tag posts that match a hashtag, mention, or keyword.
+              </p>
+            )}
+            <div className="space-y-3">
+              {tagRules.map((rule, idx) => (
+                <div key={idx} className="rounded-lg border border-gray-200 p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={rule.tag}
+                      onChange={(e) => updateRule(idx, { tag: e.target.value })}
+                      placeholder="Tag name (e.g. esports)"
+                      className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeRule(idx)}
+                      className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-clutch-grey hover:bg-gray-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                    <input
+                      type="text"
+                      value={(rule.hashtags ?? []).join(", ")}
+                      onChange={(e) => updateRule(idx, { hashtags: splitTokens(e.target.value) })}
+                      placeholder="hashtags (e.g. esports, pubgesports)"
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+                    />
+                    <input
+                      type="text"
+                      value={(rule.mentions ?? []).join(", ")}
+                      onChange={(e) => updateRule(idx, { mentions: splitTokens(e.target.value) })}
+                      placeholder="mentions (e.g. pubgesports)"
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+                    />
+                    <input
+                      type="text"
+                      value={(rule.keywords ?? []).join(", ")}
+                      onChange={(e) => updateRule(idx, { keywords: splitTokens(e.target.value) })}
+                      placeholder="keywords (e.g. tournament, finals)"
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-clutch-grey/50">
+                    Match any of: hashtag, mention, or keyword (case-insensitive). At least one is required.
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

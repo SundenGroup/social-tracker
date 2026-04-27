@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import ExportButton from "@/components/common/ExportButton";
@@ -38,12 +38,21 @@ const CONTENT_TYPE_TABS = [
 export default function DashboardPage() {
   const { startDate, endDate, setDateRange } = useDateRange();
   const [contentType, setContentType] = useState("all");
+  const [tag, setTag] = useState<string | null>(null);
   const [chartVariant, setChartVariant] = useState<ChartVariant>("bars");
-  const { data, isLoading, error, refetch } = useDashboard(startDate, endDate, contentType);
+  const { data, isLoading, error, refetch } = useDashboard(startDate, endDate, contentType, tag);
   // Charts respect the current profile's active platforms — so e.g.
   // VK doesn't show up as "0" in the legend/tooltip when the selected
   // profile has no VK accounts.
-  const { activePlatforms } = useProfiles();
+  const { activePlatforms, availableTags } = useProfiles();
+
+  // Reset the tag selection if it disappears from the available list
+  // (e.g. after switching profile to one that doesn't have that tag).
+  useEffect(() => {
+    if (tag && !availableTags.includes(tag)) {
+      setTag(null);
+    }
+  }, [tag, availableTags]);
 
   // Build per-platform sparkline data from the trend series
   const platformStripItems: PlatformStripItem[] = useMemo(() => {
@@ -228,6 +237,36 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* Tag filter strip — separate from the content-type strip so the
+              two compose multiplicatively (e.g. "Esports" + "Short-form").
+              Only rendered when the current scope actually has tags;
+              admins on profiles with zero tagged content see nothing. */}
+          {availableTags.length > 0 && (
+            <div className="hscroll" style={{ display: "flex", gap: 6, flexWrap: "nowrap", maxWidth: "100%", marginTop: 8 }}>
+              {[{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))].map((opt) => {
+                const active = (tag ?? null) === opt.value;
+                return (
+                  <button
+                    key={opt.value ?? "__all_tags__"}
+                    onClick={() => setTag(opt.value)}
+                    style={{
+                      padding: "7px 12px",
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                      background: active ? "var(--accent)" : "var(--bg-elev)",
+                      color: active ? "#fff" : "var(--fg-muted)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      textTransform: opt.value ? "capitalize" : undefined,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* KPI cards */}
           <div className="row row-4">

@@ -157,6 +157,14 @@ model SocialAccount {
   contentFilter  ContentFilter @default(all)
   isActive       Boolean      @default(true)
 
+  // Per-account auto-tagging configuration. `defaultTags` are applied to
+  // every post from this account (e.g., ["esports"] for an account that
+  // is 100% esports). `tagRules` matches captions on hashtags / mentions /
+  // keywords and emits additional tags. Both feed Post.tags via the tag
+  // engine in lib/tagging.ts.
+  defaultTags  String[]   @default([])
+  tagRules     Json?
+
   // API/Auth credentials (encrypted)
   apiKey       String?
   authToken    String?
@@ -207,6 +215,15 @@ model Post {
   // are still the wall-level numbers. Empty for all non-VK platforms.
   attachedVideoId     String?
 
+  // Effective tags = computeAutoTags(post, account) ∪ manualTags. This
+  // is the column queried for filtering — `where: { tags: { has: "x" } }`.
+  // Recomputed on every ingest of this post, on every save of the
+  // account's tag rules, and when manualTags changes via PATCH.
+  tags        String[] @default([])
+  // User-pinned tags from the per-post popover. Source of truth for
+  // human intent — the auto-tag pass NEVER strips these on recompute.
+  manualTags  String[] @default([])
+
   metrics PostMetric[]
 
   @@unique([socialAccountId, postId])
@@ -214,6 +231,7 @@ model Post {
   @@index([platform, publishedAt])
   @@index([lastMetricRefreshAt])
   @@index([isDeleted, socialAccountId, publishedAt])
+  @@index([tags], type: Gin)
 }
 
 model PostMetric {

@@ -3,6 +3,7 @@ import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
+import { tagFilterWhere } from "@/lib/tagging";
 import type { Platform, PostType } from "@prisma/client";
 
 const VALID_PLATFORMS = ["youtube", "twitter", "instagram", "tiktok", "vk"] as const;
@@ -63,6 +64,7 @@ export const GET = apiHandler(
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
     const contentType = url.searchParams.get("contentType"); // e.g. "short", "video", "image"
+    const tag = url.searchParams.get("tag");
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
 
     const end = endDate ? new Date(endDate) : new Date();
@@ -102,6 +104,7 @@ export const GET = apiHandler(
     // Translate the UI content-type ("short-form", etc.) into a real Prisma
     // filter. See buildContentTypeWhere above.
     const typeWhere = buildContentTypeWhere(contentType, platform as Platform);
+    const tagWhere = tagFilterWhere(tag);
 
     // Build post filter
     const postWhere: Record<string, unknown> = {
@@ -109,6 +112,7 @@ export const GET = apiHandler(
       publishedAt: { gte: start, lte: end },
       isDeleted: false,
       ...typeWhere,
+      ...tagWhere,
     };
     if (hideSponsored) {
       postWhere.isSponsored = false;
@@ -124,6 +128,7 @@ export const GET = apiHandler(
       publishedAt: { gte: prevStart, lte: prevEnd },
       isDeleted: false,
       ...typeWhere,
+      ...tagWhere,
     };
     if (hideSponsored) {
       prevPostWhere.isSponsored = false;
@@ -187,6 +192,8 @@ export const GET = apiHandler(
         publishedAt: post.publishedAt.toISOString(),
         isTrending: post.isTrending,
         isSponsored: post.isSponsored,
+        tags: post.tags ?? [],
+        manualTags: post.manualTags ?? [],
         views,
         likes,
         comments,
