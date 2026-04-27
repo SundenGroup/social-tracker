@@ -33,6 +33,18 @@ interface ProfileContextValue {
    * pill when the only tag covers 100% of posts (clicking it does nothing).
    */
   hasUntaggedPostsInScope: boolean;
+  /**
+   * Default tag filter for the current scope, set by any rule marked
+   * `alwaysOn` on an account in scope. Null when no rule is alwaysOn.
+   * Dashboard / platform pages auto-apply this on scope change.
+   */
+  defaultTagFilter: string | null;
+  /**
+   * True once the initial /api/profiles fetch has completed. Lets the
+   * dashboard distinguish "no default tag filter" from "still loading"
+   * — only apply the default after profiles have loaded.
+   */
+  profilesLoaded: boolean;
 }
 
 export const ProfileContext = createContext<ProfileContextValue>({
@@ -45,6 +57,8 @@ export const ProfileContext = createContext<ProfileContextValue>({
   activePlatforms: [],
   availableTags: [],
   hasUntaggedPostsInScope: true,
+  defaultTagFilter: null,
+  profilesLoaded: false,
 });
 
 const STORAGE_KEY = "clutch-selected-profile";
@@ -58,6 +72,8 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const [orgPlatforms, setOrgPlatforms] = useState<string[]>([]);
   const [orgTags, setOrgTags] = useState<string[]>([]);
   const [orgHasUntaggedPosts, setOrgHasUntaggedPosts] = useState<boolean>(true);
+  const [orgDefaultTagFilter, setOrgDefaultTagFilter] = useState<string | null>(null);
+  const [profilesLoaded, setProfilesLoaded] = useState<boolean>(false);
   const [selectedProfileId, setSelectedProfileIdState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -111,6 +127,8 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         setOrgPlatforms(Array.isArray(json.orgPlatforms) ? json.orgPlatforms : []);
         setOrgTags(Array.isArray(json.orgTags) ? json.orgTags : []);
         setOrgHasUntaggedPosts(typeof json.orgHasUntaggedPosts === "boolean" ? json.orgHasUntaggedPosts : true);
+        setOrgDefaultTagFilter(typeof json.orgDefaultTagFilter === "string" ? json.orgDefaultTagFilter : null);
+        setProfilesLoaded(true);
       }
     } catch {
       // silently fail — profiles are optional
@@ -202,6 +220,9 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const hasUntaggedPostsInScope = selectedProfile
     ? (selectedProfile.hasUntaggedPosts ?? true)
     : orgHasUntaggedPosts;
+  const defaultTagFilter = selectedProfile
+    ? (selectedProfile.defaultTagFilter ?? null)
+    : orgDefaultTagFilter;
 
   return (
     <ProfileContext.Provider
@@ -215,6 +236,8 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         activePlatforms,
         availableTags,
         hasUntaggedPostsInScope,
+        defaultTagFilter,
+        profilesLoaded,
       }}
     >
       {children}

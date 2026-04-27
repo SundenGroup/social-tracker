@@ -27,6 +27,9 @@ export const tagRuleSchema = z
     hashtags: z.array(z.string().max(100)).optional().default([]),
     mentions: z.array(z.string().max(100)).optional().default([]),
     keywords: z.array(z.string().max(200)).optional().default([]),
+    // UI-only flag: when true, this rule's `tag` is the dashboard's
+    // default filter for any profile that uses this account.
+    alwaysOn: z.boolean().optional().default(false),
   })
   .refine(
     (r) => (r.hashtags?.length ?? 0) + (r.mentions?.length ?? 0) + (r.keywords?.length ?? 0) > 0,

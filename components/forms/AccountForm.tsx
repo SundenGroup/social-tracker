@@ -51,6 +51,7 @@ export default function AccountForm({ account }: AccountFormProps) {
     hashtagsText: string;
     mentionsText: string;
     keywordsText: string;
+    alwaysOn: boolean;
   }
   const [tagRules, setTagRules] = useState<RuleFormState[]>(
     (account?.tagRules ?? []).map((r) => ({
@@ -58,6 +59,7 @@ export default function AccountForm({ account }: AccountFormProps) {
       hashtagsText: (r.hashtags ?? []).join(", "),
       mentionsText: (r.mentions ?? []).join(", "),
       keywordsText: (r.keywords ?? []).join(", "),
+      alwaysOn: r.alwaysOn ?? false,
     }))
   );
 
@@ -67,7 +69,7 @@ export default function AccountForm({ account }: AccountFormProps) {
   const addRule = () => {
     setTagRules((rules) => [
       ...rules,
-      { tag: "", hashtagsText: "", mentionsText: "", keywordsText: "" },
+      { tag: "", hashtagsText: "", mentionsText: "", keywordsText: "", alwaysOn: false },
     ]);
   };
   const removeRule = (idx: number) => {
@@ -115,6 +117,7 @@ export default function AccountForm({ account }: AccountFormProps) {
         hashtags: splitTokens(r.hashtagsText).map((h) => h.replace(/^#+/, "").toLowerCase()),
         mentions: splitTokens(r.mentionsText).map((m) => m.replace(/^@+/, "").toLowerCase()),
         keywords: splitTokens(r.keywordsText).map((k) => k.toLowerCase()),
+        alwaysOn: r.alwaysOn,
       }))
       .filter((r) => r.tag.length > 0);
 
@@ -372,6 +375,18 @@ export default function AccountForm({ account }: AccountFormProps) {
                   <p className="mt-1 text-[10px] text-clutch-grey/50">
                     Match any of: hashtag, mention, or keyword (case-insensitive). At least one is required.
                   </p>
+                  <label className="mt-2 flex items-center gap-2 text-xs text-clutch-black cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={rule.alwaysOn}
+                      onChange={(e) => updateRule(idx, { alwaysOn: e.target.checked })}
+                      className="accent-clutch-red"
+                    />
+                    <span>
+                      <span className="font-medium">Always on</span>
+                      <span className="text-clutch-grey/60"> — preselect this tag as the default filter on the dashboard. Users can still toggle it off.</span>
+                    </span>
+                  </label>
                 </div>
               ))}
             </div>

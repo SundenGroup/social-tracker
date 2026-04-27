@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import ExportButton from "@/components/common/ExportButton";
@@ -75,7 +75,13 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
   const { startDate, endDate, setDateRange } = useDateRange();
   const [contentType, setContentType] = useState("all");
   const [tag, setTag] = useState<string | null>(null);
-  const { availableTags, hasUntaggedPostsInScope } = useProfiles();
+  const {
+    availableTags,
+    hasUntaggedPostsInScope,
+    defaultTagFilter,
+    profilesLoaded,
+    selectedProfileId,
+  } = useProfiles();
   const { data, isLoading, error, refetch } = usePlatformDashboard(
     platform,
     startDate,
@@ -91,6 +97,17 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
       setTag(null);
     }
   }, [tag, availableTags]);
+
+  // Apply the always-on default tag once per scope. See dashboard page
+  // for the same pattern + rationale.
+  const appliedScopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!profilesLoaded) return;
+    const scopeKey = selectedProfileId ?? "__org__";
+    if (appliedScopeRef.current === scopeKey) return;
+    appliedScopeRef.current = scopeKey;
+    setTag(defaultTagFilter);
+  }, [profilesLoaded, selectedProfileId, defaultTagFilter]);
 
   const [sections, setSections] = useState<Record<SectionKey, boolean>>({
     types: true,
@@ -219,75 +236,85 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
           className="page-pad"
           style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}
         >
-          {/* Platform-specific content type filter — applies to every section below.
-              Hidden entirely on platforms that don't have meaningful sub-types
-              (TikTok is video-only, so the filter would only ever say "All"). */}
-          {PLATFORM_CONTENT_TABS[platform].length > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {PLATFORM_CONTENT_TABS[platform].map((ct) => {
-                const active = contentType === ct.value;
-                return (
-                  <button
-                    key={ct.value}
-                    onClick={() => setContentType(ct.value)}
-                    style={{
-                      padding: "7px 12px",
-                      borderRadius: 8,
-                      border: "1px solid var(--border)",
-                      background: active ? "var(--fg)" : "var(--bg-elev)",
-                      color: active ? "var(--bg-elev)" : "var(--fg-muted)",
-                      fontSize: 12,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {ct.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          {/* Content-type tabs (left) + tag filter (right). One row so
+              the two filters compose visually and don't push data down.
+              On TikTok the content-type tabs are empty, so the tag pill
+              floats alone via space-between.
+              Tag strip rules:
+                - hidden when no tags exist in scope
+                - hidden when one tag covers 100% of posts (toggle is a no-op)
+                - single togglable pill when one tag with mixed coverage
+                - full "All tags / tag1 / tag2…" radio strip with 2+ tags */}
+          {(PLATFORM_CONTENT_TABS[platform].length > 0 ||
+            (availableTags.length > 0 && !(availableTags.length === 1 && !hasUntaggedPostsInScope))) && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {PLATFORM_CONTENT_TABS[platform].map((ct) => {
+                  const active = contentType === ct.value;
+                  return (
+                    <button
+                      key={ct.value}
+                      onClick={() => setContentType(ct.value)}
+                      style={{
+                        padding: "7px 12px",
+                        borderRadius: 8,
+                        border: "1px solid var(--border)",
+                        background: active ? "var(--fg)" : "var(--bg-elev)",
+                        color: active ? "var(--bg-elev)" : "var(--fg-muted)",
+                        fontSize: 12,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {ct.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-          {/* Tag filter strip — composes multiplicatively with content type
-              ("Esports" + "Reels"). Only rendered when the current scope
-              has tagged content. Single-tag scopes collapse to one
-              togglable pill (clicking applies; clicking again clears) —
-              "All tags / Esports" with only one tag would just be a fancy
-              on/off switch. And when 100% of posts in scope already have
-              that single tag, even the toggle is useless — hide entirely. */}
-          {availableTags.length > 0 &&
-            !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {(availableTags.length === 1
-                ? [{ label: availableTags[0], value: availableTags[0] }]
-                : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
-              ).map((opt) => {
-                const active = (tag ?? null) === opt.value;
-                const onClick = () => {
-                  if (availableTags.length === 1) {
-                    setTag(active ? null : opt.value);
-                  } else {
-                    setTag(opt.value);
-                  }
-                };
-                return (
-                  <button
-                    key={opt.value ?? "__all_tags__"}
-                    onClick={onClick}
-                    style={{
-                      padding: "7px 12px",
-                      borderRadius: 8,
-                      border: "1px solid var(--border)",
-                      background: active ? "var(--accent)" : "var(--bg-elev)",
-                      color: active ? "#fff" : "var(--fg-muted)",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      textTransform: opt.value ? "capitalize" : undefined,
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+              {availableTags.length > 0 &&
+                !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {(availableTags.length === 1
+                    ? [{ label: availableTags[0], value: availableTags[0] }]
+                    : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
+                  ).map((opt) => {
+                    const active = (tag ?? null) === opt.value;
+                    const onClick = () => {
+                      if (availableTags.length === 1) {
+                        setTag(active ? null : opt.value);
+                      } else {
+                        setTag(opt.value);
+                      }
+                    };
+                    return (
+                      <button
+                        key={opt.value ?? "__all_tags__"}
+                        onClick={onClick}
+                        style={{
+                          padding: "7px 12px",
+                          borderRadius: 8,
+                          border: "1px solid var(--border)",
+                          background: active ? "var(--accent)" : "var(--bg-elev)",
+                          color: active ? "#fff" : "var(--fg-muted)",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          textTransform: opt.value ? "capitalize" : undefined,
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

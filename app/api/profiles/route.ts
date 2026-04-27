@@ -3,6 +3,7 @@ import { apiHandler } from "@/lib/api-handler";
 import { prisma } from "@/lib/db";
 import { profileSchema } from "@/lib/validators";
 import { isScoped } from "@/lib/profile-scope";
+import { parseTagRules } from "@/lib/tagging";
 import { Prisma } from "@prisma/client";
 
 // GET /api/profiles - List profiles for organization
@@ -34,10 +35,31 @@ export const GET = apiHandler(
         _count: { select: { socialAccounts: true } },
         socialAccounts: {
           where: { isActive: true },
-          select: { id: true, platform: true },
+          select: { id: true, platform: true, tagRules: true },
         },
       },
     });
+
+    // Find any rule with `alwaysOn: true` across the given accounts.
+    // Returns the first such rule's tag (alphabetical tiebreak when
+    // multiple). Quietly tolerates malformed rule JSON via parseTagRules.
+    function pickAlwaysOnTag(
+      accounts: Array<{ tagRules: Prisma.JsonValue | null }>
+    ): string | null {
+      const tags = new Set<string>();
+      for (const a of accounts) {
+        if (!a.tagRules) continue;
+        try {
+          for (const r of parseTagRules(a.tagRules)) {
+            if (r.alwaysOn) tags.add(r.tag);
+          }
+        } catch {
+          // ignore — bad JSON shouldn't break the response
+        }
+      }
+      if (tags.size === 0) return null;
+      return Array.from(tags).sort()[0];
+    }
 
     // Per-profile available tags. Cheap because each profile has a
     // small account count and `tags` is GIN-indexed. Returns the
@@ -99,6 +121,7 @@ export const GET = apiHandler(
       platforms: Array.from(new Set(p.socialAccounts.map((a) => a.platform))),
       tags: tagsByProfile.get(p.id) ?? [],
       hasUntaggedPosts: hasUntaggedByProfile.get(p.id) ?? true,
+      defaultTagFilter: pickAlwaysOnTag(p.socialAccounts),
       createdAt: p.createdAt.toISOString(),
     }));
 
@@ -134,7 +157,16 @@ export const GET = apiHandler(
     // post. Only relevant when the user is on "All profiles" view.
     const orgHasUntaggedPosts = Array.from(hasUntaggedByProfile.values()).some(Boolean);
 
-    return NextResponse.json({ data, orgPlatforms, orgTags, orgHasUntaggedPosts });
+    // Org-wide default tag filter. Pulls every active account in the
+    // viewer's org scope (including unprofiled ones, which the per-profile
+    // loop above doesn't see) and picks the first alwaysOn tag.
+    const orgRuleAccounts = await prisma.socialAccount.findMany({
+      where: orgAccountsWhere,
+      select: { tagRules: true },
+    });
+    const orgDefaultTagFilter = pickAlwaysOnTag(orgRuleAccounts);
+
+    return NextResponse.json({ data, orgPlatforms, orgTags, orgHasUntaggedPosts, orgDefaultTagFilter });
   },
   { requireAuth: true }
 );

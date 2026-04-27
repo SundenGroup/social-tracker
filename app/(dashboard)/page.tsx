@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import ExportButton from "@/components/common/ExportButton";
@@ -44,7 +44,14 @@ export default function DashboardPage() {
   // Charts respect the current profile's active platforms — so e.g.
   // VK doesn't show up as "0" in the legend/tooltip when the selected
   // profile has no VK accounts.
-  const { activePlatforms, availableTags, hasUntaggedPostsInScope } = useProfiles();
+  const {
+    activePlatforms,
+    availableTags,
+    hasUntaggedPostsInScope,
+    defaultTagFilter,
+    profilesLoaded,
+    selectedProfileId,
+  } = useProfiles();
 
   // Reset the tag selection if it disappears from the available list
   // (e.g. after switching profile to one that doesn't have that tag).
@@ -53,6 +60,20 @@ export default function DashboardPage() {
       setTag(null);
     }
   }, [tag, availableTags]);
+
+  // Apply the always-on default tag once per scope. The ref tracks
+  // "the last scope we applied a default to" — when the user switches
+  // profiles we re-apply the new scope's default; their manual override
+  // within a scope is preserved (the effect doesn't re-fire as long as
+  // the scope key stays the same).
+  const appliedScopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!profilesLoaded) return;
+    const scopeKey = selectedProfileId ?? "__org__";
+    if (appliedScopeRef.current === scopeKey) return;
+    appliedScopeRef.current = scopeKey;
+    setTag(defaultTagFilter);
+  }, [profilesLoaded, selectedProfileId, defaultTagFilter]);
 
   // Build per-platform sparkline data from the trend series
   const platformStripItems: PlatformStripItem[] = useMemo(() => {
@@ -180,7 +201,15 @@ export default function DashboardPage() {
           className="page-pad"
           style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 20 }}
         >
-          {/* Content type tabs + sync status */}
+          {/* Content type tabs (left) + tag filter & sync (right). Both
+              filters live in the same row so they don't push the page
+              data down. The tag strip composes multiplicatively with
+              content type ("Esports" + "Short-form").
+              Tag strip rules:
+                - hidden when no tags exist in scope
+                - hidden when one tag covers 100% of posts (toggle is a no-op)
+                - single togglable pill when one tag with mixed coverage
+                - full "All tags / tag1 / tag2…" radio strip with 2+ tags */}
           <div
             style={{
               display: "flex",
@@ -213,81 +242,69 @@ export default function DashboardPage() {
               })}
             </div>
 
-            {syncSummary && (
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--fg-subtle)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: syncSummary.ok === syncSummary.total ? "var(--good)" : "var(--bad)",
-                  }}
-                />
-                {syncSummary.minutesAgo != null
-                  ? `Synced ${syncSummary.minutesAgo} min ago across ${syncSummary.total} accounts`
-                  : `${syncSummary.ok}/${syncSummary.total} accounts synced`}
-              </div>
-            )}
-          </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              {availableTags.length > 0 &&
+                !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
+                <div className="hscroll" style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
+                  {(availableTags.length === 1
+                    ? [{ label: availableTags[0], value: availableTags[0] }]
+                    : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
+                  ).map((opt) => {
+                    const active = (tag ?? null) === opt.value;
+                    const onClick = () => {
+                      if (availableTags.length === 1) {
+                        setTag(active ? null : opt.value);
+                      } else {
+                        setTag(opt.value);
+                      }
+                    };
+                    return (
+                      <button
+                        key={opt.value ?? "__all_tags__"}
+                        onClick={onClick}
+                        style={{
+                          padding: "7px 12px",
+                          borderRadius: 8,
+                          border: "1px solid var(--border)",
+                          background: active ? "var(--accent)" : "var(--bg-elev)",
+                          color: active ? "#fff" : "var(--fg-muted)",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          textTransform: opt.value ? "capitalize" : undefined,
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
-          {/* Tag filter strip — separate from the content-type strip so the
-              two compose multiplicatively (e.g. "Esports" + "Short-form").
-              Only rendered when the current scope actually has tags;
-              admins on profiles with zero tagged content see nothing.
-              Single-tag scopes get a single togglable pill ("Esports" on/off)
-              instead of an "All tags / Esports" pair, which would just be a
-              two-button on/off control. With 2+ tags the strip is needed so
-              the user can switch between them and back to "all".
-              Edge case: when there's exactly one tag AND every post in scope
-              has it (100% coverage), the toggle does literally nothing —
-              hide the strip entirely. */}
-          {availableTags.length > 0 &&
-            !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
-            <div className="hscroll" style={{ display: "flex", gap: 6, flexWrap: "nowrap", maxWidth: "100%", marginTop: 8 }}>
-              {(availableTags.length === 1
-                ? [{ label: availableTags[0], value: availableTags[0] }]
-                : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
-              ).map((opt) => {
-                // Single-tag mode: clicking the pill toggles the filter on/off
-                // (active when set, click again clears). Multi-tag mode keeps
-                // the original radio-style behavior.
-                const active = (tag ?? null) === opt.value;
-                const onClick = () => {
-                  if (availableTags.length === 1) {
-                    setTag(active ? null : opt.value);
-                  } else {
-                    setTag(opt.value);
-                  }
-                };
-                return (
-                  <button
-                    key={opt.value ?? "__all_tags__"}
-                    onClick={onClick}
+              {syncSummary && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--fg-subtle)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <span
                     style={{
-                      padding: "7px 12px",
-                      borderRadius: 8,
-                      border: "1px solid var(--border)",
-                      background: active ? "var(--accent)" : "var(--bg-elev)",
-                      color: active ? "#fff" : "var(--fg-muted)",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      textTransform: opt.value ? "capitalize" : undefined,
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: syncSummary.ok === syncSummary.total ? "var(--good)" : "var(--bad)",
                     }}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+                  />
+                  {syncSummary.minutesAgo != null
+                    ? `Synced ${syncSummary.minutesAgo} min ago across ${syncSummary.total} accounts`
+                    : `${syncSummary.ok}/${syncSummary.total} accounts synced`}
+                </div>
+              )}
             </div>
-          )}
+          </div>
 
           {/* KPI cards */}
           <div className="row row-4">

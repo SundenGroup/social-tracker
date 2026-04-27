@@ -55,6 +55,10 @@ export interface ProfileResponse {
    *  Drives the "hide single-tag toggle when 100% coverage" UX —
    *  if the only tag covers every post, the filter does nothing. */
   hasUntaggedPosts?: boolean;
+  /** When non-null, this tag should be the default-selected filter on
+   *  the dashboard / platform pages for this profile. Set by any rule
+   *  marked `alwaysOn: true` on any account inside the profile. */
+  defaultTagFilter?: string | null;
   createdAt: string;
 }
 
@@ -67,6 +71,10 @@ export interface TagRule {
   hashtags?: string[];
   mentions?: string[];
   keywords?: string[];
+  /** When true, the dashboard pre-selects this rule's tag as the
+   *  default filter for any profile in scope. Toggling the filter
+   *  pill off temporarily clears it; switching profiles re-applies. */
+  alwaysOn?: boolean;
 }
 
 export interface SocialAccountResponse {

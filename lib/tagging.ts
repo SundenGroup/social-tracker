@@ -29,12 +29,18 @@ import { prisma } from "@/lib/db";
  *     mention in the caption
  *   - any element of `keywords` appears as a case-insensitive substring
  *     in title or description
+ *
+ * `alwaysOn` is a UI hint, not a tagging-engine input — when true, the
+ * dashboard pre-selects this rule's `tag` as the default filter for
+ * profiles in scope. Toggling the filter pill off temporarily clears
+ * it; switching profiles re-applies the default.
  */
 export interface TagRule {
   tag: string;
   hashtags?: string[];
   mentions?: string[];
   keywords?: string[];
+  alwaysOn?: boolean;
 }
 
 /** SocialAccount-level tagging configuration. */
@@ -118,7 +124,8 @@ export function parseTagRules(input: unknown): TagRule[] {
         `Rule "${tag}" must specify at least one of hashtags / mentions / keywords`
       );
     }
-    out.push({ tag, hashtags, mentions, keywords });
+    const alwaysOn = r.alwaysOn === true;
+    out.push({ tag, hashtags, mentions, keywords, alwaysOn });
   }
   return out;
 }
