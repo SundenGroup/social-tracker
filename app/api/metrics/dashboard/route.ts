@@ -34,10 +34,18 @@ export const GET = apiHandler(
       }),
       prisma.socialAccount.findMany({
         where: { organizationId: orgId, isActive: true, ...profileIdsWhere(profileIds) },
-        select: { id: true, platform: true, accountName: true, syncStatus: true, lastSyncedAt: true },
+        select: { id: true, platform: true, accountName: true, syncStatus: true, lastSyncedAt: true, defaultTags: true },
       }),
     ]);
     const hideSponsored = org?.hideSponsored ?? false;
+    // accountId → defaultTags lookup. Used during post serialization to
+    // strip per-account default tags from each post's display tags
+    // (those tags are uninformative on a row — every post on the
+    // account has them by definition). Rule-matched tags + manual tags
+    // remain.
+    const defaultTagsByAccount = new Map<string, Set<string>>(
+      accounts.map((a) => [a.id, new Set((a.defaultTags ?? []).map((t) => t.toLowerCase()))])
+    );
 
     const accountIds = accounts.map((a) => a.id);
 
@@ -115,6 +123,17 @@ export const GET = apiHandler(
       const base = views || impressions || 0;
       const engagements = likes + comments + shares;
 
+      // displayTags = tags worth showing per-row. Strips out per-account
+      // defaultTags (boilerplate every post has) but keeps rule-matched
+      // auto tags + manual tags. Manual tags that happen to also be
+      // defaults are preserved — the user explicitly pinned them.
+      const defaults = defaultTagsByAccount.get(post.socialAccountId) ?? new Set<string>();
+      const allTags = post.tags ?? [];
+      const manual = post.manualTags ?? [];
+      const displayTags = Array.from(
+        new Set([...allTags.filter((t) => !defaults.has(t)), ...manual])
+      );
+
       return {
         id: post.id,
         platform: post.platform,
@@ -127,6 +146,7 @@ export const GET = apiHandler(
         isSponsored: post.isSponsored,
         tags: post.tags ?? [],
         manualTags: post.manualTags ?? [],
+        displayTags,
         views,
         likes,
         comments,

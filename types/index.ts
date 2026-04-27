@@ -167,6 +167,11 @@ export interface PostPerformance {
   /** Tags pinned manually via the per-post popover. Source of truth
    *  for human intent; preserved across rule recomputes. */
   manualTags?: string[];
+  /** Tags worth showing inline on a row: rule-matched auto tags +
+   *  manual tags. Per-account `defaultTags` are stripped server-side
+   *  because they're boilerplate (every post on the account has them).
+   *  When you need the FULL set for filtering, use `tags`. */
+  displayTags?: string[];
   views: number;
   likes: number;
   comments: number;

@@ -83,10 +83,16 @@ export const GET = apiHandler(
     // Get accounts for this platform (optionally filtered by profile)
     const accounts = await prisma.socialAccount.findMany({
       where: { organizationId: orgId, platform: platform as Platform, isActive: true, ...profileIdsWhere(profileIds) },
-      select: { id: true, accountName: true, syncStatus: true, lastSyncedAt: true },
+      select: { id: true, accountName: true, syncStatus: true, lastSyncedAt: true, defaultTags: true },
     });
 
     const accountIds = accounts.map((a) => a.id);
+    // accountId → defaultTags lookup for stripping per-account boilerplate
+    // tags from each post's `displayTags` (only rule-matched + manual
+    // tags should appear inline on a row).
+    const defaultTagsByAccount = new Map<string, Set<string>>(
+      accounts.map((a) => [a.id, new Set((a.defaultTags ?? []).map((t) => t.toLowerCase()))])
+    );
 
     if (accountIds.length === 0) {
       return NextResponse.json({
@@ -183,6 +189,15 @@ export const GET = apiHandler(
       const base = views || impressions || 0;
       const engagementRate = base > 0 ? Number(((engagements / base) * 100).toFixed(2)) : 0;
 
+      // displayTags = rule-matched + manual, with per-account defaults
+      // stripped (boilerplate tags don't add info on a row).
+      const defaults = defaultTagsByAccount.get(post.socialAccountId) ?? new Set<string>();
+      const allTags = post.tags ?? [];
+      const manual = post.manualTags ?? [];
+      const displayTags = Array.from(
+        new Set([...allTags.filter((t) => !defaults.has(t)), ...manual])
+      );
+
       return {
         id: post.id,
         postType: post.postType,
@@ -194,6 +209,7 @@ export const GET = apiHandler(
         isSponsored: post.isSponsored,
         tags: post.tags ?? [],
         manualTags: post.manualTags ?? [],
+        displayTags,
         views,
         likes,
         comments,

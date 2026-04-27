@@ -421,8 +421,50 @@ function PostRow({
         >
           {post.title || "Untitled post"}
         </a>
-        <div style={{ fontSize: 10, color: "var(--fg-subtle)", marginTop: 2 }}>
-          {new Date(post.publishedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+        <div
+          style={{
+            fontSize: 10,
+            color: "var(--fg-subtle)",
+            marginTop: 2,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            {new Date(post.publishedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          </span>
+          {/* Inline tag chips — only rule-matched auto + manual tags
+              (per-account default tags are stripped server-side).
+              Manual tags get the accent fill; auto-rule tags get a
+              subtle outlined treatment so the visual difference is
+              clear at a glance. */}
+          {(post.displayTags ?? []).map((t) => {
+            const isManual = (post.manualTags ?? []).includes(t);
+            return (
+              <span
+                key={t}
+                title={isManual ? "Manual tag" : "Auto-tagged via rule match"}
+                style={{
+                  padding: "1px 7px",
+                  borderRadius: 10,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  textTransform: "capitalize",
+                  background: isManual
+                    ? "color-mix(in srgb, var(--accent) 14%, transparent)"
+                    : "transparent",
+                  color: isManual ? "var(--accent)" : "var(--fg-muted)",
+                  border: isManual
+                    ? "1px solid color-mix(in srgb, var(--accent) 30%, transparent)"
+                    : "1px solid var(--border-strong)",
+                }}
+              >
+                {t}
+              </span>
+            );
+          })}
         </div>
       </div>
 
