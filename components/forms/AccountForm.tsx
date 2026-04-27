@@ -38,34 +38,44 @@ export default function AccountForm({ account }: AccountFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
 
-  // Auto-tagging configuration. defaultTags is a free-form chip input
-  // shown as a comma-separated string for editing; converted to/from a
-  // string[] on submit. tagRules is a repeater of `{tag, hashtags?,
-  // mentions?, keywords?}` rules — each row has 4 inputs.
+  // Auto-tagging configuration. We keep the rule fields as raw text
+  // strings in form state (not pre-split string[]) so the user can
+  // freely type commas, spaces, and additional tokens without the
+  // input "snapping back" on each keystroke. Splitting + canonicalising
+  // happens at submit time.
   const [defaultTagsText, setDefaultTagsText] = useState<string>(
     (account?.defaultTags ?? []).join(", ")
   );
-  const [tagRules, setTagRules] = useState<TagRule[]>(
+  interface RuleFormState {
+    tag: string;
+    hashtagsText: string;
+    mentionsText: string;
+    keywordsText: string;
+  }
+  const [tagRules, setTagRules] = useState<RuleFormState[]>(
     (account?.tagRules ?? []).map((r) => ({
       tag: r.tag,
-      hashtags: r.hashtags ?? [],
-      mentions: r.mentions ?? [],
-      keywords: r.keywords ?? [],
+      hashtagsText: (r.hashtags ?? []).join(", "),
+      mentionsText: (r.mentions ?? []).join(", "),
+      keywordsText: (r.keywords ?? []).join(", "),
     }))
   );
 
-  const updateRule = (idx: number, patch: Partial<TagRule>) => {
+  const updateRule = (idx: number, patch: Partial<RuleFormState>) => {
     setTagRules((rules) => rules.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   };
   const addRule = () => {
-    setTagRules((rules) => [...rules, { tag: "", hashtags: [], mentions: [], keywords: [] }]);
+    setTagRules((rules) => [
+      ...rules,
+      { tag: "", hashtagsText: "", mentionsText: "", keywordsText: "" },
+    ]);
   };
   const removeRule = (idx: number) => {
     setTagRules((rules) => rules.filter((_, i) => i !== idx));
   };
 
   // Helper: split a comma- or whitespace-separated string into a
-  // canonicalised string[].
+  // canonicalised string[]. Used at submit time only.
   const splitTokens = (s: string): string[] =>
     s.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
 
@@ -96,14 +106,15 @@ export default function AccountForm({ account }: AccountFormProps) {
 
     // Build the tag config payload only when editing — creation flow
     // doesn't surface the rule editor (no point setting rules before
-    // any posts exist).
+    // any posts exist). Raw text fields are split + canonicalised here
+    // at submit time (not on every keystroke).
     const cleanDefaultTags = splitTokens(defaultTagsText).map((t) => t.toLowerCase());
     const cleanTagRules: TagRule[] = tagRules
       .map((r) => ({
         tag: r.tag.trim().toLowerCase(),
-        hashtags: (r.hashtags ?? []).map((h) => h.replace(/^#+/, "").trim().toLowerCase()).filter(Boolean),
-        mentions: (r.mentions ?? []).map((m) => m.replace(/^@+/, "").trim().toLowerCase()).filter(Boolean),
-        keywords: (r.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean),
+        hashtags: splitTokens(r.hashtagsText).map((h) => h.replace(/^#+/, "").toLowerCase()),
+        mentions: splitTokens(r.mentionsText).map((m) => m.replace(/^@+/, "").toLowerCase()),
+        keywords: splitTokens(r.keywordsText).map((k) => k.toLowerCase()),
       }))
       .filter((r) => r.tag.length > 0);
 
@@ -338,22 +349,22 @@ export default function AccountForm({ account }: AccountFormProps) {
                   <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                     <input
                       type="text"
-                      value={(rule.hashtags ?? []).join(", ")}
-                      onChange={(e) => updateRule(idx, { hashtags: splitTokens(e.target.value) })}
+                      value={rule.hashtagsText}
+                      onChange={(e) => updateRule(idx, { hashtagsText: e.target.value })}
                       placeholder="hashtags (e.g. esports, pubgesports)"
                       className="rounded-lg border border-gray-300 px-3 py-2 text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
                     />
                     <input
                       type="text"
-                      value={(rule.mentions ?? []).join(", ")}
-                      onChange={(e) => updateRule(idx, { mentions: splitTokens(e.target.value) })}
+                      value={rule.mentionsText}
+                      onChange={(e) => updateRule(idx, { mentionsText: e.target.value })}
                       placeholder="mentions (e.g. pubgesports)"
                       className="rounded-lg border border-gray-300 px-3 py-2 text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
                     />
                     <input
                       type="text"
-                      value={(rule.keywords ?? []).join(", ")}
-                      onChange={(e) => updateRule(idx, { keywords: splitTokens(e.target.value) })}
+                      value={rule.keywordsText}
+                      onChange={(e) => updateRule(idx, { keywordsText: e.target.value })}
                       placeholder="keywords (e.g. tournament, finals)"
                       className="rounded-lg border border-gray-300 px-3 py-2 text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
                     />
