@@ -75,7 +75,7 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
   const { startDate, endDate, setDateRange } = useDateRange();
   const [contentType, setContentType] = useState("all");
   const [tag, setTag] = useState<string | null>(null);
-  const { availableTags } = useProfiles();
+  const { availableTags, hasUntaggedPostsInScope } = useProfiles();
   const { data, isLoading, error, refetch } = usePlatformDashboard(
     platform,
     startDate,
@@ -252,8 +252,10 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
               has tagged content. Single-tag scopes collapse to one
               togglable pill (clicking applies; clicking again clears) —
               "All tags / Esports" with only one tag would just be a fancy
-              on/off switch. */}
-          {availableTags.length > 0 && (
+              on/off switch. And when 100% of posts in scope already have
+              that single tag, even the toggle is useless — hide entirely. */}
+          {availableTags.length > 0 &&
+            !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {(availableTags.length === 1
                 ? [{ label: availableTags[0], value: availableTags[0] }]

@@ -27,6 +27,12 @@ interface ProfileContextValue {
    * union (`orgTags`).
    */
   availableTags: string[];
+  /**
+   * True if the current scope has at least one post without any tags.
+   * Used together with `availableTags` to suppress the single-tag toggle
+   * pill when the only tag covers 100% of posts (clicking it does nothing).
+   */
+  hasUntaggedPostsInScope: boolean;
 }
 
 export const ProfileContext = createContext<ProfileContextValue>({
@@ -38,6 +44,7 @@ export const ProfileContext = createContext<ProfileContextValue>({
   refetch: async () => {},
   activePlatforms: [],
   availableTags: [],
+  hasUntaggedPostsInScope: true,
 });
 
 const STORAGE_KEY = "clutch-selected-profile";
@@ -50,6 +57,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const [profiles, setProfiles] = useState<ProfileResponse[]>([]);
   const [orgPlatforms, setOrgPlatforms] = useState<string[]>([]);
   const [orgTags, setOrgTags] = useState<string[]>([]);
+  const [orgHasUntaggedPosts, setOrgHasUntaggedPosts] = useState<boolean>(true);
   const [selectedProfileId, setSelectedProfileIdState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -102,6 +110,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         setProfiles(json.data);
         setOrgPlatforms(Array.isArray(json.orgPlatforms) ? json.orgPlatforms : []);
         setOrgTags(Array.isArray(json.orgTags) ? json.orgTags : []);
+        setOrgHasUntaggedPosts(typeof json.orgHasUntaggedPosts === "boolean" ? json.orgHasUntaggedPosts : true);
       }
     } catch {
       // silently fail — profiles are optional
@@ -190,6 +199,9 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const availableTags = selectedProfile
     ? (selectedProfile.tags ?? [])
     : orgTags;
+  const hasUntaggedPostsInScope = selectedProfile
+    ? (selectedProfile.hasUntaggedPosts ?? true)
+    : orgHasUntaggedPosts;
 
   return (
     <ProfileContext.Provider
@@ -202,6 +214,7 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         refetch: fetchProfiles,
         activePlatforms,
         availableTags,
+        hasUntaggedPostsInScope,
       }}
     >
       {children}

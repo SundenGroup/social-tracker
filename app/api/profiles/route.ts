@@ -42,12 +42,17 @@ export const GET = apiHandler(
     // Per-profile available tags. Cheap because each profile has a
     // small account count and `tags` is GIN-indexed. Returns the
     // distinct lowercase tag list across all (non-deleted) posts on
-    // the profile's accounts.
+    // the profile's accounts. Also computes `hasUntaggedPosts` (does
+    // any post in the scope have an empty tags array?) — drives the
+    // tag-filter UI decision: when there's a single tag with 100%
+    // coverage, the toggle does nothing useful and gets hidden client-side.
     const tagsByProfile = new Map<string, string[]>();
+    const hasUntaggedByProfile = new Map<string, boolean>();
     for (const p of profiles) {
       const accountIds = p.socialAccounts.map((a) => a.id);
       if (accountIds.length === 0) {
         tagsByProfile.set(p.id, []);
+        hasUntaggedByProfile.set(p.id, false);
         continue;
       }
       try {
@@ -64,6 +69,25 @@ export const GET = apiHandler(
       } catch {
         tagsByProfile.set(p.id, []);
       }
+      try {
+        // EXISTS short-circuits at the first hit — sub-millisecond even
+        // for 100K-row profiles.
+        const untaggedRows = await prisma.$queryRaw<Array<{ has_untagged: boolean }>>(
+          Prisma.sql`
+            SELECT EXISTS(
+              SELECT 1 FROM "Post"
+              WHERE "socialAccountId" IN (${Prisma.join(accountIds)})
+                AND "isDeleted" = false
+                AND tags = ARRAY[]::TEXT[]
+            ) AS has_untagged
+          `
+        );
+        hasUntaggedByProfile.set(p.id, untaggedRows[0]?.has_untagged ?? false);
+      } catch {
+        // Conservative default: assume untagged exists, so the strip
+        // shows. Better to over-show than under-show on transient errors.
+        hasUntaggedByProfile.set(p.id, true);
+      }
     }
 
     const data = profiles.map((p) => ({
@@ -74,6 +98,7 @@ export const GET = apiHandler(
       accountCount: p._count.socialAccounts,
       platforms: Array.from(new Set(p.socialAccounts.map((a) => a.platform))),
       tags: tagsByProfile.get(p.id) ?? [],
+      hasUntaggedPosts: hasUntaggedByProfile.get(p.id) ?? true,
       createdAt: p.createdAt.toISOString(),
     }));
 
@@ -105,7 +130,11 @@ export const GET = apiHandler(
     }
     const orgTags = Array.from(orgTagSet).sort();
 
-    return NextResponse.json({ data, orgPlatforms, orgTags });
+    // Org-wide "any untagged?" — true if ANY profile has an untagged
+    // post. Only relevant when the user is on "All profiles" view.
+    const orgHasUntaggedPosts = Array.from(hasUntaggedByProfile.values()).some(Boolean);
+
+    return NextResponse.json({ data, orgPlatforms, orgTags, orgHasUntaggedPosts });
   },
   { requireAuth: true }
 );

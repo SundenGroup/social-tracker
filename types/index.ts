@@ -51,6 +51,10 @@ export interface ProfileResponse {
    *  Used by the dashboard tag-filter strip; only rendered when
    *  non-empty. */
   tags?: string[];
+  /** Does this profile have at least one post with an empty tags array?
+   *  Drives the "hide single-tag toggle when 100% coverage" UX —
+   *  if the only tag covers every post, the filter does nothing. */
+  hasUntaggedPosts?: boolean;
   createdAt: string;
 }
 

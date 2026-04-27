@@ -44,7 +44,7 @@ export default function DashboardPage() {
   // Charts respect the current profile's active platforms — so e.g.
   // VK doesn't show up as "0" in the legend/tooltip when the selected
   // profile has no VK accounts.
-  const { activePlatforms, availableTags } = useProfiles();
+  const { activePlatforms, availableTags, hasUntaggedPostsInScope } = useProfiles();
 
   // Reset the tag selection if it disappears from the available list
   // (e.g. after switching profile to one that doesn't have that tag).
@@ -245,8 +245,12 @@ export default function DashboardPage() {
               Single-tag scopes get a single togglable pill ("Esports" on/off)
               instead of an "All tags / Esports" pair, which would just be a
               two-button on/off control. With 2+ tags the strip is needed so
-              the user can switch between them and back to "all". */}
-          {availableTags.length > 0 && (
+              the user can switch between them and back to "all".
+              Edge case: when there's exactly one tag AND every post in scope
+              has it (100% coverage), the toggle does literally nothing —
+              hide the strip entirely. */}
+          {availableTags.length > 0 &&
+            !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
             <div className="hscroll" style={{ display: "flex", gap: 6, flexWrap: "nowrap", maxWidth: "100%", marginTop: 8 }}>
               {(availableTags.length === 1
                 ? [{ label: availableTags[0], value: availableTags[0] }]
