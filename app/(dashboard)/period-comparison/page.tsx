@@ -6,6 +6,7 @@ import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { Block } from "@/components/ui/Block";
 import { DeltaPill } from "@/components/ui/DeltaPill";
 import { usePeriodComparison } from "@/hooks/usePeriodComparison";
+import { useProfiles } from "@/hooks/useProfiles";
 import { fmtK, fmtInt } from "@/lib/format";
 import { PlatformGlyph, PLATFORM_COLOR, PLATFORM_LABEL } from "@/components/icons/PlatformGlyph";
 
@@ -46,8 +47,31 @@ export default function PeriodComparisonPage() {
   const [startB, setStartB] = useState(toDateStr(lastYearStart));
   const [endB, setEndB] = useState(toDateStr(lastYearEnd));
   const [contentType, setContentType] = useState("all");
+  const [tag, setTag] = useState<string | null>(null);
+  const {
+    availableTags,
+    hasUntaggedPostsInScope,
+    defaultTagFilter,
+    profilesLoaded,
+    selectedProfileId,
+  } = useProfiles();
 
-  const { data, isLoading, error, refetch } = usePeriodComparison(startA, endA, startB, endB, contentType);
+  const { data, isLoading, error, refetch } = usePeriodComparison(startA, endA, startB, endB, contentType, tag);
+
+  // Drop the tag if it disappears from scope.
+  useEffect(() => {
+    if (tag && !availableTags.includes(tag)) setTag(null);
+  }, [tag, availableTags]);
+
+  // Apply the always-on default once per scope.
+  const appliedScopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!profilesLoaded) return;
+    const scopeKey = selectedProfileId ?? "__org__";
+    if (appliedScopeRef.current === scopeKey) return;
+    appliedScopeRef.current = scopeKey;
+    setTag(defaultTagFilter);
+  }, [profilesLoaded, selectedProfileId, defaultTagFilter]);
 
   function applyPreviousPeriod() {
     const sA = new Date(startA);
@@ -138,28 +162,76 @@ export default function PeriodComparisonPage() {
           </button>
         </div>
 
-        {/* Content type filter */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {CONTENT_TYPES.map((ct) => {
-            const active = contentType === ct.value;
-            return (
-              <button
-                key={ct.value}
-                onClick={() => setContentType(ct.value)}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                  background: active ? "var(--fg)" : "var(--bg-elev)",
-                  color: active ? "var(--bg-elev)" : "var(--fg-muted)",
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                {ct.label}
-              </button>
-            );
-          })}
+        {/* Content type filter (left) + tag filter (right). Same row so
+            the layout doesn't push the cards down. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {CONTENT_TYPES.map((ct) => {
+              const active = contentType === ct.value;
+              return (
+                <button
+                  key={ct.value}
+                  onClick={() => setContentType(ct.value)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: active ? "var(--fg)" : "var(--bg-elev)",
+                    color: active ? "var(--bg-elev)" : "var(--fg-muted)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {ct.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {availableTags.length > 0 &&
+            !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {(availableTags.length === 1
+                ? [{ label: availableTags[0], value: availableTags[0] }]
+                : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
+              ).map((opt) => {
+                const active = (tag ?? null) === opt.value;
+                const onClick = () => {
+                  if (availableTags.length === 1) {
+                    setTag(active ? null : opt.value);
+                  } else {
+                    setTag(opt.value);
+                  }
+                };
+                return (
+                  <button
+                    key={opt.value ?? "__all_tags__"}
+                    onClick={onClick}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                      background: active ? "var(--accent)" : "var(--bg-elev)",
+                      color: active ? "#fff" : "var(--fg-muted)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      textTransform: opt.value ? "capitalize" : undefined,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {isLoading && !data && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import ExportButton from "@/components/common/ExportButton";
@@ -8,6 +8,7 @@ import LoadingSpinner from "@/components/common/LoadingSpinner";
 import TopPostCard from "@/components/cards/TopPostCard";
 import { useDashboard } from "@/hooks/useDashboard";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useProfiles } from "@/hooks/useProfiles";
 import { PlatformGlyph, PLATFORM_COLOR } from "@/components/icons/PlatformGlyph";
 
 type Metric = "views" | "engagements" | "rate";
@@ -28,9 +29,32 @@ const PLATFORM_FILTERS = [
 
 export default function TopPostsPage() {
   const { startDate, endDate, setDateRange } = useDateRange();
-  const { data, isLoading, error } = useDashboard(startDate, endDate);
+  const [tag, setTag] = useState<string | null>(null);
+  const {
+    availableTags,
+    hasUntaggedPostsInScope,
+    defaultTagFilter,
+    profilesLoaded,
+    selectedProfileId,
+  } = useProfiles();
+  const { data, isLoading, error } = useDashboard(startDate, endDate, undefined, tag);
   const [metric, setMetric] = useState<Metric>("views");
   const [platform, setPlatform] = useState("all");
+
+  // Drop the tag if it disappears from scope (profile switch, rule edit).
+  useEffect(() => {
+    if (tag && !availableTags.includes(tag)) setTag(null);
+  }, [tag, availableTags]);
+
+  // Apply the always-on default once per scope.
+  const appliedScopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!profilesLoaded) return;
+    const scopeKey = selectedProfileId ?? "__org__";
+    if (appliedScopeRef.current === scopeKey) return;
+    appliedScopeRef.current = scopeKey;
+    setTag(defaultTagFilter);
+  }, [profilesLoaded, selectedProfileId, defaultTagFilter]);
 
   const sorted = useMemo(() => {
     if (!data) return [];
@@ -146,6 +170,47 @@ export default function TopPostsPage() {
               })}
             </div>
           </div>
+
+          {/* Tag filter strip — right-aligned, below the metric/platform
+              row so the layout stays clean. Same hide rules as elsewhere. */}
+          {availableTags.length > 0 &&
+            !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {(availableTags.length === 1
+                  ? [{ label: availableTags[0], value: availableTags[0] }]
+                  : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
+                ).map((opt) => {
+                  const active = (tag ?? null) === opt.value;
+                  const onClick = () => {
+                    if (availableTags.length === 1) {
+                      setTag(active ? null : opt.value);
+                    } else {
+                      setTag(opt.value);
+                    }
+                  };
+                  return (
+                    <button
+                      key={opt.value ?? "__all_tags__"}
+                      onClick={onClick}
+                      style={{
+                        padding: "7px 12px",
+                        borderRadius: 8,
+                        border: "1px solid var(--border)",
+                        background: active ? "var(--accent)" : "var(--bg-elev)",
+                        color: active ? "#fff" : "var(--fg-muted)",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textTransform: opt.value ? "capitalize" : undefined,
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Gallery grid */}
           {sorted.length === 0 ? (
