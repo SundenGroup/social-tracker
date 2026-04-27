@@ -178,14 +178,18 @@ export function LinesChart({ data, height = 280, platforms: platformsOverride }:
         ))}
       </svg>
 
-      {/* Tooltip */}
-      {hover != null && (
+      {/* Tooltip — flips to the left of the cursor when we're near the
+          right edge of the chart so the box doesn't clip out of view. */}
+      {hover != null && (() => {
+        const TOOLTIP_W = 200; // approx; matches min-width below + padding
+        const flip = x(hover) + TOOLTIP_W + 16 > W;
+        return (
         <div
           style={{
             position: "absolute",
             left: `${(x(hover) / W) * 100}%`,
             top: 0,
-            transform: "translateX(8px)",
+            transform: flip ? "translateX(calc(-100% - 8px))" : "translateX(8px)",
             background: "var(--bg-elev)",
             border: "1px solid var(--border-strong)",
             borderRadius: 8,
@@ -233,7 +237,8 @@ export function LinesChart({ data, height = 280, platforms: platformsOverride }:
             </span>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -460,14 +465,19 @@ export function AnnotatedBarsChart({ data, height = 280, platforms: platformsOve
         ))}
       </svg>
 
-      {/* Hover tooltip */}
-      {hover != null && (
+      {/* Hover tooltip — flips to the left of the bar when we're near
+          the right edge of the chart so the box doesn't clip out of view. */}
+      {hover != null && (() => {
+        const TOOLTIP_W = 200; // approx; matches min-width below + padding
+        const cursorX = x(hover) + barW / 2;
+        const flip = cursorX + TOOLTIP_W + 16 > W;
+        return (
         <div
           style={{
             position: "absolute",
-            left: `${((x(hover) + barW / 2) / W) * 100}%`,
+            left: `${(cursorX / W) * 100}%`,
             top: 0,
-            transform: "translateX(8px)",
+            transform: flip ? "translateX(calc(-100% - 8px))" : "translateX(8px)",
             background: "var(--bg-elev)",
             border: "1px solid var(--border-strong)",
             borderRadius: 8,
@@ -513,7 +523,8 @@ export function AnnotatedBarsChart({ data, height = 280, platforms: platformsOve
             <span className="mono tnum">{fmtK(totals[hover])}</span>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
