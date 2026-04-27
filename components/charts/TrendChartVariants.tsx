@@ -68,22 +68,56 @@ export function LinesChart({ data, height = 280, platforms: platformsOverride }:
 
   // Scale Y to the max of any single platform's daily value — keeps every
   // line readable on the same axis (no platform disappears in the noise).
+  // Treats undefined as no-data (not 0) so days with no posts don't
+  // artificially expand the Y axis.
   const maxY = Math.max(
     1,
-    ...data.flatMap((d) => PLATFORMS.map((p) => (d[p] as number | undefined) ?? 0))
+    ...data.flatMap((d) =>
+      PLATFORMS.map((p) => (typeof d[p] === "number" ? (d[p] as number) : 0))
+    )
   );
 
   const x = (i: number) => padL + (i / (data.length - 1)) * (W - padL - padR);
   const y = (v: number) => padT + (1 - v / maxY) * (h - padT - padB);
   const ticks = [0, maxY * 0.25, maxY * 0.5, maxY * 0.75, maxY];
 
-  // Build a path per platform
+  // Build a path per platform. Missing platform values (undefined) on a
+  // date become path breaks — we emit a separate sub-path per contiguous
+  // run of defined values. Single-point segments still render via the
+  // `dots` array so a one-day publish doesn't disappear. Real zeros are
+  // preserved (a post that earned 0 views renders at the floor).
   const lines = PLATFORMS.map((p) => {
-    const values = data.map((d) => (d[p] as number | undefined) ?? 0);
-    const pts = values.map((v, i): [number, number] => [x(i), y(v)]);
-    const linePath = "M" + pts.map((pt) => pt.join(",")).join(" L");
-    const last = pts[pts.length - 1];
-    return { p, linePath, last, color: PLATFORM_COLOR[p] ?? "var(--fg-muted)" };
+    const segments: Array<Array<[number, number]>> = [];
+    let current: Array<[number, number]> = [];
+    for (let i = 0; i < data.length; i++) {
+      const raw = data[i][p];
+      if (typeof raw !== "number") {
+        if (current.length > 0) {
+          segments.push(current);
+          current = [];
+        }
+        continue;
+      }
+      current.push([x(i), y(raw)]);
+    }
+    if (current.length > 0) segments.push(current);
+
+    // SVG path: "M x,y L x,y L x,y" for each segment. Multi-segment paths
+    // separate with another "M …", which renders as a visible gap.
+    const linePath = segments
+      .map((seg) => "M" + seg.map((pt) => pt.join(",")).join(" L"))
+      .join(" ");
+
+    // For single-point segments (e.g. only Apr 4 published, surrounded
+    // by gaps), render them as small dots so they're not invisible.
+    const isolatedDots = segments.filter((seg) => seg.length === 1).map((seg) => seg[0]);
+
+    // Last defined point (anchor for the terminal dot). Falls back to a
+    // safe off-screen position when nothing is defined.
+    const last: [number, number] | null =
+      segments.length > 0 ? segments[segments.length - 1][segments[segments.length - 1].length - 1] : null;
+
+    return { p, linePath, isolatedDots, last, color: PLATFORM_COLOR[p] ?? "var(--fg-muted)" };
   });
 
   return (
@@ -134,17 +168,29 @@ export function LinesChart({ data, height = 280, platforms: platformsOverride }:
           />
         ))}
 
-        {/* hover dots on each line */}
+        {/* hover dots on each line — only for platforms that actually
+            published on the hovered day. Skipping undefined avoids
+            "phantom dots" sitting on the 0 line for non-publishing days. */}
         {hover != null &&
           lines.map(({ p, color }) => {
-            const v = (data[hover][p] as number | undefined) ?? 0;
-            return <circle key={`h-${p}`} cx={x(hover)} cy={y(v)} r="3" fill={color} stroke="var(--bg-elev)" strokeWidth="1.5" />;
+            const raw = data[hover][p];
+            if (typeof raw !== "number") return null;
+            return <circle key={`h-${p}`} cx={x(hover)} cy={y(raw)} r="3" fill={color} stroke="var(--bg-elev)" strokeWidth="1.5" />;
           })}
 
-        {/* terminal dots */}
-        {lines.map(({ p, last, color }) => (
-          <circle key={`last-${p}`} cx={last[0]} cy={last[1]} r="2" fill={color} />
-        ))}
+        {/* isolated single-day publish points — without these, a one-day
+            segment would have nothing visible (zero-length path). */}
+        {lines.flatMap(({ p, isolatedDots, color }) =>
+          isolatedDots.map((pt, i) => (
+            <circle key={`iso-${p}-${i}`} cx={pt[0]} cy={pt[1]} r="2" fill={color} />
+          ))
+        )}
+
+        {/* terminal dots — anchor at the last defined point per platform.
+            Hidden for platforms that never published in the period. */}
+        {lines.map(({ p, last, color }) =>
+          last ? <circle key={`last-${p}`} cx={last[0]} cy={last[1]} r="2" fill={color} /> : null
+        )}
 
         {/* x labels */}
         {data.map((d, i) =>
@@ -203,39 +249,55 @@ export function LinesChart({ data, height = 280, platforms: platformsOverride }:
           }}
         >
           <div style={{ fontWeight: 700, marginBottom: 6 }}>{dayLabel(data[hover].date)}</div>
-          {PLATFORMS.map((p) => (
-            <div
-              key={p}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 10,
-                color: "var(--fg-muted)",
-              }}
-            >
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Dot size={6} color={PLATFORM_COLOR[p] ?? "var(--fg-muted)"} /> {PLATFORM_LABEL[p]}
-              </span>
-              <span className="mono tnum" style={{ color: "var(--fg)" }}>
-                {fmtK((data[hover][p] as number | undefined) ?? 0)}
-              </span>
-            </div>
-          ))}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: "1px solid var(--border)",
-              fontWeight: 700,
-            }}
-          >
-            <span>Total</span>
-            <span className="mono tnum">
-              {fmtK(PLATFORMS.reduce((s, p) => s + ((data[hover][p] as number | undefined) ?? 0), 0))}
-            </span>
-          </div>
+          {(() => {
+            // Show "No posts published" instead of a row of zeros when
+            // every platform is undefined for the hovered day. Real
+            // zeros (post had 0 views) still render normally.
+            const rowsWithData = PLATFORMS.filter((p) => typeof data[hover][p] === "number");
+            if (rowsWithData.length === 0) {
+              return (
+                <div style={{ color: "var(--fg-subtle)", fontSize: 11, fontStyle: "italic" }}>
+                  No posts published
+                </div>
+              );
+            }
+            const total = rowsWithData.reduce((s, p) => s + (data[hover][p] as number), 0);
+            return (
+              <>
+                {rowsWithData.map((p) => (
+                  <div
+                    key={p}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      color: "var(--fg-muted)",
+                    }}
+                  >
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <Dot size={6} color={PLATFORM_COLOR[p] ?? "var(--fg-muted)"} /> {PLATFORM_LABEL[p]}
+                    </span>
+                    <span className="mono tnum" style={{ color: "var(--fg)" }}>
+                      {fmtK(data[hover][p] as number)}
+                    </span>
+                  </div>
+                ))}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: 6,
+                    paddingTop: 6,
+                    borderTop: "1px solid var(--border)",
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>Total</span>
+                  <span className="mono tnum">{fmtK(total)}</span>
+                </div>
+              </>
+            );
+          })()}
         </div>
         );
       })()}
@@ -254,20 +316,46 @@ export function SmallMultiplesChart({ data, height = 180, platforms: platformsOv
   return (
     <div className="row row-4">
       {PLATFORMS.map((p) => {
-        const values = data.map((d) => (d[p] as number | undefined) ?? 0);
-        const max = Math.max(...values, 1);
+        // Treat undefined as gap (no posts that day), 0 as a real zero.
+        const definedValues = data
+          .map((d) => d[p])
+          .filter((v): v is number => typeof v === "number");
+        const max = Math.max(...definedValues, 1);
         const color = PLATFORM_COLOR[p] ?? "var(--fg-muted)";
-        const total = values.reduce((s, v) => s + v, 0);
+        const total = definedValues.reduce((s, v) => s + v, 0);
         const w = 280;
         const h = height;
         const padX = 8;
         const padY = 14;
-        const pts = values.map((v, i): [number, number] => [
-          padX + (i / (values.length - 1)) * (w - padX * 2),
-          h - padY - (v / max) * (h - padY * 2),
-        ]);
-        const linePath = "M" + pts.map((pt) => pt.join(",")).join(" L");
-        const areaPath = linePath + ` L ${pts[pts.length - 1][0]},${h - padY} L ${pts[0][0]},${h - padY} Z`;
+        const xPos = (i: number) => padX + (i / (data.length - 1)) * (w - padX * 2);
+        const yPos = (v: number) => h - padY - (v / max) * (h - padY * 2);
+
+        // Segmented sub-paths so gap days break the line (no fake zeros).
+        const segments: Array<Array<[number, number]>> = [];
+        let current: Array<[number, number]> = [];
+        for (let i = 0; i < data.length; i++) {
+          const raw = data[i][p];
+          if (typeof raw !== "number") {
+            if (current.length > 0) {
+              segments.push(current);
+              current = [];
+            }
+            continue;
+          }
+          current.push([xPos(i), yPos(raw)]);
+        }
+        if (current.length > 0) segments.push(current);
+        const linePath = segments
+          .map((seg) => "M" + seg.map((pt) => pt.join(",")).join(" L"))
+          .join(" ");
+        const areaPaths = segments
+          .filter((seg) => seg.length >= 2)
+          .map((seg) => {
+            const path = "M" + seg.map((pt) => pt.join(",")).join(" L");
+            return path + ` L ${seg[seg.length - 1][0]},${h - padY} L ${seg[0][0]},${h - padY} Z`;
+          });
+        const lastDefined: [number, number] | null =
+          segments.length > 0 ? segments[segments.length - 1][segments[segments.length - 1].length - 1] : null;
 
         return (
           <div
@@ -299,9 +387,20 @@ export function SmallMultiplesChart({ data, height = 180, platforms: platformsOv
               </span>
             </div>
             <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none">
-              <path d={areaPath} fill={color} opacity="0.12" />
+              {areaPaths.map((d, i) => (
+                <path key={`a-${i}`} d={d} fill={color} opacity="0.12" />
+              ))}
               <path d={linePath} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />
-              <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="1.8" fill={color} />
+              {/* Single-point segments (one publish day surrounded by gaps)
+                  need explicit dots; the path alone wouldn't render. */}
+              {segments
+                .filter((seg) => seg.length === 1)
+                .map((seg, i) => (
+                  <circle key={`iso-${i}`} cx={seg[0][0]} cy={seg[0][1]} r="1.8" fill={color} />
+                ))}
+              {lastDefined && (
+                <circle cx={lastDefined[0]} cy={lastDefined[1]} r="1.8" fill={color} />
+              )}
             </svg>
           </div>
         );
@@ -552,14 +651,45 @@ export function SinglePlatformChart({
   if (data.length < 2) return <EmptyChart height={height} />;
 
   const color = PLATFORM_COLOR[platform] ?? "var(--accent)";
-  const values = data.map((d) => (d[platform] as number | undefined) ?? 0);
-  const max = Math.max(...values, 1);
+  // Treat undefined as no-data (gap), 0 as a real zero. Y-axis only
+  // scales to days that actually had posts.
+  const max = Math.max(
+    1,
+    ...data.map((d) => (typeof d[platform] === "number" ? (d[platform] as number) : 0))
+  );
   const x = (i: number) => padL + (i / (data.length - 1)) * (W - padL - padR);
   const y = (v: number) => padT + (1 - v / max) * (h - padT - padB);
-  const pts = values.map((v, i): [number, number] => [x(i), y(v)]);
-  const linePath = "M" + pts.map((pt) => pt.join(",")).join(" L");
-  const areaPath = linePath + ` L ${pts[pts.length - 1][0]},${h - padB} L ${pts[0][0]},${h - padB} Z`;
   const ticks = [0, max * 0.5, max];
+
+  // Build line and area paths as multiple sub-paths separated by gaps
+  // wherever the platform had no posts that day. Without segmentation,
+  // missing days collapse to the floor and the line drops to 0.
+  const segments: Array<Array<[number, number]>> = [];
+  let current: Array<[number, number]> = [];
+  for (let i = 0; i < data.length; i++) {
+    const raw = data[i][platform];
+    if (typeof raw !== "number") {
+      if (current.length > 0) {
+        segments.push(current);
+        current = [];
+      }
+      continue;
+    }
+    current.push([x(i), y(raw)]);
+  }
+  if (current.length > 0) segments.push(current);
+
+  const linePath = segments
+    .map((seg) => "M" + seg.map((pt) => pt.join(",")).join(" L"))
+    .join(" ");
+  // Per-segment area paths so gap days don't get filled with the
+  // platform color.
+  const areaPaths = segments
+    .filter((seg) => seg.length >= 2)
+    .map((seg) => {
+      const path = "M" + seg.map((pt) => pt.join(",")).join(" L");
+      return path + ` L ${seg[seg.length - 1][0]},${h - padB} L ${seg[0][0]},${h - padB} Z`;
+    });
 
   return (
     <div ref={ref}>
@@ -579,10 +709,20 @@ export function SinglePlatformChart({
             </text>
           </g>
         ))}
-        <path d={areaPath} fill={color} opacity="0.14" />
+        {areaPaths.map((d, i) => (
+          <path key={`a-${i}`} d={d} fill={color} opacity="0.14" />
+        ))}
         <path d={linePath} fill="none" stroke={color} strokeWidth="2.2" />
-        {pts.map(([px, py], i) =>
-          i % 4 === 0 || i === pts.length - 1 ? <circle key={i} cx={px} cy={py} r="2.5" fill={color} /> : null
+        {/* dots on every defined point (capped to a reasonable density) */}
+        {segments.flatMap((seg, segIdx) =>
+          seg.map((pt, ptIdx) => {
+            // Always show isolated points and segment endpoints; for
+            // longer segments thin the dots so the line stays clean.
+            const isEndpoint = ptIdx === 0 || ptIdx === seg.length - 1;
+            const showAlways = seg.length === 1 || isEndpoint;
+            if (!showAlways && ptIdx % 4 !== 0) return null;
+            return <circle key={`${segIdx}-${ptIdx}`} cx={pt[0]} cy={pt[1]} r="2.5" fill={color} />;
+          })
         )}
         {data.map((d, i) =>
           i % Math.max(1, Math.floor(data.length / 8)) === 0 || i === data.length - 1 ? (

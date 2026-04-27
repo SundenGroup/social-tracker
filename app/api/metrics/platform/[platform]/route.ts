@@ -257,8 +257,8 @@ export const GET = apiHandler(
       posts: pctChange(posts.length, prevPosts.length),
     };
 
-    // Build trend data: aggregate metrics by publish date
-    // Exclude sponsored posts from trends when hideSponsored is on
+    // Build trend data: aggregate metrics by publish date.
+    // Exclude sponsored posts from trends when hideSponsored is on.
     const trendPosts = hideSponsored
       ? postPerformance.filter((p) => !p.isSponsored)
       : postPerformance;
@@ -275,6 +275,19 @@ export const GET = apiHandler(
       entry.shares = (entry.shares || 0) + post.shares;
       entry.impressions = (entry.impressions || 0) + post.impressions;
       entry.reach = (entry.reach || 0) + post.reach;
+    }
+
+    // Fill every day in [start, end] so the X-axis spans the full range,
+    // even when no posts were published. Empty days get a `{date}`-only
+    // row; chart treats missing values as gaps (line breaks) rather than
+    // fake drops-to-zero.
+    const fillStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
+    const fillEnd = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+    for (const d = new Date(fillStart); d <= fillEnd; d.setUTCDate(d.getUTCDate() + 1)) {
+      const key = d.toISOString().split("T")[0];
+      if (!trendMap.has(key)) {
+        trendMap.set(key, { date: key } as unknown as Record<string, number>);
+      }
     }
 
     // Engagement breakdown for pie chart
