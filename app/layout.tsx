@@ -7,6 +7,18 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Clutch Social",
   description: "Social performance tracker for PUBG Esports partners",
+  // Explicit icons so we can ship a higher-resolution PNG to modern
+  // browsers + Apple touch icon for iOS home-screen installs. Falls
+  // back to /favicon.ico (auto-served from app/favicon.ico) for legacy
+  // clients that ignore <link rel="icon" type="image/png">.
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 // Responsive viewport — previously missing, which broke mobile layouts on
