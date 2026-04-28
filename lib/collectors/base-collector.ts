@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { accountTagConfig, computeAutoTags, effectiveTags } from "@/lib/tagging";
 import type {
   SocialAccount,
   Platform,
@@ -121,10 +122,41 @@ export abstract class BaseCollector {
       const posts = await this.fetchPosts();
       this.logger(`Fetched ${posts.length} posts`);
 
+      // Tag config for this account — defaultTags + auto-tag rules.
+      // Pre-loaded once so we don't re-parse rules for every post in
+      // the upsert loop. Mirrors /api/sync/ingest's tagging path so
+      // server-side scrapers (Twitter, YouTube) tag posts the same way
+      // the MacBook scraper (TikTok / IG / VK) does.
+      const tagConfig = accountTagConfig({
+        defaultTags: this.account.defaultTags,
+        tagRules: this.account.tagRules,
+      });
+
       // 2. Upsert posts first (some collectors query the DB in fetchMetrics)
       await prisma.$transaction(async (tx) => {
         for (const post of posts) {
           try {
+            // Compute auto tags on the RAW (pre-sanitize) caption so
+            // hashtags at the end of long captions still register even
+            // if sanitize() truncates the description below.
+            const autoTags = computeAutoTags(
+              { title: post.title, description: post.description },
+              tagConfig
+            );
+            // Preserve any manual tags from a prior version of this
+            // post — auto-tagging never strips user-pinned tags.
+            const existing = await tx.post.findUnique({
+              where: {
+                socialAccountId_postId: {
+                  socialAccountId: this.account.id,
+                  postId: post.postId,
+                },
+              },
+              select: { manualTags: true },
+            });
+            const manualTags = existing?.manualTags ?? [];
+            const finalTags = effectiveTags(autoTags, manualTags);
+
             await tx.post.upsert({
               where: {
                 socialAccountId_postId: {
@@ -142,6 +174,7 @@ export abstract class BaseCollector {
                 contentUrl: post.contentUrl,
                 thumbnailUrl: post.thumbnailUrl,
                 publishedAt: post.publishedAt,
+                tags: finalTags,
               },
               update: {
                 title: this.sanitizeText(post.title),
@@ -149,6 +182,9 @@ export abstract class BaseCollector {
                 thumbnailUrl: post.thumbnailUrl,
                 publishedAt: post.publishedAt,
                 lastMetricRefreshAt: new Date(),
+                // Recompute every sync — auto tags reflect the latest
+                // caption + rules, manualTags survive via the union.
+                tags: finalTags,
               },
             });
             result.postsSynced++;
