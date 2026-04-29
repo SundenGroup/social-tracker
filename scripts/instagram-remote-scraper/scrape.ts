@@ -751,6 +751,12 @@ async function scrape(username: string): Promise<ScrapeResult> {
   } finally {
     if (standalone) {
       await context.close();
+    } else if (browser) {
+      // CDP-connected: disconnect the socket so the Node event loop can
+      // exit when main() returns. Doesn't close the underlying Chrome
+      // (browser-server.ts owns that). Without this, the process hangs
+      // around with active CDP sockets after all accounts finish.
+      await browser.close().catch(() => {});
     }
   }
 }
@@ -856,6 +862,11 @@ async function main() {
   }
 
   console.log("[Scraper] All accounts scraped successfully!");
+  // Belt + suspenders: explicit exit in case any straggler handles
+  // (CDP sockets, fetch agents) keep the event loop alive. Routines
+  // pipe output through `tail`, so a hung process means tail never
+  // emits — visible to the user as "nothing happens".
+  process.exit(0);
 }
 
 main().catch((err) => {
