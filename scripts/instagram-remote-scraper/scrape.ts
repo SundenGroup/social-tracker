@@ -431,7 +431,41 @@ async function scrape(username: string): Promise<ScrapeResult> {
       let staleScrolls = 0;
 
       for (let i = 0; i < 30; i++) {
-        await page.evaluate("window.scrollBy(0, window.innerHeight * 2)");
+        // Robust scroll: IG's profile/reels grid sometimes uses an inner
+        // scrollable container instead of the document, so plain
+        // `window.scrollBy` is a no-op. Walk up from the last collected
+        // post link to find the actual scroll-parent (overflowY
+        // auto/scroll AND scrollHeight > clientHeight), and scroll IT.
+        // Then scrollIntoView on the same anchor as a belt-and-suspenders
+        // trigger for IG's IntersectionObserver-based lazy loading.
+        // Falls back to window.scrollBy when no inner container exists.
+        await page.evaluate(`
+          (() => {
+            const sel = 'a[href*="/p/"], a[href*="/reel/"], a[href*="/tv/"]';
+            const links = Array.from(document.querySelectorAll(sel));
+            if (links.length === 0) {
+              window.scrollBy(0, window.innerHeight * 2);
+              return;
+            }
+            const last = links[links.length - 1];
+            let scrollParent = null;
+            let el = last.parentElement;
+            while (el && el !== document.body) {
+              const cs = getComputedStyle(el);
+              if (/(auto|scroll|overlay)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 100) {
+                scrollParent = el;
+                break;
+              }
+              el = el.parentElement;
+            }
+            if (scrollParent) {
+              scrollParent.scrollTop += scrollParent.clientHeight * 2;
+            } else {
+              window.scrollBy(0, window.innerHeight * 2);
+            }
+            last.scrollIntoView({ block: "end" });
+          })();
+        `);
         await page.waitForTimeout(1500 + Math.random() * 1500);
 
         // Collect links after each scroll (before they get virtualized away)
@@ -440,7 +474,10 @@ async function scrape(username: string): Promise<ScrapeResult> {
         if (allPostLinks.size >= MAX_POSTS) break;
         if (allPostLinks.size === prevTotalCount) {
           staleScrolls++;
-          if (staleScrolls >= 5) break;
+          // 8 not 5 — IG sometimes pauses for a beat between batches,
+          // and bailing too early was the regression that left us at
+          // ~one screen of posts.
+          if (staleScrolls >= 8) break;
         } else {
           staleScrolls = 0;
           if (i % 5 === 0) console.log(`[Scraper] ... ${allPostLinks.size} posts collected (${tab.label})`);
