@@ -430,6 +430,63 @@ async function scrape(username: string): Promise<ScrapeResult> {
       let prevTotalCount = allPostLinks.size;
       let staleScrolls = 0;
 
+      // Grid view-count harvester. Defined inline here so it can be
+      // called incrementally (every scroll iteration) — IG virtualizes
+      // the reels grid, unloading cards once they're far enough off
+      // screen. A single end-of-scroll capture only catches the last
+      // viewport (~12 reels). Calling on each iteration captures cards
+      // as they appear, before virtualization removes them.
+      const harvestGridViewCounts = async () => {
+        if (tab.label !== "Reels") return;
+        const grid = (await page.evaluate(`
+          (() => {
+            const parseCount = (s) => {
+              if (!s) return 0;
+              const cleaned = String(s).replace(/[,\\s]/g, "");
+              const m = cleaned.match(/([\\d.]+)([KMBkmb])?/);
+              if (!m) return 0;
+              const num = parseFloat(m[1]);
+              const suf = (m[2] || "").toUpperCase();
+              if (suf === "K") return Math.round(num * 1000);
+              if (suf === "M") return Math.round(num * 1000000);
+              if (suf === "B") return Math.round(num * 1000000000);
+              return Math.round(num);
+            };
+            const out = {};
+            const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]');
+            for (const a of Array.from(anchors)) {
+              const href = a.getAttribute("href") || "";
+              const m = href.match(/\\/(reel|p|tv)\\/([A-Za-z0-9_-]+)/);
+              if (!m) continue;
+              const shortcode = m[2];
+              if (out[shortcode] != null) continue;
+              const viewSvgs = a.querySelectorAll('svg[aria-label="View count icon"]');
+              for (const svg of Array.from(viewSvgs)) {
+                let cur = svg.parentElement;
+                let found = 0;
+                for (let hop = 0; hop < 5 && cur && cur !== a; hop++) {
+                  const text = cur.textContent || "";
+                  const numMatch = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
+                  if (numMatch) {
+                    const n = parseCount(numMatch[0]);
+                    if (n > 0) { found = n; break; }
+                  }
+                  cur = cur.parentElement;
+                }
+                if (found > 0) { out[shortcode] = found; break; }
+              }
+            }
+            return out;
+          })()
+        `)) as Record<string, number>;
+        // First-write-wins: don't let a later scroll overwrite a real
+        // count with 0 if IG hides the count after virtualization but
+        // keeps the anchor visible.
+        for (const [k, v] of Object.entries(grid)) {
+          if (v > 0 && reelsViewMap[k] == null) reelsViewMap[k] = v;
+        }
+      };
+
       for (let i = 0; i < 30; i++) {
         // Robust scroll: IG's profile/reels grid sometimes uses an inner
         // scrollable container instead of the document, so plain
@@ -470,6 +527,9 @@ async function scrape(username: string): Promise<ScrapeResult> {
 
         // Collect links after each scroll (before they get virtualized away)
         await collectLinksFromPage();
+        // …and capture any newly-visible reel view counts before they
+        // get virtualized too. No-op on non-Reels tabs.
+        await harvestGridViewCounts();
 
         if (allPostLinks.size >= MAX_POSTS) break;
         if (allPostLinks.size === prevTotalCount) {
@@ -487,59 +547,14 @@ async function scrape(username: string): Promise<ScrapeResult> {
 
       console.log(`[Scraper] ${allPostLinks.size} total unique posts after ${tab.label} tab`);
 
-      // ===== Grid view-count harvest (Reels tab only) =====
-      // Each thumbnail's view count sits next to a tiny SVG icon with
-      // aria-label="View count icon". Walk up from each such SVG (within
-      // the thumbnail's <a>) until we find an ancestor whose textContent
-      // contains a number — that's the view count. Position-agnostic, so
-      // it doesn't matter where IG places the count in the grid layout.
-      // Validated empirically on /pubgesports/reels/:
+      // Final harvest pass after the scroll settles (catches any cards
+      // that just rendered in the last viewport). Then log the running
+      // total. Empirical validation on /pubgesports/reels/:
       //   DXPukGODktA → views=1,000,000 ✓ (real)
       //   DXiaXRuiKuQ → views=3,118 ✓ (matches user's eyes minus drift)
       if (tab.label === "Reels") {
-        const grid = await page.evaluate(`
-          (() => {
-            const parseCount = (s) => {
-              if (!s) return 0;
-              const cleaned = String(s).replace(/[,\\s]/g, "");
-              const m = cleaned.match(/([\\d.]+)([KMBkmb])?/);
-              if (!m) return 0;
-              const num = parseFloat(m[1]);
-              const suf = (m[2] || "").toUpperCase();
-              if (suf === "K") return Math.round(num * 1000);
-              if (suf === "M") return Math.round(num * 1000000);
-              if (suf === "B") return Math.round(num * 1000000000);
-              return Math.round(num);
-            };
-            const out = {};
-            const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]');
-            for (const a of Array.from(anchors)) {
-              const href = a.getAttribute("href") || "";
-              const m = href.match(/\\/(reel|p|tv)\\/([A-Za-z0-9_-]+)/);
-              if (!m) continue;
-              const shortcode = m[2];
-              if (out[shortcode] != null) continue; // first thumbnail wins
-              const viewSvgs = a.querySelectorAll('svg[aria-label="View count icon"]');
-              for (const svg of Array.from(viewSvgs)) {
-                let cur = svg.parentElement;
-                let found = 0;
-                for (let hop = 0; hop < 5 && cur && cur !== a; hop++) {
-                  const text = cur.textContent || "";
-                  const numMatch = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
-                  if (numMatch) {
-                    const n = parseCount(numMatch[0]);
-                    if (n > 0) { found = n; break; }
-                  }
-                  cur = cur.parentElement;
-                }
-                if (found > 0) { out[shortcode] = found; break; }
-              }
-            }
-            return out;
-          })()
-        `) as Record<string, number>;
-        Object.assign(reelsViewMap, grid);
-        console.log(`[Scraper] Captured grid view counts for ${Object.keys(grid).length} reels`);
+        await harvestGridViewCounts();
+        console.log(`[Scraper] Captured grid view counts for ${Object.keys(reelsViewMap).length} reels`);
       }
     }
 
