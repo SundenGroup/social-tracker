@@ -188,7 +188,7 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
 
   return (
     <>
-      <Header title={label} subtitle="Single-platform breakdown">
+      <Header title={label}>
         <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
         <ExportButton startDate={startDate} endDate={endDate} platform={platform} />
       </Header>

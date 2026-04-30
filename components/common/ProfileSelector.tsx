@@ -140,23 +140,7 @@ export default function ProfileSelector() {
               cursor: "pointer",
             }}
           >
-            <span
-              style={{
-                width: 14,
-                height: 14,
-                borderRadius: 3,
-                border: "1.5px solid var(--border-strong)",
-                background: allSelected ? "var(--accent)" : "transparent",
-                display: "grid",
-                placeItems: "center",
-                color: "#fff",
-                fontSize: 10,
-                fontWeight: 800,
-                flexShrink: 0,
-              }}
-            >
-              {allSelected ? "✓" : ""}
-            </span>
+            <Checkbox checked={allSelected} />
             <span style={{ flex: 1 }}>{allLabel}</span>
           </button>
 
@@ -183,23 +167,7 @@ export default function ProfileSelector() {
                   cursor: "pointer",
                 }}
               >
-                <span
-                  style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: 3,
-                    border: "1.5px solid var(--border-strong)",
-                    background: checked ? "var(--accent)" : "transparent",
-                    display: "grid",
-                    placeItems: "center",
-                    color: "#fff",
-                    fontSize: 10,
-                    fontWeight: 800,
-                    flexShrink: 0,
-                  }}
-                >
-                  {checked ? "✓" : ""}
-                </span>
+                <Checkbox checked={checked} />
                 <span style={{ flex: 1 }}>{p.name}</span>
               </button>
             );
@@ -231,5 +199,41 @@ export default function ProfileSelector() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Checkbox glyph used in the multi-select dropdown. Uses an inline SVG
+ * tick instead of a unicode "✓" character so it stays crisp at 14×14
+ * and reliably centers across fonts/platforms (the unicode glyph
+ * sits high in most system fonts and looked off-center in the box).
+ */
+function Checkbox({ checked }: { checked: boolean }) {
+  return (
+    <span
+      style={{
+        width: 14,
+        height: 14,
+        borderRadius: 3,
+        border: checked ? "1.5px solid var(--accent)" : "1.5px solid var(--border-strong)",
+        background: checked ? "var(--accent)" : "transparent",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      {checked && (
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
+          <path
+            d="M2 5.2 L4.2 7.4 L8 3.2"
+            stroke="#fff"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </span>
   );
 }
