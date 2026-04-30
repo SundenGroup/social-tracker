@@ -22,7 +22,7 @@ export const POST = apiHandler(
       startDate: string;
       endDate: string;
       metrics?: string[];
-      profileId?: string | null;
+      profileId?: string | string[] | null;
       tag?: string | null;
     };
 

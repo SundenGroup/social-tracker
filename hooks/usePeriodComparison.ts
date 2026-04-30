@@ -49,7 +49,8 @@ export function usePeriodComparison(
   contentType?: string,
   tag?: string | null
 ) {
-  const { selectedProfileId, initialized } = useProfiles();
+  const { selectedProfileIds, initialized } = useProfiles();
+  const profileIdsParam = selectedProfileIds.join(",");
   const [data, setData] = useState<PeriodComparisonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,8 +64,8 @@ export function usePeriodComparison(
       if (contentType && contentType !== "all") {
         params.set("contentType", contentType);
       }
-      if (selectedProfileId) {
-        params.set("profileId", selectedProfileId);
+      if (profileIdsParam) {
+        params.set("profileId", profileIdsParam);
       }
       if (tag) {
         params.set("tag", tag);
@@ -82,7 +83,7 @@ export function usePeriodComparison(
     } finally {
       setIsLoading(false);
     }
-  }, [startDateA, endDateA, startDateB, endDateB, contentType, tag, selectedProfileId, initialized]);
+  }, [startDateA, endDateA, startDateB, endDateB, contentType, tag, profileIdsParam, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

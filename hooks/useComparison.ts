@@ -38,7 +38,8 @@ export interface ComparisonData {
 }
 
 export function useComparison(startDate: string, endDate: string) {
-  const { selectedProfileId, initialized } = useProfiles();
+  const { selectedProfileIds, initialized } = useProfiles();
+  const profileIdsParam = selectedProfileIds.join(",");
   const [data, setData] = useState<ComparisonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,8 +50,8 @@ export function useComparison(startDate: string, endDate: string) {
     setError(null);
     try {
       const params = new URLSearchParams({ startDate, endDate });
-      if (selectedProfileId) {
-        params.set("profileId", selectedProfileId);
+      if (profileIdsParam) {
+        params.set("profileId", profileIdsParam);
       }
       const res = await fetch(`/api/metrics/comparison?${params}`, { signal });
       const json = await res.json();
@@ -65,7 +66,7 @@ export function useComparison(startDate: string, endDate: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, selectedProfileId, initialized]);
+  }, [startDate, endDate, profileIdsParam, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

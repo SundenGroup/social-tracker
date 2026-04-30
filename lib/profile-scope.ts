@@ -3,41 +3,58 @@ import type { Session } from "next-auth";
 /**
  * Determine which profile(s) a dashboard query should be scoped to.
  *
+ * `requested` may be a single id, an array of ids, a comma-separated
+ * string, or null/undefined. Empty / null / undefined means "no
+ * narrowing" (the caller wants the full org or full viewer scope).
+ *
  * Rules:
- *   - Admins are never restricted. If they pass `?profile=<id>` we honor
- *     exactly that; otherwise we return [] meaning "all profiles in the org".
- *   - A viewer with one or more `profileIds` in their session is hard-
- *     restricted to that set. If they pass `?profile=<id>` and that id is
- *     one of their scopes, we narrow further to just that one. If they pass
- *     an id outside their scope we silently ignore it (security: no peeking
- *     at sibling profiles by URL-tweaking).
+ *   - Admins are never restricted. If they pass any requested ids,
+ *     honor exactly that set; otherwise return [] (org-wide).
+ *   - A viewer with one or more `profileIds` is hard-restricted. We
+ *     intersect the requested set with their scope so they can narrow
+ *     within their scope but never peek outside. Empty intersection →
+ *     fall back to their full scope.
  *   - A viewer with zero scopes acts like an admin on this axis.
  *
- * Returns an array of profile ids the server should filter by. An empty
- * array means "no profile filter" (org-wide). Non-empty array means
- * "filter to this set".
+ * Returns an array of profile ids the server should filter by. Empty
+ * array = no profile filter (all viewer-visible profiles).
  */
 export function effectiveProfileIds(
   session: Session,
-  requested?: string | null
+  requested?: string | string[] | null
 ): string[] {
   const scoped = session.user.profileIds ?? [];
+  const reqIds = normalizeRequested(requested);
 
-  // Admins: honor the requested filter, or no filter at all.
+  // Admins: honor requested filter as-is (or no filter at all).
   if (session.user.role === "admin") {
-    return requested ? [requested] : [];
+    return reqIds;
   }
 
   // Unscoped viewer: same as admin on this axis.
   if (scoped.length === 0) {
-    return requested ? [requested] : [];
+    return reqIds;
   }
 
-  // Scoped viewer + requested id that's in their scope → narrow to that one.
-  if (requested && scoped.includes(requested)) return [requested];
+  // Scoped viewer: intersect requested with their scope. If the
+  // intersection is empty (or no request was made), fall back to the
+  // full scope set so they always see SOMETHING they're allowed to.
+  if (reqIds.length === 0) return scoped;
+  const allowed = reqIds.filter((id) => scoped.includes(id));
+  return allowed.length > 0 ? allowed : scoped;
+}
 
-  // Scoped viewer without a valid request → return their full scope set.
-  return scoped;
+/** Coerce the various URL / query shapes for `profileId` into a clean
+ *  unique string[]. Strips empties and duplicates. */
+function normalizeRequested(input?: string | string[] | null): string[] {
+  if (input == null) return [];
+  const list = Array.isArray(input) ? input : input.split(",");
+  const out = new Set<string>();
+  for (const v of list) {
+    const s = String(v ?? "").trim();
+    if (s) out.add(s);
+  }
+  return Array.from(out);
 }
 
 /** True when the caller is restricted to a subset of their org's profiles. */

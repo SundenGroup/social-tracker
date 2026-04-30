@@ -19,8 +19,9 @@ export default function PostsPage() {
     hasUntaggedPostsInScope,
     defaultTagFilter,
     profilesLoaded,
-    selectedProfileId,
+    selectedProfileIds,
   } = useProfiles();
+  const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
   const { data, isLoading, error, refetch } = useDashboard(
     startDate,
     endDate,
@@ -38,11 +39,10 @@ export default function PostsPage() {
   const appliedScopeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!profilesLoaded) return;
-    const scopeKey = selectedProfileId ?? "__org__";
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
     setTag(defaultTagFilter);
-  }, [profilesLoaded, selectedProfileId, defaultTagFilter]);
+  }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   return (
     <>

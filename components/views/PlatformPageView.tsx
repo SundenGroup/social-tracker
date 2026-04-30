@@ -80,8 +80,9 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
     hasUntaggedPostsInScope,
     defaultTagFilter,
     profilesLoaded,
-    selectedProfileId,
+    selectedProfileIds,
   } = useProfiles();
+  const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
   const { data, isLoading, error, refetch } = usePlatformDashboard(
     platform,
     startDate,
@@ -103,11 +104,10 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
   const appliedScopeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!profilesLoaded) return;
-    const scopeKey = selectedProfileId ?? "__org__";
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
     setTag(defaultTagFilter);
-  }, [profilesLoaded, selectedProfileId, defaultTagFilter]);
+  }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   const [sections, setSections] = useState<Record<SectionKey, boolean>>({
     types: true,

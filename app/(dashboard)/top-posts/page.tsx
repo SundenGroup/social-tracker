@@ -36,8 +36,9 @@ export default function TopPostsPage() {
     hasUntaggedPostsInScope,
     defaultTagFilter,
     profilesLoaded,
-    selectedProfileId,
+    selectedProfileIds,
   } = useProfiles();
+  const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
   const { data, isLoading, error } = useDashboard(startDate, endDate, undefined, tag);
   const [metric, setMetric] = useState<Metric>("views");
   const [platform, setPlatform] = useState("all");
@@ -51,11 +52,10 @@ export default function TopPostsPage() {
   const appliedScopeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!profilesLoaded) return;
-    const scopeKey = selectedProfileId ?? "__org__";
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
     setTag(defaultTagFilter);
-  }, [profilesLoaded, selectedProfileId, defaultTagFilter]);
+  }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   const sorted = useMemo(() => {
     if (!data) return [];

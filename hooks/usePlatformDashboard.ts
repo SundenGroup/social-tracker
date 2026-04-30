@@ -85,7 +85,8 @@ export function usePlatformDashboard(
   contentType?: string,
   tag?: string | null
 ) {
-  const { selectedProfileId, initialized } = useProfiles();
+  const { selectedProfileIds, initialized } = useProfiles();
+  const profileIdsParam = selectedProfileIds.join(",");
   const [data, setData] = useState<PlatformDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,8 +100,8 @@ export function usePlatformDashboard(
       if (contentType && contentType !== "all") {
         params.set("contentType", contentType);
       }
-      if (selectedProfileId) {
-        params.set("profileId", selectedProfileId);
+      if (profileIdsParam) {
+        params.set("profileId", profileIdsParam);
       }
       if (tag) {
         params.set("tag", tag);
@@ -118,7 +119,7 @@ export function usePlatformDashboard(
     } finally {
       setIsLoading(false);
     }
-  }, [platform, startDate, endDate, contentType, tag, selectedProfileId, initialized]);
+  }, [platform, startDate, endDate, contentType, tag, profileIdsParam, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

@@ -50,8 +50,12 @@ export default function DashboardPage() {
     hasUntaggedPostsInScope,
     defaultTagFilter,
     profilesLoaded,
-    selectedProfileId,
+    selectedProfileIds,
   } = useProfiles();
+  // Stable scope key for the always-on-default useEffect below — must
+  // change whenever the selection changes (so we re-apply the default),
+  // but stay the same across renders that don't change selection.
+  const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
 
   // Reset the tag selection if it disappears from the available list
   // (e.g. after switching profile to one that doesn't have that tag).
@@ -69,11 +73,10 @@ export default function DashboardPage() {
   const appliedScopeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!profilesLoaded) return;
-    const scopeKey = selectedProfileId ?? "__org__";
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
     setTag(defaultTagFilter);
-  }, [profilesLoaded, selectedProfileId, defaultTagFilter]);
+  }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   // Build per-platform sparkline data from the trend series
   const platformStripItems: PlatformStripItem[] = useMemo(() => {

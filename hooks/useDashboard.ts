@@ -56,7 +56,10 @@ interface DashboardData {
 }
 
 export function useDashboard(startDate: string, endDate: string, contentType?: string, tag?: string | null) {
-  const { selectedProfileId, initialized } = useProfiles();
+  const { selectedProfileIds, initialized } = useProfiles();
+  // Stable string key — React state hands us a new array reference even
+  // when contents are identical, so deps need the joined form.
+  const profileIdsParam = selectedProfileIds.join(",");
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,8 +73,8 @@ export function useDashboard(startDate: string, endDate: string, contentType?: s
       if (contentType && contentType !== "all") {
         params.set("contentType", contentType);
       }
-      if (selectedProfileId) {
-        params.set("profileId", selectedProfileId);
+      if (profileIdsParam) {
+        params.set("profileId", profileIdsParam);
       }
       if (tag) {
         params.set("tag", tag);
@@ -89,7 +92,7 @@ export function useDashboard(startDate: string, endDate: string, contentType?: s
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, contentType, tag, selectedProfileId, initialized]);
+  }, [startDate, endDate, contentType, tag, profileIdsParam, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

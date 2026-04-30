@@ -53,8 +53,9 @@ export default function PeriodComparisonPage() {
     hasUntaggedPostsInScope,
     defaultTagFilter,
     profilesLoaded,
-    selectedProfileId,
+    selectedProfileIds,
   } = useProfiles();
+  const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
 
   const { data, isLoading, error, refetch } = usePeriodComparison(startA, endA, startB, endB, contentType, tag);
 
@@ -67,11 +68,10 @@ export default function PeriodComparisonPage() {
   const appliedScopeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!profilesLoaded) return;
-    const scopeKey = selectedProfileId ?? "__org__";
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
     setTag(defaultTagFilter);
-  }, [profilesLoaded, selectedProfileId, defaultTagFilter]);
+  }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   function applyPreviousPeriod() {
     const sA = new Date(startA);
