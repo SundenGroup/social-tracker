@@ -79,7 +79,7 @@ export default function ImportPage() {
               <tr>
                 <td className="py-1.5 pr-4 font-medium text-clutch-black">PostType</td>
                 <td className="py-1.5 pr-4">No</td>
-                <td className="py-1.5 pr-4">video, text, image, carousel, short, live</td>
+                <td className="py-1.5 pr-4">video, text, image, carousel, slideshow, short, live</td>
                 <td className="py-1.5">video</td>
               </tr>
             </tbody>

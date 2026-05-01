@@ -26,7 +26,7 @@ export interface ParseResult {
 }
 
 const VALID_PLATFORMS = ["youtube", "twitter", "instagram", "tiktok", "vk"];
-const VALID_POST_TYPES = ["video", "image", "carousel", "text", "short", "live", "story"];
+const VALID_POST_TYPES = ["video", "image", "carousel", "text", "short", "live", "story", "slideshow"];
 
 const COLUMN_MAP: Record<string, string> = {
   platform: "platform",

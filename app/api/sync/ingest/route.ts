@@ -155,7 +155,7 @@ export async function POST(req: Request) {
             socialAccountId: account.id,
             platform: platform,
             postId: post.postId,
-            postType: (post.postType as "video" | "short" | "image" | "carousel" | "text") || "video",
+            postType: (post.postType as "video" | "short" | "image" | "carousel" | "text" | "slideshow") || "video",
             title: cleanTitle,
             description: cleanDescription,
             contentUrl: post.contentUrl,

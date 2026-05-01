@@ -41,9 +41,16 @@ function buildContentTypeWhere(contentType: string | null, platform: Platform): 
     return { postType: "video" as PostType };
   }
 
+  // "image" rolls up single-image posts and TikTok slideshows. Stays
+  // platform-scoped (caller already restricts by platform), so on
+  // Instagram this just matches `image` rows (no slideshow data).
+  if (contentType === "image") {
+    return { postType: { in: ["image", "slideshow"] as PostType[] } };
+  }
+
   // Direct passthrough for known PostType values. Anything unrecognized
   // yields an empty result set rather than a Prisma validation error.
-  const PASSTHROUGH: PostType[] = ["image", "carousel", "text", "short", "live", "story"];
+  const PASSTHROUGH: PostType[] = ["carousel", "text", "short", "live", "story", "slideshow"];
   if ((PASSTHROUGH as string[]).includes(contentType)) {
     return { postType: contentType as PostType };
   }

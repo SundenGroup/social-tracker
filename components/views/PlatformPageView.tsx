@@ -43,8 +43,6 @@ type SectionKey = (typeof SECTION_TOGGLES)[number]["key"];
  * Per-platform content-type filter options. These match the platform-native
  * content labels (Reels vs. Posts on Instagram, Shorts vs. Videos vs. Live
  * on YouTube, etc.) and map to the Prisma PostType enum server-side.
- *
- * TikTok is deliberately filter-less — every TikTok post is video.
  */
 const PLATFORM_CONTENT_TABS: Record<Platform, { label: string; value: string }[]> = {
   instagram: [
@@ -63,7 +61,11 @@ const PLATFORM_CONTENT_TABS: Record<Platform, { label: string; value: string }[]
     { label: "All", value: "all" },
     { label: "Video only", value: "video" },
   ],
-  tiktok: [],
+  tiktok: [
+    { label: "All", value: "all" },
+    { label: "Videos", value: "video" },
+    { label: "Slideshows", value: "slideshow" },
+  ],
   vk: [
     { label: "All", value: "all" },
     { label: "Video posts", value: "video" },

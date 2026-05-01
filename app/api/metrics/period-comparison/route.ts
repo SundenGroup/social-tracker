@@ -48,7 +48,9 @@ function buildPostTypeFilter(contentType: string | null): Record<string, unknown
   } else if (contentType === "long-form") {
     return { platform: "youtube", postType: "video" };
   } else if (contentType === "image") {
-    return { postType: "image" };
+    // "image" rolls up single-image posts and TikTok slideshows into
+    // one "non-video" bucket. Carousels stay separate.
+    return { postType: { in: ["image", "slideshow"] as PostType[] } };
   }
   return {};
 }

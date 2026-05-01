@@ -115,6 +115,7 @@ export default function DashboardPage() {
       "long-form": "#7C86FF",
       image: "var(--fg-muted)",
       carousel: "#1DA1F2",
+      slideshow: "#FE2C55",
     };
     return Array.from(tally.entries())
       .sort((a, b) => b[1] - a[1])

@@ -159,7 +159,7 @@ export const CarouselIcon = ({ size = 12 }: { size?: number }) => <Ico size={siz
 export function PostTypeIcon({ type, size = 12 }: { type?: string | null; size?: number }) {
   const t = (type ?? "").toLowerCase();
   if (t.includes("video") || t.includes("short") || t.includes("long") || t.includes("reel")) return <PlayIcon size={size} />;
-  if (t.includes("carousel")) return <CarouselIcon size={size} />;
+  if (t.includes("carousel") || t.includes("slideshow")) return <CarouselIcon size={size} />;
   return <ImageIcon size={size} />;
 }
 

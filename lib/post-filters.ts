@@ -59,6 +59,11 @@ export function buildPostFilters(input: PostFilterInput): Prisma.PostWhereInput 
   } else if (ct === "long-form") {
     out.platform = "youtube";
     out.postType = "video";
+  } else if (ct === "image") {
+    // "image" is a top-level category that rolls up single-image posts
+    // and TikTok slideshows. Instagram carousels stay in their own
+    // filter ("carousel") so dashboards can break them out separately.
+    out.postType = { in: ["image", "slideshow"] };
   } else if (ct && ct !== "all") {
     out.postType = ct as Prisma.PostWhereInput["postType"];
   }

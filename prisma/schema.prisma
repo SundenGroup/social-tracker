@@ -55,6 +55,7 @@ enum PostType {
   short
   live
   story
+  slideshow
 }
 
 enum MetricType {
