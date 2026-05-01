@@ -278,21 +278,48 @@ async function scrape(username: string): Promise<ScrapeResult> {
     // same Snowflake-ID format, but the URL path differs (/photo vs
     // /video) — we need to remember the type so we navigate to the
     // right URL per post and tag each post correctly downstream.
-    const posts: Array<{ id: string; type: "video" | "photo" }> = await page.$$eval(
-      'a[href*="/video/"], a[href*="/photo/"]',
-      (els) => {
-        const seen: Record<string, boolean> = {};
-        const out: Array<{ id: string; type: "video" | "photo" }> = [];
-        for (const el of els) {
-          const href = el.getAttribute("href") || "";
-          const m = href.match(/\/(video|photo)\/(\d+)/);
-          if (m && !seen[m[2]]) {
+    //
+    // Also harvest the view-count overlay text from the tile wrapper.
+    // TikTok renders it as plain text two levels up from the <a>; the
+    // post-detail page does NOT expose play counts on photo posts, so
+    // grid scraping is the only way to get views for slideshows.
+    // Videos already get exact `playCount` from hydration JSON, but we
+    // capture the grid number too as a fallback.
+    const tilesRaw: Array<{ id: string; type: "video" | "photo"; tileText: string }> =
+      await page.$$eval(
+        'a[href*="/video/"], a[href*="/photo/"]',
+        (els) => {
+          const seen: Record<string, boolean> = {};
+          const out: Array<{ id: string; type: "video" | "photo"; tileText: string }> = [];
+          for (const el of els) {
+            const href = el.getAttribute("href") || "";
+            const m = href.match(/\/(video|photo)\/(\d+)/);
+            if (!m || seen[m[2]]) continue;
             seen[m[2]] = true;
-            out.push({ id: m[2], type: m[1] as "video" | "photo" });
+            const tile =
+              (el.parentElement && el.parentElement.parentElement) ||
+              el.parentElement ||
+              el;
+            out.push({
+              id: m[2],
+              type: m[1] as "video" | "photo",
+              tileText: (tile.textContent || "").slice(0, 50),
+            });
           }
+          return out;
         }
-        return out;
-      }
+      );
+
+    // Parse the harvested view counts in Node — keeps helper functions
+    // out of page.$$eval (where tsx's __name injection trips).
+    const gridViews = new Map<string, number>();
+    for (const t of tilesRaw) {
+      const v = parseCount(t.tileText);
+      if (v > 0) gridViews.set(t.id, v);
+    }
+
+    const posts: Array<{ id: string; type: "video" | "photo" }> = tilesRaw.map(
+      (t) => ({ id: t.id, type: t.type })
     );
 
     const photoCount = posts.filter((p) => p.type === "photo").length;
@@ -335,9 +362,11 @@ async function scrape(username: string): Promise<ScrapeResult> {
               publishedAt: dateFromSnowflakeId(postId),
               postType: "slideshow",
               metrics: {
-                // TikTok doesn't surface a play count on photo posts;
-                // record 0 so the metric isn't written downstream.
-                views: 0,
+                // The photo detail page doesn't surface a view count;
+                // pull it from the profile-grid overlay we harvested
+                // during scroll. Falls through to 0 if the grid value
+                // was missing or unparseable.
+                views: gridViews.get(postId) ?? 0,
                 likes: photoData.likes,
                 comments: photoData.comments,
                 shares: photoData.shares,
