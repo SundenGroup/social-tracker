@@ -77,13 +77,12 @@ async function aggregatePeriod(
 
   const platformRows: PeriodPlatformRow[] = [];
 
+  // Iterate ALL_PLATFORMS for stable display order, but skip platforms
+  // the in-scope profiles don't operate on — otherwise a 0-row leaks
+  // through (e.g. VK shows up empty for non-CIS profiles).
   for (const platform of ALL_PLATFORMS) {
     const platAccountIds = accountsByPlatform.get(platform) ?? [];
-
-    if (platAccountIds.length === 0) {
-      platformRows.push({ platform, views: 0, engagements: 0, engagementRate: 0, posts: 0 });
-      continue;
-    }
+    if (platAccountIds.length === 0) continue;
 
     const postWhere: Record<string, unknown> = {
       socialAccountId: { in: platAccountIds },
@@ -236,15 +235,17 @@ export const GET = apiHandler(
         (periodA.summary.avgEngagementRate - periodB.summary.avgEngagementRate).toFixed(2)
       ),
       posts: pctChange(periodA.summary.totalPosts, periodB.summary.totalPosts),
-      platforms: ALL_PLATFORMS.map((platform) => {
-        const a = periodA.platforms.find((p) => p.platform === platform)!;
-        const b = periodB.platforms.find((p) => p.platform === platform)!;
+      // Match the per-period filter — only platforms with in-scope
+      // accounts are present in periodA.platforms; periodB uses the
+      // same accountIds so its platform set is identical.
+      platforms: periodA.platforms.map((a) => {
+        const b = periodB.platforms.find((p) => p.platform === a.platform);
         return {
-          platform,
-          views: pctChange(a.views, b.views),
-          engagements: pctChange(a.engagements, b.engagements),
-          engagementRate: Number((a.engagementRate - b.engagementRate).toFixed(2)),
-          posts: pctChange(a.posts, b.posts),
+          platform: a.platform,
+          views: pctChange(a.views, b?.views ?? 0),
+          engagements: pctChange(a.engagements, b?.engagements ?? 0),
+          engagementRate: Number((a.engagementRate - (b?.engagementRate ?? 0)).toFixed(2)),
+          posts: pctChange(a.posts, b?.posts ?? 0),
         };
       }),
     };

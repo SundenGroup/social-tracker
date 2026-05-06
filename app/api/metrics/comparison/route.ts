@@ -48,27 +48,12 @@ export const GET = apiHandler(
     // Build per-platform metrics
     const platformRows = [];
 
+    // Iterate ALL_PLATFORMS for stable display order, but skip platforms
+    // the in-scope profiles don't operate on — otherwise empty 0-rows
+    // show up (e.g. VK for non-CIS profiles).
     for (const platform of ALL_PLATFORMS) {
       const accountIds = accountsByPlatform.get(platform) ?? [];
-
-      if (accountIds.length === 0) {
-        platformRows.push({
-          platform,
-          views: 0,
-          impressions: 0,
-          reach: 0,
-          likes: 0,
-          comments: 0,
-          shares: 0,
-          engagements: 0,
-          engagementRate: 0,
-          followers: 0,
-          followerGrowth: 0,
-          totalPosts: 0,
-          accountName: null,
-        });
-        continue;
-      }
+      if (accountIds.length === 0) continue;
 
       // Build post filter
       const postWhere: Record<string, unknown> = {
