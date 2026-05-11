@@ -62,7 +62,7 @@ export default function ContentPerformanceTable({
   // Pull org-wide tag list so the per-post popover can offer
   // autocomplete suggestions when adding manual tags. Cheap — the
   // ProfileProvider has already fetched it once.
-  const { availableTags } = useProfiles();
+  const { availableTags, tagDisplayNames } = useProfiles();
   const [sortKey, setSortKey] = useState<SortKey>("publishedAt");
   const [sortAsc, setSortAsc] = useState(false);
   const [page, setPage] = useState(0);
@@ -362,6 +362,10 @@ function PostRow({
   /** Called after the popover saves successfully — typically refetch. */
   onSaved: () => void;
 }) {
+  // Pull display-name overrides from the profile context so tag chips
+  // can render the user's typed casing (e.g. "PAS") instead of the
+  // canonical lowercase. Cheap — useProfiles is a context read.
+  const { tagDisplayNames } = useProfiles();
   const color = PLATFORM_COLOR[post.platform] ?? "var(--fg-muted)";
   const short = PLATFORM_SHORT[post.platform] ?? post.platform.slice(0, 2).toUpperCase();
 
@@ -442,6 +446,11 @@ function PostRow({
               clear at a glance. */}
           {(post.displayTags ?? []).map((t) => {
             const isManual = (post.manualTags ?? []).includes(t);
+            // Honour the user-typed casing (e.g. "PAS") when the rule
+            // had a displayTag set. Falls back to the canonical
+            // lowercase + CSS capitalize for legacy tags.
+            const displayLabel = tagDisplayNames[t] ?? t;
+            const customCased = !!tagDisplayNames[t] && tagDisplayNames[t] !== t;
             return (
               <span
                 key={t}
@@ -451,7 +460,7 @@ function PostRow({
                   borderRadius: 10,
                   fontSize: 10,
                   fontWeight: 600,
-                  textTransform: "capitalize",
+                  textTransform: customCased ? "none" : "capitalize",
                   background: isManual
                     ? "color-mix(in srgb, var(--accent) 14%, transparent)"
                     : "transparent",
@@ -461,7 +470,7 @@ function PostRow({
                     : "1px solid var(--border-strong)",
                 }}
               >
-                {t}
+                {displayLabel}
               </span>
             );
           })}

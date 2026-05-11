@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useProfiles } from "@/hooks/useProfiles";
 
 interface PostPropsPopoverProps {
   postId: string;
@@ -34,6 +35,12 @@ export default function PostPropsPopover({
   availableTags,
   onSaved,
 }: PostPropsPopoverProps) {
+  const { tagDisplayNames } = useProfiles();
+  // Helpers — render the user-typed case (e.g. "PAS") when the rule
+  // has a displayTag set, otherwise fall back to CSS capitalize on
+  // the canonical lowercase form.
+  const tagLabel = (t: string) => tagDisplayNames[t] ?? t;
+  const tagCustomCased = (t: string) => !!tagDisplayNames[t] && tagDisplayNames[t] !== t;
   const [open, setOpen] = useState(false);
   const [draftSponsored, setDraftSponsored] = useState(isSponsored);
   const [draftTags, setDraftTags] = useState<string[]>(manualTags);
@@ -218,10 +225,10 @@ export default function PostPropsPopover({
                       color: "var(--fg-muted)",
                       fontSize: 11,
                       fontWeight: 500,
-                      textTransform: "capitalize",
+                      textTransform: tagCustomCased(t) ? "none" : "capitalize",
                     }}
                   >
-                    {t}
+                    {tagLabel(t)}
                   </span>
                 ))}
               </div>
@@ -244,13 +251,13 @@ export default function PostPropsPopover({
                     color: "var(--accent)",
                     fontSize: 11,
                     fontWeight: 600,
-                    textTransform: "capitalize",
+                    textTransform: tagCustomCased(t) ? "none" : "capitalize",
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 4,
                   }}
                 >
-                  {t}
+                  {tagLabel(t)}
                   <button
                     type="button"
                     onClick={() => removeTag(t)}
@@ -310,10 +317,10 @@ export default function PostPropsPopover({
                       fontSize: 10,
                       fontWeight: 500,
                       cursor: "pointer",
-                      textTransform: "capitalize",
+                      textTransform: tagCustomCased(s) ? "none" : "capitalize",
                     }}
                   >
-                    + {s}
+                    + {tagLabel(s)}
                   </button>
                 ))}
               </div>
