@@ -157,6 +157,12 @@ export abstract class BaseCollector {
             const manualTags = existing?.manualTags ?? [];
             const finalTags = effectiveTags(autoTags, manualTags);
 
+            // Sanitise once so the create and (defensive) update paths
+            // share the same canonicalised values.
+            const cleanTitle = this.sanitizeText(post.title);
+            const cleanDescription = this.sanitizeText(post.description);
+            const cleanThumbnail = post.thumbnailUrl ?? null;
+
             await tx.post.upsert({
               where: {
                 socialAccountId_postId: {
@@ -169,17 +175,22 @@ export abstract class BaseCollector {
                 platform: post.platform,
                 postId: post.postId,
                 postType: post.postType,
-                title: this.sanitizeText(post.title),
-                description: this.sanitizeText(post.description),
+                title: cleanTitle,
+                description: cleanDescription,
                 contentUrl: post.contentUrl,
-                thumbnailUrl: post.thumbnailUrl,
+                thumbnailUrl: cleanThumbnail,
                 publishedAt: post.publishedAt,
                 tags: finalTags,
               },
+              // Defensive update — never let a sync that returned a
+              // null/empty caption (CAPTCHA, IP block, partial-data
+              // render) clobber a previously-good title or thumbnail.
+              // Only writes the new value when the collector actually
+              // supplied one. Matches /api/sync/ingest's behaviour.
               update: {
-                title: this.sanitizeText(post.title),
-                description: this.sanitizeText(post.description),
-                thumbnailUrl: post.thumbnailUrl,
+                ...(cleanTitle && { title: cleanTitle }),
+                ...(cleanDescription && { description: cleanDescription }),
+                ...(cleanThumbnail && { thumbnailUrl: cleanThumbnail }),
                 publishedAt: post.publishedAt,
                 lastMetricRefreshAt: new Date(),
                 // Recompute every sync — auto tags reflect the latest
