@@ -48,7 +48,7 @@ export default function PeriodComparisonPage() {
   const [startB, setStartB] = useState(toDateStr(lastYearStart));
   const [endB, setEndB] = useState(toDateStr(lastYearEnd));
   const [contentType, setContentType] = useState("all");
-  const [tag, setTag] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
   const {
     availableTags,
     hasUntaggedPostsInScope,
@@ -60,12 +60,14 @@ export default function PeriodComparisonPage() {
   } = useProfiles();
   const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
 
-  const { data, isLoading, error, refetch } = usePeriodComparison(startA, endA, startB, endB, contentType, tag);
+  const { data, isLoading, error, refetch } = usePeriodComparison(startA, endA, startB, endB, contentType, tags);
 
-  // Drop the tag if it disappears from scope.
+  // Drop tags that disappear from scope.
   useEffect(() => {
-    if (tag && !availableTags.includes(tag)) setTag(null);
-  }, [tag, availableTags]);
+    if (tags.length === 0) return;
+    const stillValid = tags.filter((t) => availableTags.includes(t));
+    if (stillValid.length !== tags.length) setTags(stillValid);
+  }, [tags, availableTags]);
 
   // Apply the always-on default once per scope.
   const appliedScopeRef = useRef<string | null>(null);
@@ -73,7 +75,7 @@ export default function PeriodComparisonPage() {
     if (!profilesLoaded) return;
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
-    setTag(defaultTagFilter);
+    setTags(defaultTagFilter ? [defaultTagFilter] : []);
   }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   function applyPreviousPeriod() {
@@ -204,8 +206,8 @@ export default function PeriodComparisonPage() {
             primaryTags={primaryTags}
             tagDisplayNames={tagDisplayNames}
             hasUntaggedPostsInScope={hasUntaggedPostsInScope}
-            tag={tag}
-            setTag={setTag}
+            tags={tags}
+            setTags={setTags}
           />
         </div>
 

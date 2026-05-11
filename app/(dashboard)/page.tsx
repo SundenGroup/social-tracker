@@ -39,9 +39,10 @@ const CONTENT_TYPE_TABS = [
 export default function DashboardPage() {
   const { startDate, endDate, setDateRange } = useDateRange();
   const [contentType, setContentType] = useState("all");
-  const [tag, setTag] = useState<string | null>(null);
+  // Multi-select tag filter — empty array means "no tag filter".
+  const [tags, setTags] = useState<string[]>([]);
   const [chartVariant, setChartVariant] = useState<ChartVariant>("bars");
-  const { data, isLoading, error, refetch } = useDashboard(startDate, endDate, contentType, tag);
+  const { data, isLoading, error, refetch } = useDashboard(startDate, endDate, contentType, tags);
   // Charts respect the current profile's active platforms — so e.g.
   // VK doesn't show up as "0" in the legend/tooltip when the selected
   // profile has no VK accounts.
@@ -60,13 +61,13 @@ export default function DashboardPage() {
   // but stay the same across renders that don't change selection.
   const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
 
-  // Reset the tag selection if it disappears from the available list
+  // Drop any selected tags that no longer exist in the current scope
   // (e.g. after switching profile to one that doesn't have that tag).
   useEffect(() => {
-    if (tag && !availableTags.includes(tag)) {
-      setTag(null);
-    }
-  }, [tag, availableTags]);
+    if (tags.length === 0) return;
+    const stillValid = tags.filter((t) => availableTags.includes(t));
+    if (stillValid.length !== tags.length) setTags(stillValid);
+  }, [tags, availableTags]);
 
   // Apply the always-on default tag once per scope. The ref tracks
   // "the last scope we applied a default to" — when the user switches
@@ -78,7 +79,7 @@ export default function DashboardPage() {
     if (!profilesLoaded) return;
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
-    setTag(defaultTagFilter);
+    setTags(defaultTagFilter ? [defaultTagFilter] : []);
   }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   // Build per-platform sparkline data from the trend series
@@ -255,8 +256,8 @@ export default function DashboardPage() {
                 primaryTags={primaryTags}
                 tagDisplayNames={tagDisplayNames}
                 hasUntaggedPostsInScope={hasUntaggedPostsInScope}
-                tag={tag}
-                setTag={setTag}
+                tags={tags}
+                setTags={setTags}
               />
 
               {syncSummary && (

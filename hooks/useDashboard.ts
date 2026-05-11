@@ -55,11 +55,17 @@ interface DashboardData {
   accounts: AccountHealth[];
 }
 
-export function useDashboard(startDate: string, endDate: string, contentType?: string, tag?: string | null) {
+export function useDashboard(
+  startDate: string,
+  endDate: string,
+  contentType?: string,
+  tags?: string[] | null
+) {
   const { selectedProfileIds, initialized } = useProfiles();
   // Stable string key — React state hands us a new array reference even
   // when contents are identical, so deps need the joined form.
   const profileIdsParam = selectedProfileIds.join(",");
+  const tagsParam = (tags ?? []).join(",");
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,8 +82,8 @@ export function useDashboard(startDate: string, endDate: string, contentType?: s
       if (profileIdsParam) {
         params.set("profileId", profileIdsParam);
       }
-      if (tag) {
-        params.set("tag", tag);
+      if (tagsParam) {
+        params.set("tag", tagsParam);
       }
       const res = await fetch(`/api/metrics/dashboard?${params}`, { signal });
       const json = await res.json();
@@ -92,7 +98,7 @@ export function useDashboard(startDate: string, endDate: string, contentType?: s
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, contentType, tag, profileIdsParam, initialized]);
+  }, [startDate, endDate, contentType, tagsParam, profileIdsParam, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

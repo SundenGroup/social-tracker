@@ -13,7 +13,10 @@ export const GET = apiHandler(
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
     const contentType = url.searchParams.get("contentType");
-    const tag = url.searchParams.get("tag");
+    // Tag filter supports multi-select — `?tag=foo,bar` is OR'd. A
+    // single value still works (legacy callers).
+    const tagParam = url.searchParams.get("tag");
+    const tag = tagParam ? tagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
 
     const orgId = session!.user.organizationId;

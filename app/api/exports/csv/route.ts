@@ -24,7 +24,7 @@ export const POST = apiHandler(
       endDate: string;
       metrics?: string[];
       profileId?: string | string[] | null;
-      tag?: string | null;
+      tag?: string | string[] | null;
     };
 
     if (!startDate || !endDate) {

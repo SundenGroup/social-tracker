@@ -188,7 +188,8 @@ export const GET = apiHandler(
     const orgId = session!.user.organizationId;
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
     const contentType = url.searchParams.get("contentType");
-    const tag = url.searchParams.get("tag");
+    const tagParam = url.searchParams.get("tag");
+    const tag = tagParam ? tagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const startDateA = url.searchParams.get("startDateA");
     const endDateA = url.searchParams.get("endDateA");
     const startDateB = url.searchParams.get("startDateB");

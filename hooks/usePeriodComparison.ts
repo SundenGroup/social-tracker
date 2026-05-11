@@ -47,10 +47,11 @@ export function usePeriodComparison(
   startDateB: string,
   endDateB: string,
   contentType?: string,
-  tag?: string | null
+  tags?: string[] | null
 ) {
   const { selectedProfileIds, initialized } = useProfiles();
   const profileIdsParam = selectedProfileIds.join(",");
+  const tagsParam = (tags ?? []).join(",");
   const [data, setData] = useState<PeriodComparisonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,8 +68,8 @@ export function usePeriodComparison(
       if (profileIdsParam) {
         params.set("profileId", profileIdsParam);
       }
-      if (tag) {
-        params.set("tag", tag);
+      if (tagsParam) {
+        params.set("tag", tagsParam);
       }
       const res = await fetch(`/api/metrics/period-comparison?${params}`, { signal });
       const json = await res.json();
@@ -83,7 +84,7 @@ export function usePeriodComparison(
     } finally {
       setIsLoading(false);
     }
-  }, [startDateA, endDateA, startDateB, endDateB, contentType, tag, profileIdsParam, initialized]);
+  }, [startDateA, endDateA, startDateB, endDateB, contentType, tagsParam, profileIdsParam, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

@@ -30,7 +30,7 @@ const PLATFORM_FILTERS = [
 
 export default function TopPostsPage() {
   const { startDate, endDate, setDateRange } = useDateRange();
-  const [tag, setTag] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
   const {
     availableTags,
     hasUntaggedPostsInScope,
@@ -41,14 +41,16 @@ export default function TopPostsPage() {
     selectedProfileIds,
   } = useProfiles();
   const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
-  const { data, isLoading, error } = useDashboard(startDate, endDate, undefined, tag);
+  const { data, isLoading, error } = useDashboard(startDate, endDate, undefined, tags);
   const [metric, setMetric] = useState<Metric>("views");
   const [platform, setPlatform] = useState("all");
 
-  // Drop the tag if it disappears from scope (profile switch, rule edit).
+  // Drop tags that disappear from scope.
   useEffect(() => {
-    if (tag && !availableTags.includes(tag)) setTag(null);
-  }, [tag, availableTags]);
+    if (tags.length === 0) return;
+    const stillValid = tags.filter((t) => availableTags.includes(t));
+    if (stillValid.length !== tags.length) setTags(stillValid);
+  }, [tags, availableTags]);
 
   // Apply the always-on default once per scope.
   const appliedScopeRef = useRef<string | null>(null);
@@ -56,7 +58,7 @@ export default function TopPostsPage() {
     if (!profilesLoaded) return;
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
-    setTag(defaultTagFilter);
+    setTags(defaultTagFilter ? [defaultTagFilter] : []);
   }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   const sorted = useMemo(() => {
@@ -182,8 +184,8 @@ export default function TopPostsPage() {
                 primaryTags={primaryTags}
                 tagDisplayNames={tagDisplayNames}
                 hasUntaggedPostsInScope={hasUntaggedPostsInScope}
-                tag={tag}
-                setTag={setTag}
+                tags={tags}
+                setTags={setTags}
               />
             </div>
           </div>

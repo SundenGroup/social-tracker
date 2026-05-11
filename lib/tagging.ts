@@ -200,16 +200,30 @@ export function effectiveTags(autoTags: string[], manualTags: string[] | null | 
 // ───────────────────────── filter helper ─────────────────────────
 
 /**
- * Build a Prisma where-fragment for filtering posts by a single tag.
- * Returns `{}` for null / empty tag (no filter). Caller spreads into
- * an existing where clause. See lib/post-filters.ts for full filter
- * composition with content-type and sponsored filters.
+ * Build a Prisma where-fragment for filtering posts by tag(s).
+ *
+ * Accepts a single tag (legacy callers) or an array (multi-select
+ * filter). Multiple tags use OR semantics — a post matches if ANY of
+ * the requested tags is on it (`hasSome`). Returns `{}` when the input
+ * is null / empty / all-blank so the caller can spread it
+ * unconditionally into a wider where clause.
+ *
+ * All inputs are canonicalised to lowercase since tags are stored that
+ * way (see the canonical-lowercase invariant in this file's header).
  */
-export function tagFilterWhere(tag: string | null | undefined): Prisma.PostWhereInput {
+export function tagFilterWhere(
+  tag: string | string[] | null | undefined
+): Prisma.PostWhereInput {
   if (!tag) return {};
-  const canonical = String(tag).trim().toLowerCase();
-  if (!canonical) return {};
-  return { tags: { has: canonical } };
+  const raw = Array.isArray(tag) ? tag : [tag];
+  const canonical: string[] = [];
+  for (const t of raw) {
+    const c = String(t ?? "").trim().toLowerCase();
+    if (c) canonical.push(c);
+  }
+  if (canonical.length === 0) return {};
+  if (canonical.length === 1) return { tags: { has: canonical[0] } };
+  return { tags: { hasSome: canonical } };
 }
 
 /**

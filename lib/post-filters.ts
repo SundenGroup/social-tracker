@@ -29,7 +29,9 @@ import { tagFilterWhere } from "@/lib/tagging";
 
 export interface PostFilterInput {
   contentType?: string | null;
-  tag?: string | null;
+  /** Selected tags to OR-filter against. Accepts a single legacy
+   *  string or an array. `tagFilterWhere` handles canonicalisation. */
+  tag?: string | string[] | null;
   hideSponsored?: boolean;
 }
 

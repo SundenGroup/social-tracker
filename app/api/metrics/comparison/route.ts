@@ -15,7 +15,8 @@ export const GET = apiHandler(
     const orgId = session!.user.organizationId;
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
-    const tag = url.searchParams.get("tag");
+    const tagParam = url.searchParams.get("tag");
+    const tag = tagParam ? tagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
     const tagWhere = tagFilterWhere(tag);
 

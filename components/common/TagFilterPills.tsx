@@ -7,9 +7,8 @@ interface TagFilterPillsProps {
   availableTags: string[];
   /** Tags that should always render as visible chips (defaultTags +
    *  alwaysOn rule tags). Anything in `availableTags` but not in this
-   *  list is moved behind a "More tags" menu. Defaults to all available
-   *  tags when omitted — preserves pre-dropdown behaviour for callers
-   *  that haven't migrated yet. */
+   *  list is moved behind a "More tags" menu with checkboxes. Defaults
+   *  to all available tags when omitted. */
   primaryTags?: string[];
   /** Map from canonical lowercase tag → display label (e.g. "PEC").
    *  Renderers fall back to CSS-capitalize when a tag isn't in the
@@ -18,27 +17,36 @@ interface TagFilterPillsProps {
   /** Whether any post in scope has an empty tags array. With one tag
    *  and 100% coverage we hide the pills entirely (toggle is a no-op). */
   hasUntaggedPostsInScope: boolean;
-  /** Selected tag — null means "all tags" (no tag filter applied). */
-  tag: string | null;
-  /** Setter from the page's useState. */
-  setTag: (next: string | null) => void;
+  /** Currently-selected tag set. Empty array = "all tags" (no filter). */
+  tags: string[];
+  /** Replace the selection. */
+  setTags: (next: string[]) => void;
 }
 
 /**
  * Tag-filter pill strip used across the dashboard, posts, top-posts,
  * platform pages, and period-comparison.
  *
- * Behaviour:
- *   - 0 tags in scope → render nothing
- *   - 1 tag with 100% coverage → render nothing (toggle is no-op)
- *   - 1 tag with mixed coverage → single togglable pill
- *   - 2+ tags → "All tags / primary1 / primary2 / [More tags ▾]"
- *     where the dropdown holds anything not in `primaryTags`. If
- *     `primaryTags` is empty or every tag is primary, no dropdown
- *     is rendered.
+ * Multi-select semantics mirror the ProfileSelector: primary tags
+ * render as toggle chips (click to add/remove from selection), and
+ * any secondary tags live behind a "More tags" dropdown with
+ * checkbox rows (also multi-toggle). An empty selection is "All tags".
  *
- * Labels respect `tagDisplayNames` — a canonical "pec" with a display
- * label of "PEC" renders as PEC and disables the capitalise-first CSS
+ * Display:
+ *   - "All tags" chip — active when selection is empty, clearing
+ *     clicks reset to empty.
+ *   - Primary chips — independent toggles. Multiple can be active.
+ *   - "More tags ▾" — opens a checkbox menu of every non-primary tag.
+ *     Tags currently selected from the dropdown also surface as
+ *     active chips so the user can see what's filtered without
+ *     opening the menu.
+ *
+ * Hide rules:
+ *   - 0 tags in scope → render nothing.
+ *   - 1 tag with 100% coverage → render nothing (filter is a no-op).
+ *
+ * Labels respect `tagDisplayNames` — canonical "pec" with display
+ * label "PEC" renders as PEC and disables the capitalise-first CSS
  * that would otherwise render it as "Pec".
  */
 export default function TagFilterPills({
@@ -46,14 +54,12 @@ export default function TagFilterPills({
   primaryTags,
   tagDisplayNames,
   hasUntaggedPostsInScope,
-  tag,
-  setTag,
+  tags,
+  setTags,
 }: TagFilterPillsProps) {
-  // Local state for the secondary-tags dropdown open/close.
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // Close menu on outside click.
   useEffect(() => {
     if (!menuOpen) return;
     const onDocClick = (e: MouseEvent) => {
@@ -68,45 +74,47 @@ export default function TagFilterPills({
   if (availableTags.length === 0) return null;
   if (availableTags.length === 1 && !hasUntaggedPostsInScope) return null;
 
-  // Helper: resolve display label, with capitalise-first fallback so
-  // legacy lowercase tags don't look raw.
   const displayMap = tagDisplayNames ?? {};
-  const labelFor = (t: string): string => {
-    const explicit = displayMap[t];
-    if (explicit) return explicit;
-    return t; // raw; CSS handles styling for unmapped tags
-  };
+  const labelFor = (t: string): string => displayMap[t] || t;
   const isCustomCased = (t: string): boolean =>
     !!displayMap[t] && displayMap[t] !== t;
 
-  // Single-tag mode: same as before — one togglable pill.
+  const selectedSet = new Set(tags);
+  const toggle = (t: string) => {
+    if (selectedSet.has(t)) {
+      setTags(tags.filter((x) => x !== t));
+    } else {
+      setTags([...tags, t]);
+    }
+  };
+  const clearAll = () => setTags([]);
+
+  // Single-tag mode: keep the lightweight one-chip toggle.
   if (availableTags.length === 1) {
     const only = availableTags[0];
-    const active = tag === only;
+    const active = selectedSet.has(only);
     return (
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <PillButton
           label={labelFor(only)}
           customCased={isCustomCased(only)}
           active={active}
-          onClick={() => setTag(active ? null : only)}
+          onClick={() => (active ? clearAll() : setTags([only]))}
         />
       </div>
     );
   }
 
-  // Multi-tag mode: split into primary (chips) + secondary (dropdown).
-  // When `primaryTags` is undefined we keep the legacy "every tag is a
-  // chip" behaviour so callers that haven't migrated still work.
+  // Multi-tag mode. Split into primary chips + secondary dropdown.
   const primarySet = new Set(primaryTags ?? availableTags);
   const primary = availableTags.filter((t) => primarySet.has(t));
   const secondary = availableTags.filter((t) => !primarySet.has(t));
 
-  // If the currently-selected tag is in the secondary set, surface it
-  // as an extra chip so the user can see what's filtered without
-  // opening the dropdown.
-  const surfacedSecondary =
-    tag && !primarySet.has(tag) && availableTags.includes(tag) ? tag : null;
+  // Surface any selected secondary tags as chips outside the dropdown
+  // so the user can see what's filtered without opening the menu.
+  const surfacedSecondary = tags.filter((t) => !primarySet.has(t) && availableTags.includes(t));
+
+  const secondarySelectedCount = surfacedSecondary.length;
 
   return (
     <div
@@ -116,26 +124,27 @@ export default function TagFilterPills({
       <PillButton
         label="All tags"
         customCased={false}
-        active={tag === null}
-        onClick={() => setTag(null)}
+        active={tags.length === 0}
+        onClick={clearAll}
       />
       {primary.map((t) => (
         <PillButton
           key={t}
           label={labelFor(t)}
           customCased={isCustomCased(t)}
-          active={tag === t}
-          onClick={() => setTag(t)}
+          active={selectedSet.has(t)}
+          onClick={() => toggle(t)}
         />
       ))}
-      {surfacedSecondary && (
+      {surfacedSecondary.map((t) => (
         <PillButton
-          label={labelFor(surfacedSecondary)}
-          customCased={isCustomCased(surfacedSecondary)}
+          key={t}
+          label={labelFor(t)}
+          customCased={isCustomCased(t)}
           active={true}
-          onClick={() => setTag(null)}
+          onClick={() => toggle(t)}
         />
-      )}
+      ))}
       {secondary.length > 0 && (
         <div style={{ position: "relative" }}>
           <button
@@ -152,12 +161,26 @@ export default function TagFilterPills({
               cursor: "pointer",
               display: "inline-flex",
               alignItems: "center",
-              gap: 4,
+              gap: 6,
             }}
             aria-haspopup="listbox"
             aria-expanded={menuOpen}
           >
             More tags
+            {secondarySelectedCount > 0 && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: "1px 6px",
+                  borderRadius: 10,
+                  background: "var(--accent)",
+                  color: "#fff",
+                }}
+              >
+                {secondarySelectedCount}
+              </span>
+            )}
             <span aria-hidden style={{ fontSize: 9, lineHeight: 1 }}>▾</span>
           </button>
           {menuOpen && (
@@ -168,47 +191,81 @@ export default function TagFilterPills({
                 top: "calc(100% + 4px)",
                 left: 0,
                 zIndex: 50,
-                minWidth: 180,
-                maxHeight: 320,
+                minWidth: 220,
+                maxHeight: 360,
                 overflowY: "auto",
                 background: "var(--bg-elev)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                padding: 4,
-                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                border: "1px solid var(--border-strong)",
+                borderRadius: 10,
+                padding: 6,
+                boxShadow: "0 8px 28px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.06)",
               }}
             >
               {secondary.map((t) => {
-                const active = tag === t;
+                const checked = selectedSet.has(t);
                 return (
                   <button
                     key={t}
                     type="button"
                     role="option"
-                    aria-selected={active}
-                    onClick={() => {
-                      setTag(t);
-                      setMenuOpen(false);
-                    }}
+                    aria-selected={checked}
+                    onClick={() => toggle(t)}
                     style={{
-                      display: "block",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
                       width: "100%",
                       textAlign: "left",
                       padding: "7px 10px",
                       borderRadius: 6,
                       border: "none",
-                      background: active ? "var(--accent)" : "transparent",
-                      color: active ? "#fff" : "var(--fg)",
-                      fontSize: 12,
-                      fontWeight: 600,
+                      background: checked ? "var(--bg-sunken)" : "transparent",
+                      color: "var(--fg)",
+                      fontSize: 13,
                       cursor: "pointer",
-                      textTransform: isCustomCased(t) ? "none" : "capitalize",
                     }}
                   >
-                    {labelFor(t)}
+                    <Checkbox checked={checked} />
+                    <span
+                      style={{
+                        flex: 1,
+                        fontWeight: 500,
+                        textTransform: isCustomCased(t) ? "none" : "capitalize",
+                      }}
+                    >
+                      {labelFor(t)}
+                    </span>
                   </button>
                 );
               })}
+              {secondarySelectedCount > 0 && (
+                <>
+                  <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Clear only secondary selections; keep primary
+                      // chips the user toggled.
+                      setTags(tags.filter((t) => primarySet.has(t)));
+                    }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "center",
+                      padding: "6px 10px",
+                      borderRadius: 6,
+                      background: "transparent",
+                      border: "none",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "var(--fg-muted)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Clear other tags
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -237,14 +294,45 @@ function PillButton({ label, customCased, active, onClick }: PillButtonProps) {
         color: active ? "#fff" : "var(--fg-muted)",
         fontSize: 12,
         fontWeight: 600,
-        // Skip capitalize when we have a user-supplied case ("PEC")
-        // so we don't munge it back to "Pec". Otherwise capitalise so
-        // canonical lowercase like "esports" renders as "Esports".
         textTransform: customCased ? "none" : "capitalize",
         cursor: "pointer",
       }}
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * Checkbox glyph mirroring the one in ProfileSelector — inline SVG
+ * tick stays crisp at 14×14 and centers reliably across system fonts.
+ */
+function Checkbox({ checked }: { checked: boolean }) {
+  return (
+    <span
+      style={{
+        width: 14,
+        height: 14,
+        borderRadius: 3,
+        border: checked ? "1.5px solid var(--accent)" : "1.5px solid var(--border-strong)",
+        background: checked ? "var(--accent)" : "transparent",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      {checked && (
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
+          <path
+            d="M2 5.2 L4.2 7.4 L8 3.2"
+            stroke="#fff"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </span>
   );
 }

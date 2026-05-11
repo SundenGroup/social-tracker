@@ -77,7 +77,7 @@ const PLATFORM_CONTENT_TABS: Record<Platform, { label: string; value: string }[]
 export default function PlatformPageView({ platform, title, handle }: PlatformPageViewProps) {
   const { startDate, endDate, setDateRange } = useDateRange();
   const [contentType, setContentType] = useState("all");
-  const [tag, setTag] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
   const {
     availableTags,
     hasUntaggedPostsInScope,
@@ -93,16 +93,16 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
     startDate,
     endDate,
     contentType,
-    tag
+    tags
   );
 
-  // Reset tag selection if it disappears from the available list (e.g.
-  // after the profile context narrows or the tag is removed upstream).
+  // Drop tags that disappear from the available list (e.g. after the
+  // profile context narrows or the tag is removed upstream).
   useEffect(() => {
-    if (tag && !availableTags.includes(tag)) {
-      setTag(null);
-    }
-  }, [tag, availableTags]);
+    if (tags.length === 0) return;
+    const stillValid = tags.filter((t) => availableTags.includes(t));
+    if (stillValid.length !== tags.length) setTags(stillValid);
+  }, [tags, availableTags]);
 
   // Apply the always-on default tag once per scope. See dashboard page
   // for the same pattern + rationale.
@@ -111,7 +111,7 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
     if (!profilesLoaded) return;
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
-    setTag(defaultTagFilter);
+    setTags(defaultTagFilter ? [defaultTagFilter] : []);
   }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   const [sections, setSections] = useState<Record<SectionKey, boolean>>({
@@ -289,8 +289,8 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
                 primaryTags={primaryTags}
                 tagDisplayNames={tagDisplayNames}
                 hasUntaggedPostsInScope={hasUntaggedPostsInScope}
-                tag={tag}
-                setTag={setTag}
+                tags={tags}
+                setTags={setTags}
               />
             </div>
           )}

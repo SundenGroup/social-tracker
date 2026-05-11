@@ -13,7 +13,7 @@ import TagFilterPills from "@/components/common/TagFilterPills";
 
 export default function PostsPage() {
   const { startDate, endDate, setDateRange } = useDateRange();
-  const [tag, setTag] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
   const {
     availableTags,
     hasUntaggedPostsInScope,
@@ -28,22 +28,23 @@ export default function PostsPage() {
     startDate,
     endDate,
     undefined,
-    tag
+    tags
   );
 
-  // Drop the tag if it disappears from scope (profile switch, rule edit).
+  // Drop any selected tags that disappear from scope (profile switch, rule edit).
   useEffect(() => {
-    if (tag && !availableTags.includes(tag)) setTag(null);
-  }, [tag, availableTags]);
+    if (tags.length === 0) return;
+    const stillValid = tags.filter((t) => availableTags.includes(t));
+    if (stillValid.length !== tags.length) setTags(stillValid);
+  }, [tags, availableTags]);
 
-  // Apply the always-on default tag once per scope. See dashboard / platform
-  // pages for the same pattern + rationale.
+  // Apply the always-on default tag once per scope.
   const appliedScopeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!profilesLoaded) return;
     if (appliedScopeRef.current === scopeKey) return;
     appliedScopeRef.current = scopeKey;
-    setTag(defaultTagFilter);
+    setTags(defaultTagFilter ? [defaultTagFilter] : []);
   }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
   return (
@@ -87,8 +88,8 @@ export default function PostsPage() {
                 primaryTags={primaryTags}
                 tagDisplayNames={tagDisplayNames}
                 hasUntaggedPostsInScope={hasUntaggedPostsInScope}
-                tag={tag}
-                setTag={setTag}
+                tags={tags}
+                setTags={setTags}
               />
             }
           />
