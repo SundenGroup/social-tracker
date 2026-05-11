@@ -5,6 +5,7 @@ import { generateCSV, type ExportRow } from "@/lib/utils/export";
 import { ValidationError } from "@/lib/errors";
 import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
 import { tagFilterWhere } from "@/lib/tagging";
+import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import type { Platform } from "@prisma/client";
 
 const ALL_COLUMNS = [
@@ -52,7 +53,12 @@ export const POST = apiHandler(
 
     const accountIds = accounts.map((a) => a.id);
 
-    // Get posts with metrics
+    // Get posts. Metrics are fetched separately as DISTINCT-ON per
+    // (post, type) latest snapshot — the previous approach summed
+    // every snapshot in the date window, which both double-counted
+    // cumulative values and returned 0 for posts whose only snapshot
+    // landed after the report's end date (the common case for any
+    // platform synced via daily backfills).
     const posts = await prisma.post.findMany({
       where: {
         socialAccountId: { in: accountIds },
@@ -60,26 +66,19 @@ export const POST = apiHandler(
         isDeleted: false,
         ...tagFilterWhere(tag),
       },
-      include: {
-        metrics: {
-          where: { metricDate: { gte: start, lte: end } },
-        },
-      },
       orderBy: { publishedAt: "desc" },
     });
 
+    const latestMetrics = await getLatestMetrics(posts.map((p) => p.id));
+
     // Build export rows
     const rows: ExportRow[] = posts.map((post) => {
-      const pm = post.metrics;
-      const sumOf = (type: string) =>
-        pm.filter((m) => m.metricType === type).reduce((s, m) => s + Number(m.metricValue), 0);
-
-      const views = sumOf("views");
-      const likes = sumOf("likes");
-      const comments = sumOf("comments");
-      const shares = sumOf("shares");
-      const impressions = sumOf("impressions");
-      const reach = sumOf("reach");
+      const views = metricValue(latestMetrics, post.id, "views");
+      const likes = metricValue(latestMetrics, post.id, "likes");
+      const comments = metricValue(latestMetrics, post.id, "comments");
+      const shares = metricValue(latestMetrics, post.id, "shares");
+      const impressions = metricValue(latestMetrics, post.id, "impressions");
+      const reach = metricValue(latestMetrics, post.id, "reach");
       const engagements = likes + comments + shares;
       const base = views || impressions || 1;
 
@@ -105,8 +104,9 @@ export const POST = apiHandler(
       : ALL_COLUMNS;
 
     const csv = generateCSV(rows, columns);
-    const dateStr = new Date().toISOString().split("T")[0];
-    const filename = `social-media-${platform ?? "all"}-${dateStr}.csv`;
+    // Filename reflects the report's date range, not "today" — a
+    // 2025 report should say so even if it's generated in 2026.
+    const filename = `social-media-${platform ?? "all"}-${startDate}_to_${endDate}.csv`;
 
     return new NextResponse(csv, {
       status: 200,

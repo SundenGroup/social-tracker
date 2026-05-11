@@ -5,6 +5,7 @@ import { generateExcel, type ExportRow } from "@/lib/utils/export";
 import { ValidationError } from "@/lib/errors";
 import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
 import { tagFilterWhere } from "@/lib/tagging";
+import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import type { Platform } from "@prisma/client";
 
 const ALL_COLUMNS = [
@@ -51,6 +52,8 @@ export const POST = apiHandler(
 
     const accountIds = accounts.map((a) => a.id);
 
+    // See csv/route.ts for the rationale on switching from include +
+    // sum to DISTINCT-ON latest. Same fix, same reasons.
     const posts = await prisma.post.findMany({
       where: {
         socialAccountId: { in: accountIds },
@@ -58,25 +61,18 @@ export const POST = apiHandler(
         isDeleted: false,
         ...tagFilterWhere(tag),
       },
-      include: {
-        metrics: {
-          where: { metricDate: { gte: start, lte: end } },
-        },
-      },
       orderBy: { publishedAt: "desc" },
     });
 
-    const rows: ExportRow[] = posts.map((post) => {
-      const pm = post.metrics;
-      const sumOf = (type: string) =>
-        pm.filter((m) => m.metricType === type).reduce((s, m) => s + Number(m.metricValue), 0);
+    const latestMetrics = await getLatestMetrics(posts.map((p) => p.id));
 
-      const views = sumOf("views");
-      const likes = sumOf("likes");
-      const comments = sumOf("comments");
-      const shares = sumOf("shares");
-      const impressions = sumOf("impressions");
-      const reach = sumOf("reach");
+    const rows: ExportRow[] = posts.map((post) => {
+      const views = metricValue(latestMetrics, post.id, "views");
+      const likes = metricValue(latestMetrics, post.id, "likes");
+      const comments = metricValue(latestMetrics, post.id, "comments");
+      const shares = metricValue(latestMetrics, post.id, "shares");
+      const impressions = metricValue(latestMetrics, post.id, "impressions");
+      const reach = metricValue(latestMetrics, post.id, "reach");
       const engagements = likes + comments + shares;
       const base = views || impressions || 1;
 
@@ -102,8 +98,7 @@ export const POST = apiHandler(
       : ALL_COLUMNS;
 
     const buffer = generateExcel(rows, columns);
-    const dateStr = new Date().toISOString().split("T")[0];
-    const filename = `social-media-${platform ?? "all"}-${dateStr}.xlsx`;
+    const filename = `social-media-${platform ?? "all"}-${startDate}_to_${endDate}.xlsx`;
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
