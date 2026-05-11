@@ -24,6 +24,7 @@ import ContentMixDonut from "@/components/charts/ContentMixDonut";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { useDashboard } from "@/hooks/useDashboard";
 import { useProfiles } from "@/hooks/useProfiles";
+import TagFilterPills from "@/components/common/TagFilterPills";
 import { fmtK, fmtInt } from "@/lib/format";
 import type { Platform } from "@/components/icons/PlatformGlyph";
 
@@ -49,6 +50,8 @@ export default function DashboardPage() {
     availableTags,
     hasUntaggedPostsInScope,
     defaultTagFilter,
+    primaryTags,
+    tagDisplayNames,
     profilesLoaded,
     selectedProfileIds,
   } = useProfiles();
@@ -247,42 +250,14 @@ export default function DashboardPage() {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              {availableTags.length > 0 &&
-                !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
-                <div className="hscroll" style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
-                  {(availableTags.length === 1
-                    ? [{ label: availableTags[0], value: availableTags[0] }]
-                    : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
-                  ).map((opt) => {
-                    const active = (tag ?? null) === opt.value;
-                    const onClick = () => {
-                      if (availableTags.length === 1) {
-                        setTag(active ? null : opt.value);
-                      } else {
-                        setTag(opt.value);
-                      }
-                    };
-                    return (
-                      <button
-                        key={opt.value ?? "__all_tags__"}
-                        onClick={onClick}
-                        style={{
-                          padding: "7px 12px",
-                          borderRadius: 8,
-                          border: "1px solid var(--border)",
-                          background: active ? "var(--accent)" : "var(--bg-elev)",
-                          color: active ? "#fff" : "var(--fg-muted)",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          textTransform: opt.value ? "capitalize" : undefined,
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              <TagFilterPills
+                availableTags={availableTags}
+                primaryTags={primaryTags}
+                tagDisplayNames={tagDisplayNames}
+                hasUntaggedPostsInScope={hasUntaggedPostsInScope}
+                tag={tag}
+                setTag={setTag}
+              />
 
               {syncSummary && (
                 <div

@@ -18,6 +18,8 @@ export default function PostsPage() {
     availableTags,
     hasUntaggedPostsInScope,
     defaultTagFilter,
+    primaryTags,
+    tagDisplayNames,
     profilesLoaded,
     selectedProfileIds,
   } = useProfiles();
@@ -82,6 +84,8 @@ export default function PostsPage() {
             tagFilter={
               <TagFilterPills
                 availableTags={availableTags}
+                primaryTags={primaryTags}
+                tagDisplayNames={tagDisplayNames}
                 hasUntaggedPostsInScope={hasUntaggedPostsInScope}
                 tag={tag}
                 setTag={setTag}

@@ -55,7 +55,11 @@ export default function AccountForm({ account }: AccountFormProps) {
   }
   const [tagRules, setTagRules] = useState<RuleFormState[]>(
     (account?.tagRules ?? []).map((r) => ({
-      tag: r.tag,
+      // Prefer the user-typed displayTag for the editable field —
+      // canonical lowercase `tag` is the storage form, displayTag is
+      // what the user actually wrote. Falls back to `tag` for legacy
+      // rules saved before displayTag existed.
+      tag: r.displayTag ?? r.tag,
       hashtagsText: (r.hashtags ?? []).join(", "),
       mentionsText: (r.mentions ?? []).join(", "),
       keywordsText: (r.keywords ?? []).join(", "),
@@ -112,13 +116,21 @@ export default function AccountForm({ account }: AccountFormProps) {
     // at submit time (not on every keystroke).
     const cleanDefaultTags = splitTokens(defaultTagsText).map((t) => t.toLowerCase());
     const cleanTagRules: TagRule[] = tagRules
-      .map((r) => ({
-        tag: r.tag.trim().toLowerCase(),
-        hashtags: splitTokens(r.hashtagsText).map((h) => h.replace(/^#+/, "").toLowerCase()),
-        mentions: splitTokens(r.mentionsText).map((m) => m.replace(/^@+/, "").toLowerCase()),
-        keywords: splitTokens(r.keywordsText).map((k) => k.toLowerCase()),
-        alwaysOn: r.alwaysOn,
-      }))
+      .map((r) => {
+        const trimmed = r.tag.trim();
+        const canonical = trimmed.toLowerCase();
+        return {
+          tag: canonical,
+          // Preserve the user's original casing so the chip can show
+          // "PEC" instead of "pec". Only send it when it actually
+          // differs from the canonical form — otherwise it's noise.
+          ...(trimmed && trimmed !== canonical ? { displayTag: trimmed } : {}),
+          hashtags: splitTokens(r.hashtagsText).map((h) => h.replace(/^#+/, "").toLowerCase()),
+          mentions: splitTokens(r.mentionsText).map((m) => m.replace(/^@+/, "").toLowerCase()),
+          keywords: splitTokens(r.keywordsText).map((k) => k.toLowerCase()),
+          alwaysOn: r.alwaysOn,
+        };
+      })
       .filter((r) => r.tag.length > 0);
 
     const payload = {

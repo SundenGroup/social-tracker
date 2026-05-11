@@ -36,7 +36,14 @@ import { prisma } from "@/lib/db";
  * it; switching profiles re-applies the default.
  */
 export interface TagRule {
+  /** Canonical-lowercase tag value. Used for matching, indexing, and
+   *  filtering. Load-bearing — every consumer of `Post.tags` assumes
+   *  lowercase. */
   tag: string;
+  /** Optional display label preserving the user's original casing
+   *  (e.g. "PEC"). Defaults to `tag` when not present. UI surfaces use
+   *  this for rendering; matching/storage ignore it. */
+  displayTag?: string;
   hashtags?: string[];
   mentions?: string[];
   keywords?: string[];
@@ -110,8 +117,18 @@ export function parseTagRules(input: unknown): TagRule[] {
       throw new Error("Each tag rule must be an object");
     }
     const r = raw as Record<string, unknown>;
-    const tag = typeof r.tag === "string" ? r.tag.trim().toLowerCase() : "";
+    const rawTag = typeof r.tag === "string" ? r.tag.trim() : "";
+    const tag = rawTag.toLowerCase();
     if (!tag) throw new Error("Tag rule is missing `tag`");
+    // Capture the user's original casing as displayTag. If the client
+    // sent an explicit displayTag we honour that, otherwise we fall
+    // back to the trimmed-but-uncased input from `tag`. We only persist
+    // displayTag when it differs from `tag` (avoids bloating the JSON
+    // with redundant lowercase duplicates).
+    const explicitDisplay =
+      typeof r.displayTag === "string" ? r.displayTag.trim() : "";
+    const displayCandidate = explicitDisplay || rawTag;
+    const displayTag = displayCandidate !== tag ? displayCandidate : undefined;
     const hashtags = Array.isArray(r.hashtags)
       ? canonicalize(r.hashtags as string[]).map((h) => h.replace(/^#+/, ""))
       : [];
@@ -125,7 +142,14 @@ export function parseTagRules(input: unknown): TagRule[] {
       );
     }
     const alwaysOn = r.alwaysOn === true;
-    out.push({ tag, hashtags, mentions, keywords, alwaysOn });
+    out.push({
+      tag,
+      ...(displayTag ? { displayTag } : {}),
+      hashtags,
+      mentions,
+      keywords,
+      alwaysOn,
+    });
   }
   return out;
 }

@@ -24,6 +24,10 @@ export const registerSchema = z.object({
 export const tagRuleSchema = z
   .object({
     tag: z.string().min(1, "Rule tag is required").max(50),
+    /** Original-case label preserved from the form. Optional — server
+     *  derives it from `tag` when missing. UI surfaces use this for
+     *  rendering; matching ignores it. */
+    displayTag: z.string().max(50).optional(),
     hashtags: z.array(z.string().max(100)).optional().default([]),
     mentions: z.array(z.string().max(100)).optional().default([]),
     keywords: z.array(z.string().max(200)).optional().default([]),

@@ -7,6 +7,7 @@ import ExportButton from "@/components/common/ExportButton";
 import { useDateRange } from "@/hooks/useDateRange";
 import { usePlatformDashboard } from "@/hooks/usePlatformDashboard";
 import { useProfiles } from "@/hooks/useProfiles";
+import TagFilterPills from "@/components/common/TagFilterPills";
 import { Block } from "@/components/ui/Block";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import ContentPerformanceTable from "@/components/tables/ContentPerformanceTable";
@@ -81,6 +82,8 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
     availableTags,
     hasUntaggedPostsInScope,
     defaultTagFilter,
+    primaryTags,
+    tagDisplayNames,
     profilesLoaded,
     selectedProfileIds,
   } = useProfiles();
@@ -281,42 +284,14 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
                 })}
               </div>
 
-              {availableTags.length > 0 &&
-                !(availableTags.length === 1 && !hasUntaggedPostsInScope) && (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {(availableTags.length === 1
-                    ? [{ label: availableTags[0], value: availableTags[0] }]
-                    : [{ label: "All tags", value: null as string | null }, ...availableTags.map((t) => ({ label: t, value: t }))]
-                  ).map((opt) => {
-                    const active = (tag ?? null) === opt.value;
-                    const onClick = () => {
-                      if (availableTags.length === 1) {
-                        setTag(active ? null : opt.value);
-                      } else {
-                        setTag(opt.value);
-                      }
-                    };
-                    return (
-                      <button
-                        key={opt.value ?? "__all_tags__"}
-                        onClick={onClick}
-                        style={{
-                          padding: "7px 12px",
-                          borderRadius: 8,
-                          border: "1px solid var(--border)",
-                          background: active ? "var(--accent)" : "var(--bg-elev)",
-                          color: active ? "#fff" : "var(--fg-muted)",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          textTransform: opt.value ? "capitalize" : undefined,
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              <TagFilterPills
+                availableTags={availableTags}
+                primaryTags={primaryTags}
+                tagDisplayNames={tagDisplayNames}
+                hasUntaggedPostsInScope={hasUntaggedPostsInScope}
+                tag={tag}
+                setTag={setTag}
+              />
             </div>
           )}
 

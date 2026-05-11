@@ -35,7 +35,7 @@ export const GET = apiHandler(
         _count: { select: { socialAccounts: true } },
         socialAccounts: {
           where: { isActive: true },
-          select: { id: true, platform: true, tagRules: true },
+          select: { id: true, platform: true, tagRules: true, defaultTags: true },
         },
       },
     });
@@ -59,6 +59,55 @@ export const GET = apiHandler(
       }
       if (tags.size === 0) return null;
       return Array.from(tags).sort()[0];
+    }
+
+    // Primary tags = the union of every account's `defaultTags` plus
+    // every rule whose `alwaysOn` flag is set. These render as visible
+    // chips in the tag-filter strip; anything else is hidden under the
+    // "More tags" menu. Designed so the UI surfaces the tags a user is
+    // most likely to filter on without burying them.
+    function pickPrimaryTags(
+      accounts: Array<{ tagRules: Prisma.JsonValue | null; defaultTags: string[] }>
+    ): string[] {
+      const tags = new Set<string>();
+      for (const a of accounts) {
+        for (const t of a.defaultTags ?? []) {
+          const norm = String(t).trim().toLowerCase();
+          if (norm) tags.add(norm);
+        }
+        if (!a.tagRules) continue;
+        try {
+          for (const r of parseTagRules(a.tagRules)) {
+            if (r.alwaysOn) tags.add(r.tag);
+          }
+        } catch {
+          // ignore — bad JSON shouldn't break the response
+        }
+      }
+      return Array.from(tags).sort();
+    }
+
+    // Build a `{ canonicalTag → displayLabel }` map from all rules on
+    // the given accounts. Only entries where displayTag differs from
+    // the canonical lowercase form are included — the renderer falls
+    // back to capitalising the canonical tag otherwise.
+    function pickTagDisplayNames(
+      accounts: Array<{ tagRules: Prisma.JsonValue | null }>
+    ): Record<string, string> {
+      const out: Record<string, string> = {};
+      for (const a of accounts) {
+        if (!a.tagRules) continue;
+        try {
+          for (const r of parseTagRules(a.tagRules)) {
+            if (r.displayTag && r.displayTag !== r.tag && !out[r.tag]) {
+              out[r.tag] = r.displayTag;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return out;
     }
 
     // Per-profile available tags. Cheap because each profile has a
@@ -122,6 +171,8 @@ export const GET = apiHandler(
       tags: tagsByProfile.get(p.id) ?? [],
       hasUntaggedPosts: hasUntaggedByProfile.get(p.id) ?? true,
       defaultTagFilter: pickAlwaysOnTag(p.socialAccounts),
+      primaryTags: pickPrimaryTags(p.socialAccounts),
+      tagDisplayNames: pickTagDisplayNames(p.socialAccounts),
       createdAt: p.createdAt.toISOString(),
     }));
 
@@ -160,13 +211,25 @@ export const GET = apiHandler(
     // Org-wide default tag filter. Pulls every active account in the
     // viewer's org scope (including unprofiled ones, which the per-profile
     // loop above doesn't see) and picks the first alwaysOn tag.
+    // We also pull defaultTags here so the primary-tags computation
+    // covers unprofiled accounts at the org level.
     const orgRuleAccounts = await prisma.socialAccount.findMany({
       where: orgAccountsWhere,
-      select: { tagRules: true },
+      select: { tagRules: true, defaultTags: true },
     });
     const orgDefaultTagFilter = pickAlwaysOnTag(orgRuleAccounts);
+    const orgPrimaryTags = pickPrimaryTags(orgRuleAccounts);
+    const orgTagDisplayNames = pickTagDisplayNames(orgRuleAccounts);
 
-    return NextResponse.json({ data, orgPlatforms, orgTags, orgHasUntaggedPosts, orgDefaultTagFilter });
+    return NextResponse.json({
+      data,
+      orgPlatforms,
+      orgTags,
+      orgHasUntaggedPosts,
+      orgDefaultTagFilter,
+      orgPrimaryTags,
+      orgTagDisplayNames,
+    });
   },
   { requireAuth: true }
 );

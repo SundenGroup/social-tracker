@@ -59,6 +59,14 @@ export interface ProfileResponse {
    *  the dashboard / platform pages for this profile. Set by any rule
    *  marked `alwaysOn: true` on any account inside the profile. */
   defaultTagFilter?: string | null;
+  /** Subset of `tags` that should always render as visible chips in the
+   *  tag-filter strip. Primary = account `defaultTags` ∪ rule tags with
+   *  `alwaysOn=true`. Anything else lives behind the "More tags" menu. */
+  primaryTags?: string[];
+  /** Map from canonical tag → display label. Only present when at least
+   *  one tag has a custom-cased displayTag (e.g. {pec: "PEC"}). Renderers
+   *  fall back to capitalising the canonical tag when absent. */
+  tagDisplayNames?: Record<string, string>;
   createdAt: string;
 }
 
@@ -67,7 +75,12 @@ export interface ProfileResponse {
  * lib/tagging.ts for typing convenience on the frontend.
  */
 export interface TagRule {
+  /** Canonical-lowercase tag (used everywhere for matching/filtering). */
   tag: string;
+  /** User's original-cased label (e.g. "PEC"). Optional — server fills
+   *  in from `tag` when absent. Pure presentation, never used in match
+   *  logic. */
+  displayTag?: string;
   hashtags?: string[];
   mentions?: string[];
   keywords?: string[];

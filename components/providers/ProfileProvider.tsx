@@ -42,6 +42,18 @@ interface ProfileContextValue {
    */
   defaultTagFilter: string | null;
   /**
+   * Subset of `availableTags` that should always render as visible
+   * chips in the tag-filter strip — account defaultTags plus any rule
+   * marked alwaysOn. Other tags are hidden behind a "More tags" menu.
+   */
+  primaryTags: string[];
+  /**
+   * Canonical tag → display label (e.g. {pec: "PEC"}). Only contains
+   * entries where the display form differs from the canonical lowercase.
+   * Renderers fall back to capitalising the canonical tag when absent.
+   */
+  tagDisplayNames: Record<string, string>;
+  /**
    * True once the initial /api/profiles fetch has completed.
    */
   profilesLoaded: boolean;
@@ -58,6 +70,8 @@ export const ProfileContext = createContext<ProfileContextValue>({
   availableTags: [],
   hasUntaggedPostsInScope: true,
   defaultTagFilter: null,
+  primaryTags: [],
+  tagDisplayNames: {},
   profilesLoaded: false,
 });
 
@@ -90,6 +104,8 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
   const [orgTags, setOrgTags] = useState<string[]>([]);
   const [orgHasUntaggedPosts, setOrgHasUntaggedPosts] = useState<boolean>(true);
   const [orgDefaultTagFilter, setOrgDefaultTagFilter] = useState<string | null>(null);
+  const [orgPrimaryTags, setOrgPrimaryTags] = useState<string[]>([]);
+  const [orgTagDisplayNames, setOrgTagDisplayNames] = useState<Record<string, string>>({});
   const [profilesLoaded, setProfilesLoaded] = useState<boolean>(false);
   const [selectedProfileIds, setSelectedProfileIdsState] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -147,6 +163,12 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         setOrgTags(Array.isArray(json.orgTags) ? json.orgTags : []);
         setOrgHasUntaggedPosts(typeof json.orgHasUntaggedPosts === "boolean" ? json.orgHasUntaggedPosts : true);
         setOrgDefaultTagFilter(typeof json.orgDefaultTagFilter === "string" ? json.orgDefaultTagFilter : null);
+        setOrgPrimaryTags(Array.isArray(json.orgPrimaryTags) ? json.orgPrimaryTags : []);
+        setOrgTagDisplayNames(
+          json.orgTagDisplayNames && typeof json.orgTagDisplayNames === "object"
+            ? (json.orgTagDisplayNames as Record<string, string>)
+            : {}
+        );
         setProfilesLoaded(true);
       }
     } catch {
@@ -219,6 +241,8 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         tags: orgTags,
         hasUntagged: orgHasUntaggedPosts,
         defaultTag: orgDefaultTagFilter,
+        primaryTags: orgPrimaryTags,
+        tagDisplayNames: orgTagDisplayNames,
       };
     }
     const selected = profiles.filter((p) => selectedProfileIds.includes(p.id));
@@ -231,8 +255,30 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
     const defaultTag = defaultTagCandidates.length > 0
       ? [...defaultTagCandidates].sort()[0]
       : null;
-    return { platforms, tags, hasUntagged, defaultTag };
-  }, [selectedProfileIds, profiles, orgPlatforms, orgTags, orgHasUntaggedPosts, orgDefaultTagFilter]);
+    const primaryTags = Array.from(
+      new Set(selected.flatMap((p) => p.primaryTags ?? []))
+    ).sort();
+    // Merge display-name maps across selected profiles. First write
+    // wins on collisions — they shouldn't differ across accounts for
+    // the same canonical tag, but if they do, just pick one.
+    const tagDisplayNames: Record<string, string> = {};
+    for (const p of selected) {
+      const m = p.tagDisplayNames ?? {};
+      for (const k of Object.keys(m)) {
+        if (!tagDisplayNames[k]) tagDisplayNames[k] = m[k];
+      }
+    }
+    return { platforms, tags, hasUntagged, defaultTag, primaryTags, tagDisplayNames };
+  }, [
+    selectedProfileIds,
+    profiles,
+    orgPlatforms,
+    orgTags,
+    orgHasUntaggedPosts,
+    orgDefaultTagFilter,
+    orgPrimaryTags,
+    orgTagDisplayNames,
+  ]);
 
   return (
     <ProfileContext.Provider
@@ -247,6 +293,8 @@ export default function ProfileProvider({ children }: { children: React.ReactNod
         availableTags: aggregated.tags,
         hasUntaggedPostsInScope: aggregated.hasUntagged,
         defaultTagFilter: aggregated.defaultTag,
+        primaryTags: aggregated.primaryTags,
+        tagDisplayNames: aggregated.tagDisplayNames,
         profilesLoaded,
       }}
     >
