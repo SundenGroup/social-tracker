@@ -208,6 +208,16 @@ export function effectiveTags(autoTags: string[], manualTags: string[] | null | 
 export const UNTAGGED_FILTER = "__untagged";
 
 /**
+ * Sentinel for "show posts whose only tags are primary (default +
+ * alwaysOn rule) tags — i.e. no extra/sub-category tags." The client
+ * translates this into a concrete `notTag` exclusion list (the
+ * non-primary tags it sees in the current scope) before hitting the
+ * API, so the server only ever sees real values in `notTag`. Lives
+ * in shared code so the constant is the same on both sides.
+ */
+export const NO_EXTRAS_FILTER = "__no_extras";
+
+/**
  * Build a Prisma where-fragment for filtering posts by tag(s).
  *
  * Accepts a single tag (legacy callers) or an array (multi-select
@@ -224,13 +234,13 @@ export const UNTAGGED_FILTER = "__untagged";
  * way (see the canonical-lowercase invariant in this file's header).
  */
 export function tagFilterWhere(
-  tag: string | string[] | null | undefined
+  tag: string | string[] | null | undefined,
+  notTag?: string | string[] | null
 ): Prisma.PostWhereInput {
-  if (!tag) return {};
-  const raw = Array.isArray(tag) ? tag : [tag];
+  const rawIn = Array.isArray(tag) ? tag : tag ? [tag] : [];
   let wantUntagged = false;
   const canonical: string[] = [];
-  for (const t of raw) {
+  for (const t of rawIn) {
     const value = String(t ?? "").trim();
     if (value === UNTAGGED_FILTER) {
       wantUntagged = true;
@@ -239,24 +249,49 @@ export function tagFilterWhere(
     const c = value.toLowerCase();
     if (c) canonical.push(c);
   }
-  if (!wantUntagged) {
-    if (canonical.length === 0) return {};
-    if (canonical.length === 1) return { tags: { has: canonical[0] } };
-    return { tags: { hasSome: canonical } };
+
+  // Exclusion list — posts whose `tags` array contains ANY of these
+  // are filtered out. Drives the "No extras" / default-tags-only UX:
+  // client computes (availableTags − primaryTags) for the current
+  // scope and passes the result here. Same canonicalisation rules.
+  const rawNot = Array.isArray(notTag) ? notTag : notTag ? [notTag] : [];
+  const canonicalNot: string[] = [];
+  for (const t of rawNot) {
+    const c = String(t ?? "").trim().toLowerCase();
+    if (c) canonicalNot.push(c);
   }
-  // wantUntagged === true
-  const untaggedFragment: Prisma.PostWhereInput = { tags: { equals: [] } };
-  if (canonical.length === 0) return untaggedFragment;
-  const taggedFragment: Prisma.PostWhereInput =
-    canonical.length === 1
-      ? { tags: { has: canonical[0] } }
-      : { tags: { hasSome: canonical } };
-  // Wrap the OR in a single-element AND so that callers which spread
-  // this fragment into a wider where clause don't end up with a
-  // top-level OR collision (e.g. period-comparison's short-form
-  // content filter already produces its own OR). AND coexists fine
-  // with any existing OR on the host where.
-  return { AND: [{ OR: [untaggedFragment, taggedFragment] }] };
+  const notFragment: Prisma.PostWhereInput | null =
+    canonicalNot.length > 0 ? { NOT: { tags: { hasSome: canonicalNot } } } : null;
+
+  // Build the positive (include) fragment.
+  let positive: Prisma.PostWhereInput;
+  if (!wantUntagged) {
+    if (canonical.length === 0) positive = {};
+    else if (canonical.length === 1) positive = { tags: { has: canonical[0] } };
+    else positive = { tags: { hasSome: canonical } };
+  } else {
+    const untaggedFragment: Prisma.PostWhereInput = { tags: { equals: [] } };
+    if (canonical.length === 0) {
+      positive = untaggedFragment;
+    } else {
+      const taggedFragment: Prisma.PostWhereInput =
+        canonical.length === 1
+          ? { tags: { has: canonical[0] } }
+          : { tags: { hasSome: canonical } };
+      // Wrap OR in a single-element AND so callers can spread this
+      // fragment without colliding with their own top-level OR
+      // (period-comparison's short-form content filter has one).
+      positive = { AND: [{ OR: [untaggedFragment, taggedFragment] }] };
+    }
+  }
+
+  // Combine include + exclude.
+  if (!notFragment) return positive;
+  if (Object.keys(positive).length === 0) return notFragment;
+  // Both sides exist — AND them together. Spread-safe since neither
+  // fragment puts a top-level key the caller is using for other
+  // purposes (NOT is exclusively ours, AND likewise).
+  return { AND: [positive, notFragment] };
 }
 
 /**

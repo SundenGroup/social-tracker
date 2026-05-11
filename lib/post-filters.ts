@@ -32,6 +32,10 @@ export interface PostFilterInput {
   /** Selected tags to OR-filter against. Accepts a single legacy
    *  string or an array. `tagFilterWhere` handles canonicalisation. */
   tag?: string | string[] | null;
+  /** Exclusion list — posts carrying any of these are filtered out.
+   *  Drives the "No extras" / default-only UX (client sends the
+   *  non-primary tags in scope). */
+  notTag?: string | string[] | null;
   hideSponsored?: boolean;
 }
 
@@ -80,7 +84,7 @@ export function buildPostFilters(input: PostFilterInput): Prisma.PostWhereInput 
     fragments.push({ isSponsored: false });
   }
 
-  const tagFragment = tagFilterWhere(input.tag);
+  const tagFragment = tagFilterWhere(input.tag, input.notTag);
   if (Object.keys(tagFragment).length > 0) {
     fragments.push(tagFragment);
   }

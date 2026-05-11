@@ -17,8 +17,10 @@ export const GET = apiHandler(
     const endDate = url.searchParams.get("endDate");
     const tagParam = url.searchParams.get("tag");
     const tag = tagParam ? tagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const notTagParam = url.searchParams.get("notTag");
+    const notTag = notTagParam ? notTagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
-    const tagWhere = tagFilterWhere(tag);
+    const tagWhere = tagFilterWhere(tag, notTag);
 
     const end = endDate ? new Date(endDate) : new Date();
     end.setHours(23, 59, 59, 999);

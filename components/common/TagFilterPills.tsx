@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { UNTAGGED_FILTER } from "@/lib/tagging";
+import { UNTAGGED_FILTER, NO_EXTRAS_FILTER } from "@/lib/tagging";
 import { Chevron } from "@/components/icons/PlatformGlyph";
 
 interface TagFilterPillsProps {
@@ -118,16 +118,24 @@ export default function TagFilterPills({
   const showUntaggedOption = hasUntaggedPostsInScope;
   const untaggedSelected = tags.includes(UNTAGGED_FILTER);
 
-  // Surface any selected secondary tags (and the "No tags" sentinel)
-  // as chips outside the dropdown so the user can see what's filtered
-  // without opening the menu.
+  // "Only default tags" / no-extras option. Available whenever there's
+  // at least one non-primary tag in scope — otherwise every post
+  // already qualifies, so the filter is a no-op.
+  const showNoExtrasOption = secondary.length > 0;
+  const noExtrasSelected = tags.includes(NO_EXTRAS_FILTER);
+
+  // Surface any selected secondary tags (and the sentinels) as chips
+  // outside the dropdown so the user can see what's filtered without
+  // opening the menu.
   const surfacedSecondary = tags.filter((t) => {
-    if (t === UNTAGGED_FILTER) return false; // rendered separately as "No tags" chip
+    if (t === UNTAGGED_FILTER || t === NO_EXTRAS_FILTER) return false;
     return !primarySet.has(t) && availableTags.includes(t);
   });
 
   const secondarySelectedCount =
-    surfacedSecondary.length + (untaggedSelected ? 1 : 0);
+    surfacedSecondary.length +
+    (untaggedSelected ? 1 : 0) +
+    (noExtrasSelected ? 1 : 0);
 
   return (
     <div
@@ -157,6 +165,14 @@ export default function TagFilterPills({
           onClick={() => toggle(UNTAGGED_FILTER)}
         />
       )}
+      {noExtrasSelected && (
+        <PillButton
+          label="Only defaults"
+          customCased={true}
+          active={true}
+          onClick={() => toggle(NO_EXTRAS_FILTER)}
+        />
+      )}
       {surfacedSecondary.map((t) => (
         <PillButton
           key={t}
@@ -166,7 +182,7 @@ export default function TagFilterPills({
           onClick={() => toggle(t)}
         />
       ))}
-      {(secondary.length > 0 || showUntaggedOption) && (
+      {(secondary.length > 0 || showUntaggedOption || showNoExtrasOption) && (
         <div style={{ position: "relative" }}>
           <button
             type="button"
@@ -227,43 +243,76 @@ export default function TagFilterPills({
               }}
             >
               {showUntaggedOption && (
-                <>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={untaggedSelected}
-                    onClick={() => toggle(UNTAGGED_FILTER)}
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={untaggedSelected}
+                  onClick={() => toggle(UNTAGGED_FILTER)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "7px 10px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: untaggedSelected ? "var(--bg-sunken)" : "transparent",
+                    color: "var(--fg)",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Checkbox checked={untaggedSelected} />
+                  <span
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      width: "100%",
-                      textAlign: "left",
-                      padding: "7px 10px",
-                      borderRadius: 6,
-                      border: "none",
-                      background: untaggedSelected ? "var(--bg-sunken)" : "transparent",
-                      color: "var(--fg)",
-                      fontSize: 13,
-                      cursor: "pointer",
+                      flex: 1,
+                      fontWeight: 500,
+                      fontStyle: "italic",
+                      color: "var(--fg-muted)",
                     }}
                   >
-                    <Checkbox checked={untaggedSelected} />
-                    <span
-                      style={{
-                        flex: 1,
-                        fontWeight: 500,
-                        fontStyle: "italic",
-                        color: "var(--fg-muted)",
-                      }}
-                    >
-                      No tags
-                    </span>
-                  </button>
-                  {secondary.length > 0 && (
-                    <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
-                  )}
-                </>
+                    No tags
+                  </span>
+                </button>
+              )}
+              {showNoExtrasOption && (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={noExtrasSelected}
+                  onClick={() => toggle(NO_EXTRAS_FILTER)}
+                  title="Posts that only carry default tags — nothing further categorised."
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "7px 10px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: noExtrasSelected ? "var(--bg-sunken)" : "transparent",
+                    color: "var(--fg)",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Checkbox checked={noExtrasSelected} />
+                  <span
+                    style={{
+                      flex: 1,
+                      fontWeight: 500,
+                      fontStyle: "italic",
+                      color: "var(--fg-muted)",
+                    }}
+                  >
+                    Only defaults
+                  </span>
+                </button>
+              )}
+              {(showUntaggedOption || showNoExtrasOption) && secondary.length > 0 && (
+                <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
               )}
               {secondary.map((t) => {
                 const checked = selectedSet.has(t);

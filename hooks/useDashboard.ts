@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useProfiles } from "@/hooks/useProfiles";
+import { NO_EXTRAS_FILTER } from "@/lib/tagging";
 import type { PostPerformance } from "@/types";
 
 interface PlatformSummary {
@@ -61,11 +62,22 @@ export function useDashboard(
   contentType?: string,
   tags?: string[] | null
 ) {
-  const { selectedProfileIds, initialized } = useProfiles();
+  const { selectedProfileIds, initialized, availableTags, primaryTags } = useProfiles();
   // Stable string key — React state hands us a new array reference even
   // when contents are identical, so deps need the joined form.
   const profileIdsParam = selectedProfileIds.join(",");
-  const tagsParam = (tags ?? []).join(",");
+  // Translate the NO_EXTRAS_FILTER sentinel into a concrete `notTag`
+  // exclusion list (availableTags − primaryTags) so the server stays
+  // sentinel-unaware. Real tags pass through as-is.
+  const tagsList = tags ?? [];
+  const wantsNoExtras = tagsList.includes(NO_EXTRAS_FILTER);
+  const realTags = tagsList.filter((t) => t !== NO_EXTRAS_FILTER);
+  const primarySet = new Set(primaryTags);
+  const notTagsList = wantsNoExtras
+    ? availableTags.filter((t) => !primarySet.has(t))
+    : [];
+  const tagsParam = realTags.join(",");
+  const notTagParam = notTagsList.join(",");
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +97,9 @@ export function useDashboard(
       if (tagsParam) {
         params.set("tag", tagsParam);
       }
+      if (notTagParam) {
+        params.set("notTag", notTagParam);
+      }
       const res = await fetch(`/api/metrics/dashboard?${params}`, { signal });
       const json = await res.json();
       if (!res.ok) {
@@ -98,7 +113,7 @@ export function useDashboard(
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, contentType, tagsParam, profileIdsParam, initialized]);
+  }, [startDate, endDate, contentType, tagsParam, notTagParam, profileIdsParam, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

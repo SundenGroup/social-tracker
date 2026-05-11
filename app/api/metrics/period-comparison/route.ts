@@ -190,6 +190,8 @@ export const GET = apiHandler(
     const contentType = url.searchParams.get("contentType");
     const tagParam = url.searchParams.get("tag");
     const tag = tagParam ? tagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const notTagParam = url.searchParams.get("notTag");
+    const notTag = notTagParam ? notTagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const startDateA = url.searchParams.get("startDateA");
     const endDateA = url.searchParams.get("endDateA");
     const startDateB = url.searchParams.get("startDateB");
@@ -220,7 +222,7 @@ export const GET = apiHandler(
     // already accepts. The function spreads it at the top-level of where{}
     // alongside socialAccountId / publishedAt / isDeleted, so an OR-shaped
     // contentType (short-form) ANDs with the tag filter as expected.
-    const extraFilter = { ...buildPostTypeFilter(contentType), ...tagFilterWhere(tag) };
+    const extraFilter = { ...buildPostTypeFilter(contentType), ...tagFilterWhere(tag, notTag) };
 
     // Aggregate both periods in parallel
     const [periodA, periodB] = await Promise.all([

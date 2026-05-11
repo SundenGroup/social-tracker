@@ -23,6 +23,7 @@
  * timeline endpoint. The script paces itself accordingly and retries on 429.
  */
 import { PrismaClient, type PostType, type SocialAccount } from "@prisma/client";
+import { recomputeAccountTags } from "../lib/tagging";
 
 const prisma = new PrismaClient();
 
@@ -337,10 +338,27 @@ async function main() {
     data: { syncStatus: "success", lastSyncedAt: new Date() },
   });
 
+  // Re-run the auto-tag engine over the account's posts now that
+  // backfill is finished. The per-post upserts above write `tags`
+  // straight to Prisma (no /api/sync/ingest call), so otherwise the
+  // freshly-inserted historical posts would have empty `tags`
+  // arrays and miss any defaultTags / tagRules the account has
+  // configured. Cheap to run — the helper short-circuits unchanged
+  // rows.
+  let retagged = 0;
+  try {
+    retagged = await recomputeAccountTags(account.id);
+  } catch (err) {
+    console.error(
+      `[Archive] recomputeAccountTags failed for @${username}: ${err instanceof Error ? err.message : err}`
+    );
+  }
+
   console.log(`\nDone.`);
   console.log(`  Fetched:         ${fetched} tweets`);
   console.log(`  Posts upserted:  ${postsUpserted}`);
   console.log(`  Metrics upserted:${metricsUpserted}`);
+  console.log(`  Posts retagged:  ${retagged}`);
   if (earliest.id) console.log(`  Earliest:        ${earliest.date.toISOString().split("T")[0]} (id ${earliest.id})`);
   if (latest.id) console.log(`  Latest:          ${latest.date.toISOString().split("T")[0]} (id ${latest.id})`);
   console.log(`  Followers:       ${followers.toLocaleString()}`);

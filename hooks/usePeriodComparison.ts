@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useProfiles } from "@/hooks/useProfiles";
+import { NO_EXTRAS_FILTER } from "@/lib/tagging";
 
 interface PeriodPlatformRow {
   platform: string;
@@ -49,9 +50,17 @@ export function usePeriodComparison(
   contentType?: string,
   tags?: string[] | null
 ) {
-  const { selectedProfileIds, initialized } = useProfiles();
+  const { selectedProfileIds, initialized, availableTags, primaryTags } = useProfiles();
   const profileIdsParam = selectedProfileIds.join(",");
-  const tagsParam = (tags ?? []).join(",");
+  const tagsList = tags ?? [];
+  const wantsNoExtras = tagsList.includes(NO_EXTRAS_FILTER);
+  const realTags = tagsList.filter((t) => t !== NO_EXTRAS_FILTER);
+  const primarySet = new Set(primaryTags);
+  const notTagsList = wantsNoExtras
+    ? availableTags.filter((t) => !primarySet.has(t))
+    : [];
+  const tagsParam = realTags.join(",");
+  const notTagParam = notTagsList.join(",");
   const [data, setData] = useState<PeriodComparisonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +80,9 @@ export function usePeriodComparison(
       if (tagsParam) {
         params.set("tag", tagsParam);
       }
+      if (notTagParam) {
+        params.set("notTag", notTagParam);
+      }
       const res = await fetch(`/api/metrics/period-comparison?${params}`, { signal });
       const json = await res.json();
       if (!res.ok) {
@@ -84,7 +96,7 @@ export function usePeriodComparison(
     } finally {
       setIsLoading(false);
     }
-  }, [startDateA, endDateA, startDateB, endDateB, contentType, tagsParam, profileIdsParam, initialized]);
+  }, [startDateA, endDateA, startDateB, endDateB, contentType, tagsParam, notTagParam, profileIdsParam, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

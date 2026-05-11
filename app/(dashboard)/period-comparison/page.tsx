@@ -8,7 +8,7 @@ import { DeltaPill } from "@/components/ui/DeltaPill";
 import { usePeriodComparison } from "@/hooks/usePeriodComparison";
 import { useProfiles } from "@/hooks/useProfiles";
 import TagFilterPills from "@/components/common/TagFilterPills";
-import { UNTAGGED_FILTER } from "@/lib/tagging";
+import { UNTAGGED_FILTER, NO_EXTRAS_FILTER } from "@/lib/tagging";
 import { fmtK, fmtInt } from "@/lib/format";
 import { PlatformGlyph, PLATFORM_COLOR, PLATFORM_LABEL } from "@/components/icons/PlatformGlyph";
 
@@ -66,7 +66,9 @@ export default function PeriodComparisonPage() {
   // Drop tags that disappear from scope. UNTAGGED_FILTER stays.
   useEffect(() => {
     if (tags.length === 0) return;
-    const stillValid = tags.filter((t) => t === UNTAGGED_FILTER || availableTags.includes(t));
+    const stillValid = tags.filter(
+      (t) => t === UNTAGGED_FILTER || t === NO_EXTRAS_FILTER || availableTags.includes(t)
+    );
     if (stillValid.length !== tags.length) setTags(stillValid);
   }, [tags, availableTags]);
 

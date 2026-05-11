@@ -18,13 +18,14 @@ const ALL_COLUMNS = [
 export const POST = apiHandler(
   async (req, session) => {
     const body = await req.json();
-    const { platform, startDate, endDate, metrics, profileId: requestedProfileId, tag } = body as {
+    const { platform, startDate, endDate, metrics, profileId: requestedProfileId, tag, notTag } = body as {
       platform?: string;
       startDate: string;
       endDate: string;
       metrics?: string[];
       profileId?: string | string[] | null;
       tag?: string | string[] | null;
+      notTag?: string | string[] | null;
     };
 
     if (!startDate || !endDate) {
@@ -64,7 +65,7 @@ export const POST = apiHandler(
         socialAccountId: { in: accountIds },
         publishedAt: { gte: start, lte: end },
         isDeleted: false,
-        ...tagFilterWhere(tag),
+        ...tagFilterWhere(tag, notTag),
       },
       orderBy: { publishedAt: "desc" },
     });

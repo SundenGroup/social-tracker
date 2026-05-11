@@ -11,7 +11,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { useProfiles } from "@/hooks/useProfiles";
 import { PlatformGlyph, PLATFORM_COLOR } from "@/components/icons/PlatformGlyph";
 import TagFilterPills from "@/components/common/TagFilterPills";
-import { UNTAGGED_FILTER } from "@/lib/tagging";
+import { UNTAGGED_FILTER, NO_EXTRAS_FILTER } from "@/lib/tagging";
 
 type Metric = "views" | "engagements" | "rate";
 
@@ -49,7 +49,9 @@ export default function TopPostsPage() {
   // Drop tags that disappear from scope. UNTAGGED_FILTER stays.
   useEffect(() => {
     if (tags.length === 0) return;
-    const stillValid = tags.filter((t) => t === UNTAGGED_FILTER || availableTags.includes(t));
+    const stillValid = tags.filter(
+      (t) => t === UNTAGGED_FILTER || t === NO_EXTRAS_FILTER || availableTags.includes(t)
+    );
     if (stillValid.length !== tags.length) setTags(stillValid);
   }, [tags, availableTags]);
 

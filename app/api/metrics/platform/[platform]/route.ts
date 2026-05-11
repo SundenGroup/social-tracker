@@ -72,8 +72,12 @@ export const GET = apiHandler(
     const endDate = url.searchParams.get("endDate");
     const contentType = url.searchParams.get("contentType"); // e.g. "short", "video", "image"
     // Multi-select tag filter: `?tag=foo,bar` → OR.
+    // `?notTag=foo,bar` excludes posts carrying any of those tags
+    // (drives the "No extras" / default-only filter).
     const tagParam = url.searchParams.get("tag");
     const tag = tagParam ? tagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const notTagParam = url.searchParams.get("notTag");
+    const notTag = notTagParam ? notTagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
 
     const end = endDate ? new Date(endDate) : new Date();
@@ -119,7 +123,7 @@ export const GET = apiHandler(
     // Translate the UI content-type ("short-form", etc.) into a real Prisma
     // filter. See buildContentTypeWhere above.
     const typeWhere = buildContentTypeWhere(contentType, platform as Platform);
-    const tagWhere = tagFilterWhere(tag);
+    const tagWhere = tagFilterWhere(tag, notTag);
 
     // Build post filter
     const postWhere: Record<string, unknown> = {

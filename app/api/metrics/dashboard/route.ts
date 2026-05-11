@@ -14,9 +14,12 @@ export const GET = apiHandler(
     const endDate = url.searchParams.get("endDate");
     const contentType = url.searchParams.get("contentType");
     // Tag filter supports multi-select — `?tag=foo,bar` is OR'd. A
-    // single value still works (legacy callers).
+    // single value still works (legacy callers). `?notTag=...` is the
+    // exclusion list for the "No extras" / default-only UX.
     const tagParam = url.searchParams.get("tag");
     const tag = tagParam ? tagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const notTagParam = url.searchParams.get("notTag");
+    const notTag = notTagParam ? notTagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
 
     const orgId = session!.user.organizationId;
@@ -57,7 +60,7 @@ export const GET = apiHandler(
     // spread-fragment. Replaces the previous separate postTypeFilter +
     // sponsoredFilter pair so adding new filters (the tag filter is
     // the latest) requires touching only lib/post-filters.ts.
-    const postFilters = buildPostFilters({ contentType, tag, hideSponsored });
+    const postFilters = buildPostFilters({ contentType, tag, notTag, hideSponsored });
 
     // Previous period dates (needed for parallel query)
     const rangeDuration = end.getTime() - start.getTime();
