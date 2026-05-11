@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { UNTAGGED_FILTER } from "@/lib/tagging";
 
 interface TagFilterPillsProps {
   /** All tags available in the current scope (from useProfiles()). */
@@ -110,11 +111,22 @@ export default function TagFilterPills({
   const primary = availableTags.filter((t) => primarySet.has(t));
   const secondary = availableTags.filter((t) => !primarySet.has(t));
 
-  // Surface any selected secondary tags as chips outside the dropdown
-  // so the user can see what's filtered without opening the menu.
-  const surfacedSecondary = tags.filter((t) => !primarySet.has(t) && availableTags.includes(t));
+  // "No tags" sits at the top of the dropdown alongside the secondary
+  // tags. We only show it when the scope has untagged posts to match;
+  // otherwise the option would yield empty results.
+  const showUntaggedOption = hasUntaggedPostsInScope;
+  const untaggedSelected = tags.includes(UNTAGGED_FILTER);
 
-  const secondarySelectedCount = surfacedSecondary.length;
+  // Surface any selected secondary tags (and the "No tags" sentinel)
+  // as chips outside the dropdown so the user can see what's filtered
+  // without opening the menu.
+  const surfacedSecondary = tags.filter((t) => {
+    if (t === UNTAGGED_FILTER) return false; // rendered separately as "No tags" chip
+    return !primarySet.has(t) && availableTags.includes(t);
+  });
+
+  const secondarySelectedCount =
+    surfacedSecondary.length + (untaggedSelected ? 1 : 0);
 
   return (
     <div
@@ -136,6 +148,14 @@ export default function TagFilterPills({
           onClick={() => toggle(t)}
         />
       ))}
+      {untaggedSelected && (
+        <PillButton
+          label="No tags"
+          customCased={true}
+          active={true}
+          onClick={() => toggle(UNTAGGED_FILTER)}
+        />
+      )}
       {surfacedSecondary.map((t) => (
         <PillButton
           key={t}
@@ -145,7 +165,7 @@ export default function TagFilterPills({
           onClick={() => toggle(t)}
         />
       ))}
-      {secondary.length > 0 && (
+      {(secondary.length > 0 || showUntaggedOption) && (
         <div style={{ position: "relative" }}>
           <button
             type="button"
@@ -201,6 +221,45 @@ export default function TagFilterPills({
                 boxShadow: "0 8px 28px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.06)",
               }}
             >
+              {showUntaggedOption && (
+                <>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={untaggedSelected}
+                    onClick={() => toggle(UNTAGGED_FILTER)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "7px 10px",
+                      borderRadius: 6,
+                      border: "none",
+                      background: untaggedSelected ? "var(--bg-sunken)" : "transparent",
+                      color: "var(--fg)",
+                      fontSize: 13,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Checkbox checked={untaggedSelected} />
+                    <span
+                      style={{
+                        flex: 1,
+                        fontWeight: 500,
+                        fontStyle: "italic",
+                        color: "var(--fg-muted)",
+                      }}
+                    >
+                      No tags
+                    </span>
+                  </button>
+                  {secondary.length > 0 && (
+                    <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
+                  )}
+                </>
+              )}
               {secondary.map((t) => {
                 const checked = selectedSet.has(t);
                 return (

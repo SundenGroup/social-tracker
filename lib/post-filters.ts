@@ -46,40 +46,46 @@ export interface PostFilterInput {
  * date range, isDeleted) AND with the OR group as expected.
  */
 export function buildPostFilters(input: PostFilterInput): Prisma.PostWhereInput {
-  const out: Prisma.PostWhereInput = {};
+  // Collect independent fragments and AND them together. We can't just
+  // merge keys into a single object because both contentType=short-form
+  // and tagFilterWhere (when "no tags" is in the selection) can each
+  // produce a top-level OR clause — and Prisma doesn't merge two ORs
+  // on the same object (the second wins). AND-of-ORs is the safe
+  // composition.
+  const fragments: Prisma.PostWhereInput[] = [];
 
-  // Content type
   const ct = input.contentType ?? null;
   if (ct === "video") {
-    out.postType = { in: ["video", "short"] };
+    fragments.push({ postType: { in: ["video", "short"] } });
   } else if (ct === "short-form") {
-    out.OR = [
-      { postType: "short" },
-      { platform: "tiktok", postType: "video" },
-      { platform: "instagram", postType: "video" },
-    ];
+    fragments.push({
+      OR: [
+        { postType: "short" },
+        { platform: "tiktok", postType: "video" },
+        { platform: "instagram", postType: "video" },
+      ],
+    });
   } else if (ct === "long-form") {
-    out.platform = "youtube";
-    out.postType = "video";
+    fragments.push({ platform: "youtube", postType: "video" });
   } else if (ct === "image") {
     // "image" is a top-level category that rolls up single-image posts
     // and TikTok slideshows. Instagram carousels stay in their own
     // filter ("carousel") so dashboards can break them out separately.
-    out.postType = { in: ["image", "slideshow"] };
+    fragments.push({ postType: { in: ["image", "slideshow"] } });
   } else if (ct && ct !== "all") {
-    out.postType = ct as Prisma.PostWhereInput["postType"];
+    fragments.push({ postType: ct as Prisma.PostWhereInput["postType"] });
   }
 
-  // Sponsored
   if (input.hideSponsored) {
-    out.isSponsored = false;
+    fragments.push({ isSponsored: false });
   }
 
-  // Tag
   const tagFragment = tagFilterWhere(input.tag);
-  if (tagFragment.tags) {
-    out.tags = tagFragment.tags;
+  if (Object.keys(tagFragment).length > 0) {
+    fragments.push(tagFragment);
   }
 
-  return out;
+  if (fragments.length === 0) return {};
+  if (fragments.length === 1) return fragments[0];
+  return { AND: fragments };
 }

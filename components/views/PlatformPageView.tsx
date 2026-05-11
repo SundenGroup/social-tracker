@@ -8,6 +8,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { usePlatformDashboard } from "@/hooks/usePlatformDashboard";
 import { useProfiles } from "@/hooks/useProfiles";
 import TagFilterPills from "@/components/common/TagFilterPills";
+import { UNTAGGED_FILTER } from "@/lib/tagging";
 import { Block } from "@/components/ui/Block";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import ContentPerformanceTable from "@/components/tables/ContentPerformanceTable";
@@ -97,10 +98,11 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
   );
 
   // Drop tags that disappear from the available list (e.g. after the
-  // profile context narrows or the tag is removed upstream).
+  // profile context narrows or the tag is removed upstream). The
+  // UNTAGGED_FILTER sentinel stays — it's always valid.
   useEffect(() => {
     if (tags.length === 0) return;
-    const stillValid = tags.filter((t) => availableTags.includes(t));
+    const stillValid = tags.filter((t) => t === UNTAGGED_FILTER || availableTags.includes(t));
     if (stillValid.length !== tags.length) setTags(stillValid);
   }, [tags, availableTags]);
 

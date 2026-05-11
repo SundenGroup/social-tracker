@@ -11,6 +11,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { useProfiles } from "@/hooks/useProfiles";
 import { PlatformGlyph, PLATFORM_COLOR } from "@/components/icons/PlatformGlyph";
 import TagFilterPills from "@/components/common/TagFilterPills";
+import { UNTAGGED_FILTER } from "@/lib/tagging";
 
 type Metric = "views" | "engagements" | "rate";
 
@@ -45,10 +46,10 @@ export default function TopPostsPage() {
   const [metric, setMetric] = useState<Metric>("views");
   const [platform, setPlatform] = useState("all");
 
-  // Drop tags that disappear from scope.
+  // Drop tags that disappear from scope. UNTAGGED_FILTER stays.
   useEffect(() => {
     if (tags.length === 0) return;
-    const stillValid = tags.filter((t) => availableTags.includes(t));
+    const stillValid = tags.filter((t) => t === UNTAGGED_FILTER || availableTags.includes(t));
     if (stillValid.length !== tags.length) setTags(stillValid);
   }, [tags, availableTags]);
 

@@ -200,6 +200,14 @@ export function effectiveTags(autoTags: string[], manualTags: string[] | null | 
 // ───────────────────────── filter helper ─────────────────────────
 
 /**
+ * Sentinel value the tag-filter UI puts in the selected-tags array to
+ * mean "match posts with no tags at all". Distinct from an empty
+ * selection (which means "no tag filter"). The string is kept
+ * deliberately ugly so it can't collide with a real user-typed tag.
+ */
+export const UNTAGGED_FILTER = "__untagged";
+
+/**
  * Build a Prisma where-fragment for filtering posts by tag(s).
  *
  * Accepts a single tag (legacy callers) or an array (multi-select
@@ -207,6 +215,10 @@ export function effectiveTags(autoTags: string[], manualTags: string[] | null | 
  * the requested tags is on it (`hasSome`). Returns `{}` when the input
  * is null / empty / all-blank so the caller can spread it
  * unconditionally into a wider where clause.
+ *
+ * `UNTAGGED_FILTER` is special: when present, posts with an empty
+ * `tags` array also match. Combines OR-wise with any real tags in the
+ * same array.
  *
  * All inputs are canonicalised to lowercase since tags are stored that
  * way (see the canonical-lowercase invariant in this file's header).
@@ -216,14 +228,35 @@ export function tagFilterWhere(
 ): Prisma.PostWhereInput {
   if (!tag) return {};
   const raw = Array.isArray(tag) ? tag : [tag];
+  let wantUntagged = false;
   const canonical: string[] = [];
   for (const t of raw) {
-    const c = String(t ?? "").trim().toLowerCase();
+    const value = String(t ?? "").trim();
+    if (value === UNTAGGED_FILTER) {
+      wantUntagged = true;
+      continue;
+    }
+    const c = value.toLowerCase();
     if (c) canonical.push(c);
   }
-  if (canonical.length === 0) return {};
-  if (canonical.length === 1) return { tags: { has: canonical[0] } };
-  return { tags: { hasSome: canonical } };
+  if (!wantUntagged) {
+    if (canonical.length === 0) return {};
+    if (canonical.length === 1) return { tags: { has: canonical[0] } };
+    return { tags: { hasSome: canonical } };
+  }
+  // wantUntagged === true
+  const untaggedFragment: Prisma.PostWhereInput = { tags: { equals: [] } };
+  if (canonical.length === 0) return untaggedFragment;
+  const taggedFragment: Prisma.PostWhereInput =
+    canonical.length === 1
+      ? { tags: { has: canonical[0] } }
+      : { tags: { hasSome: canonical } };
+  // Wrap the OR in a single-element AND so that callers which spread
+  // this fragment into a wider where clause don't end up with a
+  // top-level OR collision (e.g. period-comparison's short-form
+  // content filter already produces its own OR). AND coexists fine
+  // with any existing OR on the host where.
+  return { AND: [{ OR: [untaggedFragment, taggedFragment] }] };
 }
 
 /**
