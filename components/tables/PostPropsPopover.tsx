@@ -64,14 +64,17 @@ export default function PostPropsPopover({
       setTagInput("");
       const rect = triggerRef.current?.getBoundingClientRect();
       if (rect) {
-        // Approximate popover height; we don't have a ref to measure
-        // before render. The actual content can be smaller (no auto
-        // tags, no suggestions) but assuming the maximum keeps the
-        // flip stable across renders.
-        const APPROX_POPOVER_HEIGHT = 360;
+        // Approximate popover height — content can include the
+        // sponsored toggle, auto-tag chips, manual-tag chips, an
+        // input, suggestion buttons, and the action row. Worst case
+        // is roughly 460px once a few rows wrap.
+        const APPROX_POPOVER_HEIGHT = 460;
         const spaceBelow = window.innerHeight - rect.bottom;
         const spaceAbove = rect.top;
-        setOpenUpward(spaceBelow < APPROX_POPOVER_HEIGHT && spaceAbove > spaceBelow);
+        // Flip up whenever there isn't enough room below, even if
+        // above is also constrained — the max-height + overflow-y on
+        // the menu (below) keeps it inside the viewport either way.
+        setOpenUpward(spaceBelow < APPROX_POPOVER_HEIGHT && spaceAbove > spaceBelow / 2);
       }
     }
   }, [open, isSponsored, manualTags]);
@@ -186,6 +189,11 @@ export default function PostPropsPopover({
             right: 0,
             zIndex: 50,
             minWidth: 280,
+            // Cap the popover height to roughly the viewport so it
+            // never extends past the visible area, regardless of
+            // whether it opens up or down. Inner content scrolls.
+            maxHeight: "calc(100vh - 32px)",
+            overflowY: "auto",
             padding: 12,
             background: "var(--bg-elev)",
             border: "1px solid var(--border-strong)",
