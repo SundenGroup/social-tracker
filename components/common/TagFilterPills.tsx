@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { UNTAGGED_FILTER } from "@/lib/tagging";
+import { Chevron } from "@/components/icons/PlatformGlyph";
 
 interface TagFilterPillsProps {
   /** All tags available in the current scope (from useProfiles()). */
@@ -170,8 +171,13 @@ export default function TagFilterPills({
           <button
             type="button"
             onClick={() => setMenuOpen((o) => !o)}
+            aria-label="More tags"
+            title="More tags"
             style={{
-              padding: "7px 12px",
+              // Square-ish icon button that matches the height of the
+              // chip pills next to it. Counted-state badge sits inline
+              // so users still see how many extra tags are active.
+              padding: "7px 9px",
               borderRadius: 8,
               border: "1px solid var(--border)",
               background: "var(--bg-elev)",
@@ -181,12 +187,11 @@ export default function TagFilterPills({
               cursor: "pointer",
               display: "inline-flex",
               alignItems: "center",
-              gap: 6,
+              gap: 4,
             }}
             aria-haspopup="listbox"
             aria-expanded={menuOpen}
           >
-            More tags
             {secondarySelectedCount > 0 && (
               <span
                 style={{
@@ -201,7 +206,7 @@ export default function TagFilterPills({
                 {secondarySelectedCount}
               </span>
             )}
-            <span aria-hidden style={{ fontSize: 9, lineHeight: 1 }}>▾</span>
+            <Chevron size={12} dir={menuOpen ? "up" : "down"} />
           </button>
           {menuOpen && (
             <div
