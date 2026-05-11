@@ -39,15 +39,33 @@ export default function PostPropsPopover({
   const [draftTags, setDraftTags] = useState<string[]>(manualTags);
   const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
+  // Flip the popover above the trigger when there isn't enough room
+  // below — rows at the bottom of the table would otherwise have the
+  // popover render off-screen. Recomputed every time we open.
+  const [openUpward, setOpenUpward] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // Reset drafts whenever the popover opens, in case the parent state
-  // moved on while we were closed.
+  // moved on while we were closed. Also choose orientation based on
+  // available viewport space — for rows near the bottom of the table
+  // the popover would otherwise spill below the fold.
   useEffect(() => {
     if (open) {
       setDraftSponsored(isSponsored);
       setDraftTags(manualTags);
       setTagInput("");
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect) {
+        // Approximate popover height; we don't have a ref to measure
+        // before render. The actual content can be smaller (no auto
+        // tags, no suggestions) but assuming the maximum keeps the
+        // flip stable across renders.
+        const APPROX_POPOVER_HEIGHT = 360;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        setOpenUpward(spaceBelow < APPROX_POPOVER_HEIGHT && spaceAbove > spaceBelow);
+      }
     }
   }, [open, isSponsored, manualTags]);
 
@@ -118,6 +136,7 @@ export default function PostPropsPopover({
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         title="Edit post properties"
@@ -154,7 +173,9 @@ export default function PostPropsPopover({
         <div
           style={{
             position: "absolute",
-            top: "calc(100% + 4px)",
+            ...(openUpward
+              ? { bottom: "calc(100% + 4px)" }
+              : { top: "calc(100% + 4px)" }),
             right: 0,
             zIndex: 50,
             minWidth: 280,
