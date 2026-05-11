@@ -112,17 +112,25 @@ export default function TagFilterPills({
   const primary = availableTags.filter((t) => primarySet.has(t));
   const secondary = availableTags.filter((t) => !primarySet.has(t));
 
-  // "No tags" sits at the top of the dropdown alongside the secondary
-  // tags. We only show it when the scope has untagged posts to match;
-  // otherwise the option would yield empty results.
+  // "No tag" goes at the bottom of the dropdown — useful for accounts
+  // without any default tag. We only show it when the scope has
+  // untagged posts; otherwise the filter is a no-op.
   const showUntaggedOption = hasUntaggedPostsInScope;
   const untaggedSelected = tags.includes(UNTAGGED_FILTER);
 
-  // "Only default tags" / no-extras option. Available whenever there's
-  // at least one non-primary tag in scope — otherwise every post
-  // already qualifies, so the filter is a no-op.
-  const showNoExtrasOption = secondary.length > 0;
+  // "Only X" / no-extras option sits at the top of the menu. Hidden
+  // when there are no secondary tags in scope (filter is a no-op) or
+  // no primary tags exist (nothing to say "only" about). The label
+  // uses the actual primary tag name when there's a single one, and
+  // falls back to "Only defaults" otherwise.
+  const showNoExtrasOption = secondary.length > 0 && primary.length > 0;
   const noExtrasSelected = tags.includes(NO_EXTRAS_FILTER);
+  const noExtrasLabel = (() => {
+    if (primary.length === 1) return `Only ${labelFor(primary[0])}`;
+    if (primary.length === 2) return `Only ${labelFor(primary[0])} & ${labelFor(primary[1])}`;
+    return "Only defaults";
+  })();
+  const noExtrasCustomCased = primary.length === 1 && isCustomCased(primary[0]);
 
   // Surface any selected secondary tags (and the sentinels) as chips
   // outside the dropdown so the user can see what's filtered without
@@ -159,7 +167,7 @@ export default function TagFilterPills({
       ))}
       {untaggedSelected && (
         <PillButton
-          label="No tags"
+          label="No tag"
           customCased={true}
           active={true}
           onClick={() => toggle(UNTAGGED_FILTER)}
@@ -167,8 +175,8 @@ export default function TagFilterPills({
       )}
       {noExtrasSelected && (
         <PillButton
-          label="Only defaults"
-          customCased={true}
+          label={noExtrasLabel}
+          customCased={noExtrasCustomCased}
           active={true}
           onClick={() => toggle(NO_EXTRAS_FILTER)}
         />
@@ -242,40 +250,6 @@ export default function TagFilterPills({
                 boxShadow: "0 8px 28px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.06)",
               }}
             >
-              {showUntaggedOption && (
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={untaggedSelected}
-                  onClick={() => toggle(UNTAGGED_FILTER)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "7px 10px",
-                    borderRadius: 6,
-                    border: "none",
-                    background: untaggedSelected ? "var(--bg-sunken)" : "transparent",
-                    color: "var(--fg)",
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  <Checkbox checked={untaggedSelected} />
-                  <span
-                    style={{
-                      flex: 1,
-                      fontWeight: 500,
-                      fontStyle: "italic",
-                      color: "var(--fg-muted)",
-                    }}
-                  >
-                    No tags
-                  </span>
-                </button>
-              )}
               {showNoExtrasOption && (
                 <button
                   type="button"
@@ -305,13 +279,14 @@ export default function TagFilterPills({
                       fontWeight: 500,
                       fontStyle: "italic",
                       color: "var(--fg-muted)",
+                      textTransform: noExtrasCustomCased ? "none" : "capitalize",
                     }}
                   >
-                    Only defaults
+                    {noExtrasLabel}
                   </span>
                 </button>
               )}
-              {(showUntaggedOption || showNoExtrasOption) && secondary.length > 0 && (
+              {showNoExtrasOption && secondary.length > 0 && (
                 <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
               )}
               {secondary.map((t) => {
@@ -351,6 +326,46 @@ export default function TagFilterPills({
                   </button>
                 );
               })}
+              {showUntaggedOption && (
+                <>
+                  {secondary.length > 0 && (
+                    <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
+                  )}
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={untaggedSelected}
+                    onClick={() => toggle(UNTAGGED_FILTER)}
+                    title="Posts with no tags applied."
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "7px 10px",
+                      borderRadius: 6,
+                      border: "none",
+                      background: untaggedSelected ? "var(--bg-sunken)" : "transparent",
+                      color: "var(--fg)",
+                      fontSize: 13,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Checkbox checked={untaggedSelected} />
+                    <span
+                      style={{
+                        flex: 1,
+                        fontWeight: 500,
+                        fontStyle: "italic",
+                        color: "var(--fg-muted)",
+                      }}
+                    >
+                      No tag
+                    </span>
+                  </button>
+                </>
+              )}
               {secondarySelectedCount > 0 && (
                 <>
                   <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
