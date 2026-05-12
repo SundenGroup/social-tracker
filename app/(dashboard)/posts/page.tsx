@@ -55,7 +55,7 @@ export default function PostsPage() {
     <>
       <Header title="Post performance" subtitle="Every post, every platform">
         <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
-        <ExportButton startDate={startDate} endDate={endDate} />
+        <ExportButton startDate={startDate} endDate={endDate} tags={tags} />
       </Header>
 
       {isLoading && !data && (

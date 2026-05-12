@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Modal from "@/components/common/Modal";
+import { useProfiles } from "@/hooks/useProfiles";
+import { NO_EXTRAS_FILTER } from "@/lib/tagging";
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -10,6 +12,10 @@ interface ExportModalProps {
   platform?: string;
   startDate: string;
   endDate: string;
+  /** Current tag-filter selection on the host page (may include the
+   *  NO_EXTRAS_FILTER sentinel). Translated to `tag` + `notTag` body
+   *  fields the same way the dashboard hooks do. */
+  tags?: string[];
 }
 
 const METRIC_OPTIONS = [
@@ -34,7 +40,13 @@ export default function ExportModal({
   platform,
   startDate,
   endDate,
+  tags,
 }: ExportModalProps) {
+  // Read scope context so the export respects the user's current
+  // profile selection and tag filter. Previously the modal sent only
+  // platform + dates + columns, so a Türkiye-scoped user got every
+  // org-wide post in their export.
+  const { selectedProfileIds, availableTags, primaryTags } = useProfiles();
   const [format, setFormat] = useState<"csv" | "xlsx">("csv");
   const [customRange, setCustomRange] = useState(false);
   const [exportStart, setExportStart] = useState(startDate);
@@ -65,11 +77,26 @@ export default function ExportModal({
     setError(null);
 
     try {
+      // Translate the page's tag-filter selection the same way the
+      // dashboard hooks do: split out the NO_EXTRAS_FILTER sentinel
+      // into a concrete `notTag` exclusion list (availableTags −
+      // primaryTags), and pass the real tags through as `tag`.
+      const tagsList = tags ?? [];
+      const wantsNoExtras = tagsList.includes(NO_EXTRAS_FILTER);
+      const realTags = tagsList.filter((t) => t !== NO_EXTRAS_FILTER);
+      const primarySet = new Set(primaryTags);
+      const notTagsList = wantsNoExtras
+        ? availableTags.filter((t) => !primarySet.has(t))
+        : [];
+
       const body = {
         platform: selectedPlatform || undefined,
         startDate: customRange ? exportStart : startDate,
         endDate: customRange ? exportEnd : endDate,
         metrics: selectedMetrics,
+        ...(selectedProfileIds.length > 0 && { profileId: selectedProfileIds }),
+        ...(realTags.length > 0 && { tag: realTags }),
+        ...(notTagsList.length > 0 && { notTag: notTagsList }),
       };
 
       const res = await fetch(`/api/exports/${format}`, {

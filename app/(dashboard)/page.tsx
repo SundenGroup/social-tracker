@@ -169,7 +169,7 @@ export default function DashboardPage() {
           endDate={endDate}
           onChange={(s, e) => setDateRange(s, e)}
         />
-        <ExportButton startDate={startDate} endDate={endDate} />
+        <ExportButton startDate={startDate} endDate={endDate} tags={tags} />
       </Header>
 
       {isLoading && !data && (

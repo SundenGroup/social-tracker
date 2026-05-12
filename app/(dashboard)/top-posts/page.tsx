@@ -82,7 +82,7 @@ export default function TopPostsPage() {
     <>
       <Header title="Top posts" subtitle="Your best content this period">
         <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
-        <ExportButton startDate={startDate} endDate={endDate} />
+        <ExportButton startDate={startDate} endDate={endDate} tags={tags} />
       </Header>
 
       {isLoading && !data && (

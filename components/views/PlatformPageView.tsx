@@ -199,7 +199,7 @@ export default function PlatformPageView({ platform, title, handle }: PlatformPa
     <>
       <Header title={label}>
         <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
-        <ExportButton startDate={startDate} endDate={endDate} platform={platform} />
+        <ExportButton startDate={startDate} endDate={endDate} platform={platform} tags={tags} />
       </Header>
 
       {isLoading && !data && (

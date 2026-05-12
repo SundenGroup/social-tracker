@@ -9,6 +9,10 @@ interface ExportButtonProps {
   endDate: string;
   /** Pre-select a platform when the button lives on a platform page. */
   platform?: string;
+  /** Current tag-filter selection from the host page. Forwarded so
+   *  the export respects "PEC", "Only X", "No tag" etc. — without
+   *  this, exports ignore the user's tag filter entirely. */
+  tags?: string[];
   /** Visual variant — "solid" is dark filled (header primary action),
    *  "outline" is the lighter pill that matches other top-bar chips. */
   variant?: "solid" | "outline";
@@ -23,6 +27,7 @@ export default function ExportButton({
   startDate,
   endDate,
   platform,
+  tags,
   variant = "outline",
   label = "Export",
 }: ExportButtonProps) {
@@ -67,6 +72,7 @@ export default function ExportButton({
         platform={platform}
         startDate={startDate}
         endDate={endDate}
+        tags={tags}
       />
     </>
   );
