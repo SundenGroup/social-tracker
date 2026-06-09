@@ -2,6 +2,7 @@
 
 import { PlatformGlyph, PLATFORM_COLOR, PLATFORM_SHORT } from "@/components/icons/PlatformGlyph";
 import { fmtK } from "@/lib/format";
+import { thumbSrc, thumbProxySrc } from "@/lib/thumb-src";
 import type { PostPerformance } from "@/types";
 
 interface TopPostCardProps {
@@ -57,17 +58,19 @@ export default function TopPostCard({
         }}
       >
         <div style={{ position: "relative", aspectRatio, background: "var(--bg-sunken)" }}>
-          {post.thumbnailUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={post.thumbnailUrl}
-              alt=""
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={thumbSrc(post)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            onError={(e) => {
+              const img = e.target as HTMLImageElement;
+              const proxied = thumbProxySrc(post.id);
+              if (!img.src.endsWith(proxied)) img.src = proxied;
+            }}
+          />
 
           {/* platform badge */}
           <div

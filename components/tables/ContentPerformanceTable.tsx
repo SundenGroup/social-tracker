@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { PostPerformance } from "@/types";
 import { fmtK } from "@/lib/format";
+import { thumbSrc, thumbProxySrc } from "@/lib/thumb-src";
 import {
   PlatformGlyph,
   PLATFORM_COLOR,
@@ -393,17 +394,22 @@ function PostRow({
             position: "relative",
           }}
         >
-          {post.thumbnailUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={post.thumbnailUrl}
-              alt=""
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={thumbSrc(post)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            onError={(e) => {
+              // Direct CDN URL died (expired IG/Twitter) → fall back to
+              // the caching proxy, which serves a permanent copy or a
+              // branded placeholder. Guard against a redirect loop.
+              const img = e.target as HTMLImageElement;
+              const proxied = thumbProxySrc(post.id);
+              if (!img.src.endsWith(proxied)) img.src = proxied;
+            }}
+          />
         </div>
       </div>
 
