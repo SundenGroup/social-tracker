@@ -59,8 +59,14 @@ const RETRY_DELAY_MIN = parseInt(process.env.RETRY_DELAY_MIN || "5", 10);
 const WS_FILE = path.join(SCRIPT_DIR, ".browser-ws");
 const CDP_FILE = path.join(SCRIPT_DIR, ".browser-cdp");
 const PROFILE_DIR = path.join(SCRIPT_DIR, "browser-profile");
+// Debug artifacts (screenshots etc.) land here — gitignored.
+const DEBUG_DIR = path.join(SCRIPT_DIR, "debug");
+fs.mkdirSync(DEBUG_DIR, { recursive: true });
 const TIKTOK_COOKIES = process.env.TIKTOK_COOKIES || "";
 const SETUP_MODE = process.argv.includes("--setup");
+// Standalone-fallback headless toggle (browser-server runs stay as-is).
+// Defaults to visible; set HEADLESS=true in .env for unattended hosts.
+const HEADLESS = (process.env.HEADLESS ?? "false").toLowerCase() === "true";
 
 function waitForEnter(message: string): Promise<void> {
   return new Promise((resolve) => {
@@ -150,7 +156,7 @@ async function getBrowser(): Promise<{ browser: Browser | null; context: Browser
   try {
     context = await chromium.launchPersistentContext(PROFILE_DIR, {
       channel: "chrome",
-      headless: false,
+      headless: HEADLESS,
       args: ["--disable-blink-features=AutomationControlled"],
       userAgent:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -159,7 +165,7 @@ async function getBrowser(): Promise<{ browser: Browser | null; context: Browser
     });
   } catch {
     context = await chromium.launchPersistentContext(PROFILE_DIR, {
-      headless: false,
+      headless: HEADLESS,
       args: ["--disable-blink-features=AutomationControlled"],
       userAgent:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -328,7 +334,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
     );
 
     if (posts.length === 0) {
-      await page.screenshot({ path: path.join(SCRIPT_DIR, "debug-screenshot.png") });
+      await page.screenshot({ path: path.join(DEBUG_DIR, "debug-screenshot.png") });
       throw new Error("No posts found on profile (CAPTCHA or page load issue)");
     }
 

@@ -32,6 +32,16 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# scraper debug artifacts (screenshots, HTML dumps, hydration JSON) —
+# written by scripts/*-remote-scraper at run time, never source
+scripts/**/debug/
+scripts/**/debug-*.png
+scripts/**/debug-*.html
+scripts/**/debug-*.json
+
+# scraper-host runtime logs (dedicated scrape machine)
+scripts/scraper-host/logs/
+
 # env files
 .env
 .env.local

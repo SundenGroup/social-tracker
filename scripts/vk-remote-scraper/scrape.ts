@@ -28,11 +28,14 @@
  *   npm run scrape
  */
 import { chromium, type Browser, type Page } from "playwright";
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+// Debug artifacts (per-post HTML dumps) land here — gitignored.
+const DEBUG_DIR = join(SCRIPT_DIR, "debug");
+mkdirSync(DEBUG_DIR, { recursive: true });
 
 // ───────── env loader (no extra dep) ─────────
 const envPath = join(SCRIPT_DIR, ".env");
@@ -462,7 +465,7 @@ async function scrapeAccount(browser: Browser, shortName: string): Promise<Scrap
     // DOM without re-running the scraper. Also write a quick extraction
     // report alongside so we can see which fields missed at a glance.
     if (rawPosts.length > 0) {
-      const dbgPath = join(SCRIPT_DIR, `debug-${shortName}-post-0.html`);
+      const dbgPath = join(DEBUG_DIR, `debug-${shortName}-post-0.html`);
       writeFileSync(dbgPath, rawPosts[0].outerHtml, "utf8");
       console.log(`[VK:${shortName}] Wrote debug HTML → ${dbgPath}`);
 

@@ -55,7 +55,15 @@ const RETRY_DELAY_MIN = parseInt(process.env.RETRY_DELAY_MIN || "5", 10);
 
 const CDP_FILE = path.join(SCRIPT_DIR, ".browser-cdp");
 const PROFILE_DIR = path.join(SCRIPT_DIR, "browser-profile");
+// Debug artifacts (screenshots etc.) land here — gitignored so they
+// stop polluting `git status`.
+const DEBUG_DIR = path.join(SCRIPT_DIR, "debug");
+fs.mkdirSync(DEBUG_DIR, { recursive: true });
 const SETUP_MODE = process.argv.includes("--setup");
+// Headless only applies to the STANDALONE fallback (no browser-server
+// running). Defaults to visible — flip with HEADLESS=true in .env for
+// unattended hosts.
+const HEADLESS = (process.env.HEADLESS ?? "false").toLowerCase() === "true";
 
 function waitForEnter(message: string): Promise<void> {
   return new Promise((resolve) => {
@@ -103,6 +111,28 @@ function shortcodeToMediaId(code: string): string {
     id = id * 64n + BigInt(alphabet.indexOf(char));
   }
   return id.toString();
+}
+
+/**
+ * Derive the publish date from the media ID itself. IG media IDs are
+ * snowflake-style: the upper bits hold milliseconds since IG's epoch
+ * (2011-08-24T21:07:01.721Z). Verified against known posts — accurate
+ * to the second.
+ *
+ * Used as the fallback when neither the API (`taken_at`) nor the page
+ * (`<time datetime>`) yields a date. The previous fallback was "now",
+ * which silently rewrote an existing post's publishedAt to scrape time
+ * on every degraded run — this keeps the date stable and correct no
+ * matter how degraded the scrape is.
+ */
+function dateFromMediaId(mediaId: string): string {
+  try {
+    const ms = Number(BigInt(mediaId) >> 23n) + 1314220021721;
+    if (ms > 1262304000000 && ms < Date.now() + 86400000) {
+      return new Date(ms).toISOString();
+    }
+  } catch {}
+  return new Date().toISOString();
 }
 
 /**
@@ -186,7 +216,7 @@ async function getBrowser(): Promise<{
   try {
     context = await chromium.launchPersistentContext(PROFILE_DIR, {
       channel: "chrome",
-      headless: false,
+      headless: HEADLESS,
       args: ["--disable-blink-features=AutomationControlled"],
       userAgent:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -195,7 +225,7 @@ async function getBrowser(): Promise<{
     });
   } catch {
     context = await chromium.launchPersistentContext(PROFILE_DIR, {
-      headless: false,
+      headless: HEADLESS,
       args: ["--disable-blink-features=AutomationControlled"],
       userAgent:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -310,7 +340,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
     // Check for login wall
     const blocked = await checkForLoginWall(page);
     if (blocked) {
-      await page.screenshot({ path: path.join(SCRIPT_DIR, `debug-screenshot-${username}.png`) });
+      await page.screenshot({ path: path.join(DEBUG_DIR, `debug-screenshot-${username}.png`) });
       throw new Error(
         "Login wall detected — Instagram requires login to view this profile. " +
         "Try running with --setup to log in manually first."
@@ -562,7 +592,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
     console.log(`[Scraper] Found ${postLinks.length} unique post links total`);
 
     if (postLinks.length === 0) {
-      await page.screenshot({ path: path.join(SCRIPT_DIR, `debug-screenshot-${username}.png`) });
+      await page.screenshot({ path: path.join(DEBUG_DIR, `debug-screenshot-${username}.png`) });
       throw new Error("No posts found on profile (login wall or page load issue)");
     }
 
@@ -679,7 +709,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
             description: fallbackData.caption || "",
             contentUrl: href,
             thumbnailUrl: fallbackData.thumbnailUrl,
-            publishedAt: fallbackData.publishedAt || new Date().toISOString(),
+            publishedAt: fallbackData.publishedAt || dateFromMediaId(mediaId),
             postType: type === "video" ? "video" : "image",
             metrics: {
               views: gridViews,
@@ -724,7 +754,7 @@ async function scrape(username: string): Promise<ScrapeResult> {
             description: caption,
             contentUrl: href,
             thumbnailUrl: apiResult.thumbnailUrl || null,
-            publishedAt: takenAt > 0 ? new Date(takenAt * 1000).toISOString() : new Date().toISOString(),
+            publishedAt: takenAt > 0 ? new Date(takenAt * 1000).toISOString() : dateFromMediaId(mediaId),
             postType,
             metrics: {
               views,

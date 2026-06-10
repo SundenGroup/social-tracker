@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.clutch.daily-scrape</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>exec __REPO__/scripts/scraper-host/run-daily-scrape.sh</string>
+    </array>
+
+    <!-- 07:00 local time, daily. launchd runs missed jobs on wake if the
+         machine was asleep at the scheduled minute. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+
+    <key>StandardOutPath</key>
+    <string>__REPO__/scripts/scraper-host/logs/daily-scrape-launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO__/scripts/scraper-host/logs/daily-scrape-launchd.log</string>
+</dict>
+</plist>
