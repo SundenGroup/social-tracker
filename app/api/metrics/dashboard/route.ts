@@ -20,6 +20,10 @@ export const GET = apiHandler(
     const tag = tagParam ? tagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const notTagParam = url.searchParams.get("notTag");
     const notTag = notTagParam ? notTagParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    // `?sponsored=1` shows only sponsored posts (overrides the org hide
+    // setting). Used by the post list's subtle "Sponsored" filter to
+    // surface accidentally-flagged posts.
+    const sponsoredOnly = url.searchParams.get("sponsored") === "1";
     const profileIds = effectiveProfileIds(session!, url.searchParams.get("profileId"));
 
     const orgId = session!.user.organizationId;
@@ -60,7 +64,7 @@ export const GET = apiHandler(
     // spread-fragment. Replaces the previous separate postTypeFilter +
     // sponsoredFilter pair so adding new filters (the tag filter is
     // the latest) requires touching only lib/post-filters.ts.
-    const postFilters = buildPostFilters({ contentType, tag, notTag, hideSponsored });
+    const postFilters = buildPostFilters({ contentType, tag, notTag, hideSponsored, sponsoredOnly });
 
     // Previous period dates (needed for parallel query)
     const rangeDuration = end.getTime() - start.getTime();

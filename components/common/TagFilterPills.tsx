@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { UNTAGGED_FILTER, NO_EXTRAS_FILTER } from "@/lib/tagging";
+import { UNTAGGED_FILTER, NO_EXTRAS_FILTER, SPONSORED_FILTER } from "@/lib/tagging";
 import { Chevron } from "@/components/icons/PlatformGlyph";
 
 interface TagFilterPillsProps {
@@ -23,6 +23,10 @@ interface TagFilterPillsProps {
   tags: string[];
   /** Replace the selection. */
   setTags: (next: string[]) => void;
+  /** Opt-in: show a low-key "Sponsored" option in the dropdown. Used on
+   *  the post list so an accidentally-flagged sponsored post is always
+   *  findable. Off everywhere else to keep the filter unobtrusive. */
+  showSponsoredFilter?: boolean;
 }
 
 /**
@@ -58,6 +62,7 @@ export default function TagFilterPills({
   hasUntaggedPostsInScope,
   tags,
   setTags,
+  showSponsoredFilter = false,
 }: TagFilterPillsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -73,8 +78,11 @@ export default function TagFilterPills({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [menuOpen]);
 
-  if (availableTags.length === 0) return null;
-  if (availableTags.length === 1 && !hasUntaggedPostsInScope) return null;
+  // Normally we hide the strip when there's nothing useful to filter.
+  // But when the sponsored option is opted in, always render so that
+  // recovery affordance stays reachable regardless of tag coverage.
+  if (availableTags.length === 0 && !showSponsoredFilter) return null;
+  if (availableTags.length === 1 && !hasUntaggedPostsInScope && !showSponsoredFilter) return null;
 
   const displayMap = tagDisplayNames ?? {};
   const labelFor = (t: string): string => displayMap[t] || t;
@@ -91,8 +99,9 @@ export default function TagFilterPills({
   };
   const clearAll = () => setTags([]);
 
-  // Single-tag mode: keep the lightweight one-chip toggle.
-  if (availableTags.length === 1) {
+  // Single-tag mode: keep the lightweight one-chip toggle. (Skipped
+  // when the sponsored option is on — we need the full dropdown UI.)
+  if (availableTags.length === 1 && !showSponsoredFilter) {
     const only = availableTags[0];
     const active = selectedSet.has(only);
     return (
@@ -118,6 +127,11 @@ export default function TagFilterPills({
   const showUntaggedOption = hasUntaggedPostsInScope;
   const untaggedSelected = tags.includes(UNTAGGED_FILTER);
 
+  // Low-key "Sponsored" filter (opt-in per page). Recovery affordance
+  // for accidentally-flagged posts; bypasses the org hide setting.
+  const showSponsoredOption = showSponsoredFilter;
+  const sponsoredSelected = tags.includes(SPONSORED_FILTER);
+
   // "Only X" / no-extras option sits at the top of the menu. Hidden
   // when there are no secondary tags in scope (filter is a no-op) or
   // no primary tags exist (nothing to say "only" about). The label
@@ -136,14 +150,15 @@ export default function TagFilterPills({
   // outside the dropdown so the user can see what's filtered without
   // opening the menu.
   const surfacedSecondary = tags.filter((t) => {
-    if (t === UNTAGGED_FILTER || t === NO_EXTRAS_FILTER) return false;
+    if (t === UNTAGGED_FILTER || t === NO_EXTRAS_FILTER || t === SPONSORED_FILTER) return false;
     return !primarySet.has(t) && availableTags.includes(t);
   });
 
   const secondarySelectedCount =
     surfacedSecondary.length +
     (untaggedSelected ? 1 : 0) +
-    (noExtrasSelected ? 1 : 0);
+    (noExtrasSelected ? 1 : 0) +
+    (sponsoredSelected ? 1 : 0);
 
   return (
     <div
@@ -181,6 +196,14 @@ export default function TagFilterPills({
           onClick={() => toggle(NO_EXTRAS_FILTER)}
         />
       )}
+      {sponsoredSelected && (
+        <PillButton
+          label="Sponsored"
+          customCased={true}
+          active={true}
+          onClick={() => toggle(SPONSORED_FILTER)}
+        />
+      )}
       {surfacedSecondary.map((t) => (
         <PillButton
           key={t}
@@ -190,7 +213,7 @@ export default function TagFilterPills({
           onClick={() => toggle(t)}
         />
       ))}
-      {(secondary.length > 0 || showUntaggedOption || showNoExtrasOption) && (
+      {(secondary.length > 0 || showUntaggedOption || showNoExtrasOption || showSponsoredOption) && (
         <div style={{ position: "relative" }}>
           <button
             type="button"
@@ -362,6 +385,46 @@ export default function TagFilterPills({
                       }}
                     >
                       No tag
+                    </span>
+                  </button>
+                </>
+              )}
+              {showSponsoredOption && (
+                <>
+                  {(secondary.length > 0 || showUntaggedOption || showNoExtrasOption) && (
+                    <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
+                  )}
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={sponsoredSelected}
+                    onClick={() => toggle(SPONSORED_FILTER)}
+                    title="Show only posts flagged as sponsored — handy for spotting an accidental flag."
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "7px 10px",
+                      borderRadius: 6,
+                      border: "none",
+                      background: sponsoredSelected ? "var(--bg-sunken)" : "transparent",
+                      color: "var(--fg)",
+                      fontSize: 13,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Checkbox checked={sponsoredSelected} />
+                    <span
+                      style={{
+                        flex: 1,
+                        fontWeight: 500,
+                        fontStyle: "italic",
+                        color: "var(--fg-muted)",
+                      }}
+                    >
+                      Sponsored
                     </span>
                   </button>
                 </>

@@ -10,7 +10,7 @@ import { useDashboard } from "@/hooks/useDashboard";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useProfiles } from "@/hooks/useProfiles";
 import TagFilterPills from "@/components/common/TagFilterPills";
-import { UNTAGGED_FILTER, NO_EXTRAS_FILTER } from "@/lib/tagging";
+import { UNTAGGED_FILTER, NO_EXTRAS_FILTER, SPONSORED_FILTER } from "@/lib/tagging";
 
 export default function PostsPage() {
   const { startDate, endDate, setDateRange } = useDateRange();
@@ -37,7 +37,11 @@ export default function PostsPage() {
   useEffect(() => {
     if (tags.length === 0) return;
     const stillValid = tags.filter(
-      (t) => t === UNTAGGED_FILTER || t === NO_EXTRAS_FILTER || availableTags.includes(t)
+      (t) =>
+        t === UNTAGGED_FILTER ||
+        t === NO_EXTRAS_FILTER ||
+        t === SPONSORED_FILTER ||
+        availableTags.includes(t)
     );
     if (stillValid.length !== tags.length) setTags(stillValid);
   }, [tags, availableTags]);
@@ -94,6 +98,7 @@ export default function PostsPage() {
                 hasUntaggedPostsInScope={hasUntaggedPostsInScope}
                 tags={tags}
                 setTags={setTags}
+                showSponsoredFilter
               />
             }
           />

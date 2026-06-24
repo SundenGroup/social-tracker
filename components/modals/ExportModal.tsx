@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Modal from "@/components/common/Modal";
 import { useProfiles } from "@/hooks/useProfiles";
-import { NO_EXTRAS_FILTER } from "@/lib/tagging";
+import { NO_EXTRAS_FILTER, SPONSORED_FILTER } from "@/lib/tagging";
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -83,7 +83,10 @@ export default function ExportModal({
       // primaryTags), and pass the real tags through as `tag`.
       const tagsList = tags ?? [];
       const wantsNoExtras = tagsList.includes(NO_EXTRAS_FILTER);
-      const realTags = tagsList.filter((t) => t !== NO_EXTRAS_FILTER);
+      const wantsSponsored = tagsList.includes(SPONSORED_FILTER);
+      const realTags = tagsList.filter(
+        (t) => t !== NO_EXTRAS_FILTER && t !== SPONSORED_FILTER
+      );
       const primarySet = new Set(primaryTags);
       const notTagsList = wantsNoExtras
         ? availableTags.filter((t) => !primarySet.has(t))
@@ -97,6 +100,7 @@ export default function ExportModal({
         ...(selectedProfileIds.length > 0 && { profileId: selectedProfileIds }),
         ...(realTags.length > 0 && { tag: realTags }),
         ...(notTagsList.length > 0 && { notTag: notTagsList }),
+        ...(wantsSponsored && { sponsored: true }),
       };
 
       const res = await fetch(`/api/exports/${format}`, {

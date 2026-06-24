@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useProfiles } from "@/hooks/useProfiles";
-import { NO_EXTRAS_FILTER } from "@/lib/tagging";
+import { NO_EXTRAS_FILTER, SPONSORED_FILTER } from "@/lib/tagging";
 import type { PostPerformance } from "@/types";
 
 interface PlatformSummary {
@@ -71,13 +71,19 @@ export function useDashboard(
   // sentinel-unaware. Real tags pass through as-is.
   const tagsList = tags ?? [];
   const wantsNoExtras = tagsList.includes(NO_EXTRAS_FILTER);
-  const realTags = tagsList.filter((t) => t !== NO_EXTRAS_FILTER);
+  // The "Sponsored" sentinel becomes `?sponsored=1` — the tag engine
+  // never sees it.
+  const wantsSponsored = tagsList.includes(SPONSORED_FILTER);
+  const realTags = tagsList.filter(
+    (t) => t !== NO_EXTRAS_FILTER && t !== SPONSORED_FILTER
+  );
   const primarySet = new Set(primaryTags);
   const notTagsList = wantsNoExtras
     ? availableTags.filter((t) => !primarySet.has(t))
     : [];
   const tagsParam = realTags.join(",");
   const notTagParam = notTagsList.join(",");
+  const sponsoredParam = wantsSponsored ? "1" : "";
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +106,9 @@ export function useDashboard(
       if (notTagParam) {
         params.set("notTag", notTagParam);
       }
+      if (sponsoredParam) {
+        params.set("sponsored", sponsoredParam);
+      }
       const res = await fetch(`/api/metrics/dashboard?${params}`, { signal });
       const json = await res.json();
       if (!res.ok) {
@@ -113,7 +122,7 @@ export function useDashboard(
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, contentType, tagsParam, notTagParam, profileIdsParam, initialized]);
+  }, [startDate, endDate, contentType, tagsParam, notTagParam, sponsoredParam, profileIdsParam, initialized]);
 
   useEffect(() => {
     const controller = new AbortController();

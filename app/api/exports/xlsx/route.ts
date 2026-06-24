@@ -18,7 +18,7 @@ const ALL_COLUMNS = [
 export const POST = apiHandler(
   async (req, session) => {
     const body = await req.json();
-    const { platform, startDate, endDate, metrics, profileId: requestedProfileId, tag, notTag } = body as {
+    const { platform, startDate, endDate, metrics, profileId: requestedProfileId, tag, notTag, sponsored } = body as {
       platform?: string;
       startDate: string;
       endDate: string;
@@ -26,6 +26,7 @@ export const POST = apiHandler(
       profileId?: string | string[] | null;
       tag?: string | string[] | null;
       notTag?: string | string[] | null;
+      sponsored?: boolean;
     };
 
     if (!startDate || !endDate) {
@@ -61,6 +62,7 @@ export const POST = apiHandler(
         publishedAt: { gte: start, lte: end },
         isDeleted: false,
         ...tagFilterWhere(tag, notTag),
+        ...(sponsored ? { isSponsored: true } : {}),
       },
       orderBy: { publishedAt: "desc" },
     });

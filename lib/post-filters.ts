@@ -37,6 +37,11 @@ export interface PostFilterInput {
    *  non-primary tags in scope). */
   notTag?: string | string[] | null;
   hideSponsored?: boolean;
+  /** Show ONLY sponsored posts. Overrides `hideSponsored` — selecting
+   *  this is an explicit request to see sponsored posts, so the org's
+   *  hide setting must not cancel it out (otherwise a mis-flagged post
+   *  would be unfindable). */
+  sponsoredOnly?: boolean;
 }
 
 /**
@@ -80,7 +85,10 @@ export function buildPostFilters(input: PostFilterInput): Prisma.PostWhereInput 
     fragments.push({ postType: ct as Prisma.PostWhereInput["postType"] });
   }
 
-  if (input.hideSponsored) {
+  if (input.sponsoredOnly) {
+    // Explicit "show sponsored" — wins over the org hide setting.
+    fragments.push({ isSponsored: true });
+  } else if (input.hideSponsored) {
     fragments.push({ isSponsored: false });
   }
 

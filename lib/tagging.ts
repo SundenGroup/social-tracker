@@ -218,6 +218,16 @@ export const UNTAGGED_FILTER = "__untagged";
 export const NO_EXTRAS_FILTER = "__no_extras";
 
 /**
+ * Sentinel for "show only posts flagged as sponsored." Rides the same
+ * tag-selection array as the other sentinels, but the client strips it
+ * out and sends `?sponsored=1` instead — the tag engine never sees it.
+ * Mainly a recovery affordance: it surfaces accidentally-flagged posts
+ * (and deliberately bypasses the org-wide "hide sponsored" setting, so
+ * a mis-flagged post is always findable even when hiding is on).
+ */
+export const SPONSORED_FILTER = "__sponsored";
+
+/**
  * Build a Prisma where-fragment for filtering posts by tag(s).
  *
  * Accepts a single tag (legacy callers) or an array (multi-select
