@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useProfiles } from "@/hooks/useProfiles";
 
 interface PostPropsPopoverProps {
@@ -46,55 +47,79 @@ export default function PostPropsPopover({
   const [draftTags, setDraftTags] = useState<string[]>(manualTags);
   const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
-  // Flip the popover above the trigger when there isn't enough room
-  // below — rows at the bottom of the table would otherwise have the
-  // popover render off-screen. Recomputed every time we open.
-  const [openUpward, setOpenUpward] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  // Fixed-position coordinates for the portaled popover. Computed from
+  // the trigger's viewport rect so the menu can escape the table's
+  // `overflow: hidden` container (which previously clipped it). Either
+  // `top` (open downward) or `bottom` (open upward) is set, plus a
+  // right offset and a max-height that always fits the viewport.
+  const [coords, setCoords] = useState<{
+    right: number;
+    top: number | null;
+    bottom: number | null;
+    maxHeight: number;
+  } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Reset drafts whenever the popover opens, in case the parent state
-  // moved on while we were closed. Also choose orientation based on
-  // available viewport space — for rows near the bottom of the table
-  // the popover would otherwise spill below the fold.
+  const reposition = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const GAP = 6;
+    const MARGIN = 12;
+    // Right-align the popover to the trigger's right edge.
+    const right = Math.max(MARGIN, vw - rect.right);
+    const spaceBelow = vh - rect.bottom;
+    const spaceAbove = rect.top;
+    const PREFERRED = 460;
+    if (spaceBelow >= PREFERRED || spaceBelow >= spaceAbove) {
+      setCoords({ right, top: rect.bottom + GAP, bottom: null, maxHeight: Math.max(180, spaceBelow - MARGIN) });
+    } else {
+      setCoords({ right, top: null, bottom: vh - rect.top + GAP, maxHeight: Math.max(180, spaceAbove - MARGIN) });
+    }
+  }, []);
+
+  // Reset drafts + compute position whenever the popover opens.
   useEffect(() => {
     if (open) {
       setDraftSponsored(isSponsored);
       setDraftTags(manualTags);
       setTagInput("");
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (rect) {
-        // Approximate popover height — content can include the
-        // sponsored toggle, auto-tag chips, manual-tag chips, an
-        // input, suggestion buttons, and the action row. Worst case
-        // is roughly 460px once a few rows wrap.
-        const APPROX_POPOVER_HEIGHT = 460;
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        // Flip up whenever there isn't enough room below, even if
-        // above is also constrained — the max-height + overflow-y on
-        // the menu (below) keeps it inside the viewport either way.
-        setOpenUpward(spaceBelow < APPROX_POPOVER_HEIGHT && spaceAbove > spaceBelow / 2);
-      }
+      reposition();
     }
-  }, [open, isSponsored, manualTags]);
+  }, [open, isSponsored, manualTags, reposition]);
 
-  // Close on outside click + Escape.
+  // While open: keep the popover glued to its trigger as the page or
+  // table scrolls/resizes, and close on outside click + Escape. The
+  // popover lives in a portal (outside this component's DOM subtree),
+  // so the outside-click test checks the trigger and the portal node
+  // explicitly rather than a single wrapper ref.
   useEffect(() => {
     if (!open) return;
     function onMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t)) return;
+      if (popoverRef.current?.contains(t)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
+    // capture=true so scrolls inside any nested scroll container (the
+    // table's hscroll, the page) all trigger a reposition.
+    const onScrollResize = () => reposition();
     document.addEventListener("mousedown", onMouseDown);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScrollResize, true);
+    window.addEventListener("resize", onScrollResize);
     return () => {
       document.removeEventListener("mousedown", onMouseDown);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScrollResize, true);
+      window.removeEventListener("resize", onScrollResize);
     };
-  }, [open]);
+  }, [open, reposition]);
 
   function addTag(raw: string) {
     const cleaned = raw.trim().toLowerCase();
@@ -144,7 +169,7 @@ export default function PostPropsPopover({
   const suggestions = availableTags.filter((t) => !draftTags.includes(t)).slice(0, 8);
 
   return (
-    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+    <div style={{ position: "relative", display: "inline-block" }}>
       <button
         ref={triggerRef}
         type="button"
@@ -179,20 +204,18 @@ export default function PostPropsPopover({
         </svg>
       </button>
 
-      {open && (
+      {open && coords && createPortal(
         <div
+          ref={popoverRef}
           style={{
-            position: "absolute",
-            ...(openUpward
-              ? { bottom: "calc(100% + 4px)" }
-              : { top: "calc(100% + 4px)" }),
-            right: 0,
-            zIndex: 50,
-            minWidth: 280,
-            // Cap the popover height to roughly the viewport so it
-            // never extends past the visible area, regardless of
-            // whether it opens up or down. Inner content scrolls.
-            maxHeight: "calc(100vh - 32px)",
+            // Fixed + portaled to <body> so the table's overflow:hidden
+            // can't clip it. Anchored to the trigger via `coords`.
+            position: "fixed",
+            right: coords.right,
+            ...(coords.top != null ? { top: coords.top } : { bottom: coords.bottom ?? 0 }),
+            zIndex: 1000,
+            width: 290,
+            maxHeight: coords.maxHeight,
             overflowY: "auto",
             padding: 12,
             background: "var(--bg-elev)",
@@ -373,7 +396,8 @@ export default function PostPropsPopover({
               {saving ? "Saving…" : "Save"}
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
