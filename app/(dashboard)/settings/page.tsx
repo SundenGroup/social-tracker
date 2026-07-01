@@ -318,10 +318,36 @@ export default function SettingsPage() {
     );
   }
 
-  const failedAccounts = accounts.filter((a) => {
-    const accountLogs = syncLogs.filter((l) => l.socialAccountId === a.id).slice(0, 3);
-    return accountLogs.length >= 3 && accountLogs.every((l) => l.status === "failed");
-  });
+  // Alerts, per platform type:
+  //  - API platforms: 3+ consecutive failed server syncs = something is
+  //    genuinely broken (token, quota, API change).
+  //  - Remote-scraper platforms: server sync logs are meaningless — the
+  //    signal that matters is staleness (the scrape host hasn't pushed
+  //    for over 36h).
+  const alerts: Array<{ id: string; message: string }> = [];
+  for (const a of accounts) {
+    if (API_SYNC_PLATFORMS.has(a.platform)) {
+      const accountLogs = syncLogs.filter((l) => l.socialAccountId === a.id).slice(0, 3);
+      if (accountLogs.length >= 3 && accountLogs.every((l) => l.status === "failed")) {
+        alerts.push({
+          id: a.id,
+          message: `${a.platform === "twitter" ? "X" : a.platform}/${a.accountName} has failed 3+ server syncs in a row — check API credentials.`,
+        });
+      }
+    } else {
+      const ageH = a.lastSyncedAt
+        ? (Date.now() - new Date(a.lastSyncedAt).getTime()) / 3600000
+        : Infinity;
+      if (ageH > 36) {
+        alerts.push({
+          id: a.id,
+          message: `${a.platform}/${a.accountName} hasn't received data from the remote scraper in ${
+            Number.isFinite(ageH) ? `${Math.round(ageH)}h` : "ever"
+          } — check the scrape host.`,
+        });
+      }
+    }
+  }
 
   return (
     <>
@@ -499,7 +525,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Failure alerts */}
-        {failedAccounts.length > 0 && (
+        {alerts.length > 0 && (
           <div
             style={{
               ...card,
@@ -508,9 +534,9 @@ export default function SettingsPage() {
             }}
           >
             <div style={{ ...cardTitle, color: "var(--bad)" }}>Sync alerts</div>
-            {failedAccounts.map((a) => (
+            {alerts.map((a) => (
               <div key={a.id} style={{ fontSize: 12, color: "var(--bad)" }}>
-                {a.platform}/{a.accountName} has failed 3+ times consecutively.
+                {a.message}
               </div>
             ))}
           </div>

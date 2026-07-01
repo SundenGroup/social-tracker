@@ -35,12 +35,16 @@ export async function dailySyncJob(): Promise<{
     console.error("[Cron] Auth cleanup failed:", err)
   );
 
+  // API-capable platforms only. TikTok and Instagram are pushed by the
+  // remote scrape host via /api/sync/ingest — queueing them here only
+  // produced a false "failed" sync log every day (the server either
+  // skips IG for having no session, or gets blocked by TikTok).
   const accounts = await prisma.socialAccount.findMany({
-    where: { isActive: true },
+    where: { isActive: true, platform: { in: ["youtube", "twitter", "vk"] } },
     select: { id: true, accountName: true, platform: true },
   });
 
-  console.log(`[Cron] Found ${accounts.length} active accounts to sync`);
+  console.log(`[Cron] Found ${accounts.length} active API-platform accounts to sync`);
 
   let queued = 0;
   const errors: string[] = [];

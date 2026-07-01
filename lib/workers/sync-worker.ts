@@ -112,13 +112,18 @@ async function processSyncJob(
   }
 
   try {
-    // Skip Instagram accounts with no auth token — they use the remote scraper
-    if (account.platform === "instagram" && !account.authToken) {
-      await prisma.syncLog.update({
-        where: { id: syncLogId },
-        data: { status: "failed", errorMessage: "Skipped — uses remote scraper", completedAt: new Date() },
-      });
-      console.log(`[SyncWorker] Skipping ${account.accountName} — uses remote scraper`);
+    // Remote-scraper platforms: TikTok always, Instagram unless an auth
+    // token was provided. The server can't sync these — data arrives
+    // via /api/sync/ingest from the scrape host. DELETE the queued log
+    // instead of marking it failed: a "failed" record here is pure
+    // noise that used to trip the Settings sync alerts and paint
+    // healthy accounts red.
+    if (
+      account.platform === "tiktok" ||
+      (account.platform === "instagram" && !account.authToken)
+    ) {
+      await prisma.syncLog.delete({ where: { id: syncLogId } }).catch(() => {});
+      console.log(`[SyncWorker] Skipping ${account.accountName} — synced via remote scraper`);
       return;
     }
 
