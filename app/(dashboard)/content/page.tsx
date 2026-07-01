@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import TagFilterPills from "@/components/common/TagFilterPills";
+import ViewToggle from "@/components/common/ViewToggle";
+import TopContentCard, { type ContentMetric } from "@/components/cards/TopContentCard";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useProfiles } from "@/hooks/useProfiles";
 import { useContentGroups, type ContentGroup } from "@/hooks/useContentGroups";
@@ -13,14 +15,24 @@ import { PlatformGlyph, PLATFORM_COLOR, Chevron } from "@/components/icons/Platf
 import { thumbSrc, thumbProxySrc } from "@/lib/thumb-src";
 import { fmtK } from "@/lib/format";
 
+const METRIC_TABS: Array<{ key: ContentMetric; label: string }> = [
+  { key: "views", label: "By views" },
+  { key: "engagements", label: "By engagements" },
+  { key: "rate", label: "By eng. rate" },
+];
+
 /**
- * Content performance — cross-platform view. Each row is one content
- * piece (the same clip/announcement published on several platforms),
- * with metrics aggregated across ALL of its placements. Grouping is
- * per profile (see lib/content-grouping.ts).
+ * Cross-platform — each entry is one content PIECE (the same
+ * clip/announcement published on several platforms), with metrics
+ * aggregated across ALL of its placements. Grouping is per profile
+ * (see lib/content-grouping.ts). Two views: List (expandable
+ * per-platform breakdown) and Gallery (ranked cards — absorbed the
+ * former "Top content" page, which redirects here).
  */
 export default function ContentPerformancePage() {
   const { startDate, endDate, setDateRange } = useDateRange();
+  const [view, setView] = useState<"list" | "gallery">("list");
+  const [metric, setMetric] = useState<ContentMetric>("views");
   const [tags, setTags] = useState<string[]>([]);
   const [multiOnly, setMultiOnly] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -40,6 +52,15 @@ export default function ContentPerformancePage() {
   // profile it's pure repetition.
   const showProfile = selectedProfileIds.length !== 1;
 
+  // Honor ?view=gallery (the /top-content redirect target).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("view") === "gallery") {
+      setView("gallery");
+      setMultiOnly(true); // the old Top content page defaulted to cross-posted
+    }
+  }, []);
+
   useEffect(() => {
     if (tags.length === 0) return;
     const stillValid = tags.filter(
@@ -56,9 +77,28 @@ export default function ContentPerformancePage() {
     setTags(defaultTagFilter ? [defaultTagFilter] : []);
   }, [profilesLoaded, scopeKey, defaultTagFilter]);
 
+  // Gallery ordering — the API returns by views; re-rank client-side
+  // for the other metrics.
+  const ranked = useMemo(() => {
+    if (!data) return [];
+    const list = [...data.groups];
+    if (metric === "engagements") list.sort((a, b) => b.totalEngagements - a.totalEngagements);
+    else if (metric === "rate") list.sort((a, b) => b.engagementRate - a.engagementRate);
+    else list.sort((a, b) => b.totalViews - a.totalViews);
+    return list.slice(0, 24);
+  }, [data, metric]);
+
   return (
     <>
-      <Header title="Content performance" subtitle="One piece, every platform — aggregated">
+      <Header title="Cross-platform" subtitle="One piece, every platform — aggregated">
+        <ViewToggle
+          value={view}
+          onChange={(v) => setView(v as "list" | "gallery")}
+          options={[
+            { key: "list", label: "List" },
+            { key: "gallery", label: "Gallery" },
+          ]}
+        />
         <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
       </Header>
 
@@ -96,22 +136,57 @@ export default function ContentPerformancePage() {
 
           {/* Controls */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-            <button
-              type="button"
-              onClick={() => setMultiOnly((v) => !v)}
-              style={{
-                padding: "7px 12px",
-                borderRadius: 8,
-                border: "1px solid var(--border)",
-                background: multiOnly ? "var(--accent)" : "var(--bg-elev)",
-                color: multiOnly ? "#fff" : "var(--fg-muted)",
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Cross-posted only
-            </button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {view === "gallery" && (
+                <div
+                  style={{
+                    display: "flex",
+                    background: "var(--bg-sunken)",
+                    padding: 3,
+                    borderRadius: 9,
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  {METRIC_TABS.map((o) => {
+                    const active = metric === o.key;
+                    return (
+                      <button
+                        key={o.key}
+                        onClick={() => setMetric(o.key)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 6,
+                          border: "none",
+                          background: active ? "var(--fg)" : "transparent",
+                          color: active ? "var(--bg-elev)" : "var(--fg-muted)",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {o.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setMultiOnly((v) => !v)}
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: multiOnly ? "var(--accent)" : "var(--bg-elev)",
+                  color: multiOnly ? "#fff" : "var(--fg-muted)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Cross-posted only
+              </button>
+            </div>
             <TagFilterPills
               availableTags={availableTags}
               primaryTags={primaryTags}
@@ -122,7 +197,23 @@ export default function ContentPerformancePage() {
             />
           </div>
 
-          {/* Groups table */}
+          {/* Gallery view — ranked cards (formerly the Top content page) */}
+          {view === "gallery" && (
+            ranked.length === 0 ? (
+              <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 14, padding: 40, textAlign: "center", color: "var(--fg-muted)", fontSize: 13 }}>
+                No content pieces in this period
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
+                {ranked.map((g, i) => (
+                  <TopContentCard key={g.groupId} group={g} rank={i + 1} metric={metric} showProfile={showProfile} />
+                ))}
+              </div>
+            )
+          )}
+
+          {/* List view — expandable per-platform breakdown */}
+          {view === "list" && (
           <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
             {/* Header row */}
             <div
@@ -166,6 +257,7 @@ export default function ContentPerformancePage() {
               />
             ))}
           </div>
+          )}
         </div>
       )}
     </>

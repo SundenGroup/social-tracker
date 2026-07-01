@@ -20,19 +20,30 @@ interface SidebarProps {
 interface NavItem {
   href: string;
   label: string;
+  icon?: React.ReactNode;
 }
 
 interface PlatformNavItem extends NavItem {
   platform: Platform;
 }
 
+/* Minimal 13px line icons so each Reporting item is visually distinct
+   (the old placeholder was an identical gray square on every row). */
+const navIcon = (d: string) => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d={d} />
+  </svg>
+);
+
 const REPORTING_ITEMS: NavItem[] = [
-  { href: "/", label: "Overview" },
-  { href: "/posts", label: "Post performance" },
-  { href: "/top-posts", label: "Top posts" },
-  { href: "/content", label: "Content performance" },
-  { href: "/top-content", label: "Top content" },
-  { href: "/period-comparison", label: "Period comparison" },
+  // Overview: 2x2 dashboard grid
+  { href: "/", label: "Overview", icon: navIcon("M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z") },
+  // Posts: list rows — every individual post
+  { href: "/posts", label: "Posts", icon: navIcon("M4 6h16M4 12h16M4 18h10") },
+  // Cross-platform: stacked layers — one piece across platforms
+  { href: "/content", label: "Cross-platform", icon: navIcon("M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5") },
+  // Compare periods: opposing arrows
+  { href: "/period-comparison", label: "Compare periods", icon: navIcon("M8 7h13M8 7l3-3M8 7l3 3M16 17H3M16 17l-3-3M16 17l-3 3") },
 ];
 
 const PLATFORM_ITEMS: PlatformNavItem[] = [
@@ -57,9 +68,7 @@ const WORKSPACE_ITEMS: (NavItem & { adminOnly?: boolean })[] = [
 const PROFILE_PAGES = new Set([
   "/",
   "/posts",
-  "/top-posts",
   "/content",
-  "/top-content",
   "/period-comparison",
   "/platforms/youtube",
   "/platforms/twitter",
@@ -220,6 +229,11 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps = 
               href={buildHref(item.href)}
               label={item.label}
               active={isActive(item.href)}
+              leading={
+                item.icon ? (
+                  <span style={{ display: "flex", color: "currentColor", opacity: 0.75 }}>{item.icon}</span>
+                ) : undefined
+              }
             />
           ))}
         </NavGroup>
