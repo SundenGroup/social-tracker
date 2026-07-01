@@ -12,16 +12,40 @@ interface PeriodPlatformRow {
   posts: number;
 }
 
-interface PeriodSummary {
+export interface PeriodTopPost {
+  id: string;
+  platform: string;
+  title: string | null;
+  contentUrl: string;
+  thumbnailUrl: string | null;
+  publishedAt: string;
+  views: number;
+  engagements: number;
+}
+
+export interface PeriodContentTypeRow {
+  type: string;
+  views: number;
+  engagements: number;
+  posts: number;
+}
+
+export interface PeriodSummary {
   label: string;
   summary: {
     totalViews: number;
     totalEngagements: number;
     avgEngagementRate: number;
     totalPosts: number;
+    viewsPerPost: number;
+    /** null = no follower tracking coverage for this period. */
+    followersGained: number | null;
   };
+  followerCoverage: { status: "full" | "partial" | "none"; trackingSince: string | null };
   platforms: PeriodPlatformRow[];
-  dailyTrend: { day: number; views: number }[];
+  dailyTrend: { day: number; views: number; engagements: number }[];
+  topPosts: PeriodTopPost[];
+  contentTypes: PeriodContentTypeRow[];
 }
 
 export interface PeriodComparisonData {
@@ -32,6 +56,9 @@ export interface PeriodComparisonData {
     engagements: number;
     engagementRate: number;
     posts: number;
+    viewsPerPost: number;
+    /** null when either period lacks full follower coverage. */
+    followers: number | null;
     platforms: {
       platform: string;
       views: number;

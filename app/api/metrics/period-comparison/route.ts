@@ -16,6 +16,24 @@ interface PeriodPlatformRow {
   posts: number;
 }
 
+interface TopPostLite {
+  id: string;
+  platform: string;
+  title: string | null;
+  contentUrl: string;
+  thumbnailUrl: string | null;
+  publishedAt: string;
+  views: number;
+  engagements: number;
+}
+
+interface ContentTypeRow {
+  type: string;
+  views: number;
+  engagements: number;
+  posts: number;
+}
+
 interface PeriodSummary {
   label: string;
   summary: {
@@ -23,9 +41,21 @@ interface PeriodSummary {
     totalEngagements: number;
     avgEngagementRate: number;
     totalPosts: number;
+    /** totalViews / totalPosts — separates "posted more" from "posted better". */
+    viewsPerPost: number;
+    /** Sum of AccountDailyRollup.newFollowers inside the period. NULL when
+     *  the period has zero rollup coverage (follower tracking started after
+     *  the period ended) — the UI renders an explainer instead of a bogus 0. */
+    followersGained: number | null;
   };
+  /** Follower-tracking coverage for THIS period. Tracking only exists from
+   *  the first daily rollup ever recorded; periods before that can't be
+   *  compared on followers. */
+  followerCoverage: { status: "full" | "partial" | "none"; trackingSince: string | null };
   platforms: PeriodPlatformRow[];
-  dailyTrend: { day: number; views: number }[];
+  dailyTrend: { day: number; views: number; engagements: number }[];
+  topPosts: TopPostLite[];
+  contentTypes: ContentTypeRow[];
 }
 
 function formatLabel(start: Date, end: Date): string {
@@ -120,7 +150,8 @@ async function aggregatePeriod(
     });
   }
 
-  // Daily trend: group views by day offset from period start
+  // One full-period post pass powers the daily trend, top posts, and
+  // the content-type breakdown (metrics reused across all three).
   const allPostWhere: Record<string, unknown> = {
     socialAccountId: { in: accountIds },
     publishedAt: { gte: start, lte: end },
@@ -129,32 +160,121 @@ async function aggregatePeriod(
   };
   if (hideSponsored) allPostWhere.isSponsored = false;
 
-  const trendPosts = await prisma.post.findMany({
+  const periodPosts = await prisma.post.findMany({
     where: allPostWhere,
     select: {
       id: true,
       publishedAt: true,
+      platform: true,
+      postType: true,
+      title: true,
+      description: true,
+      contentUrl: true,
+      thumbnailUrl: true,
     },
   });
 
-  const trendMetrics = await getLatestMetrics(trendPosts.map((p) => p.id));
+  const periodMetrics = await getLatestMetrics(periodPosts.map((p) => p.id));
 
   const startTime = start.getTime();
-  const dayMap = new Map<number, number>();
+  const dayViews = new Map<number, number>();
+  const dayEng = new Map<number, number>();
+  const typeMap = new Map<string, ContentTypeRow>();
+  const enriched: Array<{ post: (typeof periodPosts)[number]; views: number; engagements: number }> = [];
 
-  for (const post of trendPosts) {
+  for (const post of periodPosts) {
+    const views = metricValue(periodMetrics, post.id, "views");
+    const engagements =
+      metricValue(periodMetrics, post.id, "likes") +
+      metricValue(periodMetrics, post.id, "comments") +
+      metricValue(periodMetrics, post.id, "shares");
+    enriched.push({ post, views, engagements });
+
     const dayOffset = Math.floor((post.publishedAt.getTime() - startTime) / 86400000);
-    const views = metricValue(trendMetrics, post.id, "views");
-    if (views > 0) {
-      dayMap.set(dayOffset, (dayMap.get(dayOffset) ?? 0) + views);
-    }
+    if (views > 0) dayViews.set(dayOffset, (dayViews.get(dayOffset) ?? 0) + views);
+    if (engagements > 0) dayEng.set(dayOffset, (dayEng.get(dayOffset) ?? 0) + engagements);
+
+    const t = typeMap.get(post.postType) ?? { type: post.postType, views: 0, engagements: 0, posts: 0 };
+    t.views += views;
+    t.engagements += engagements;
+    t.posts += 1;
+    typeMap.set(post.postType, t);
   }
 
   const totalDays = Math.ceil((end.getTime() - startTime) / 86400000) + 1;
-  const dailyTrend: { day: number; views: number }[] = [];
+  const dailyTrend: { day: number; views: number; engagements: number }[] = [];
   for (let d = 0; d < totalDays; d++) {
-    dailyTrend.push({ day: d + 1, views: dayMap.get(d) ?? 0 });
+    dailyTrend.push({ day: d + 1, views: dayViews.get(d) ?? 0, engagements: dayEng.get(d) ?? 0 });
   }
+
+  const topPosts: TopPostLite[] = enriched
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 5)
+    .map(({ post, views, engagements }) => ({
+      id: post.id,
+      platform: post.platform,
+      title: (post.title || post.description || "").slice(0, 140) || null,
+      contentUrl: post.contentUrl,
+      thumbnailUrl: post.thumbnailUrl,
+      publishedAt: post.publishedAt.toISOString(),
+      views,
+      engagements,
+    }));
+
+  const contentTypes = Array.from(typeMap.values()).sort((a, b) => b.views - a.views);
+
+  // Followers gained + coverage. Tracking exists only from the first
+  // rollup ever recorded — a period entirely before that has NO
+  // follower data and must not render as "0 (-100%)".
+  //
+  // Coverage is judged by ROW COUNT vs expectation, not just the first
+  // rollup date: rollups are one row per account per day
+  // (@@unique([socialAccountId, rollupDate])), written only when that
+  // account actually syncs. Checking only "tracking started before the
+  // period" misses (a) accounts whose tracking began later than
+  // others', (b) mid-period sync outages, and (c) periods ending
+  // today/future where tail days can't have rows yet — each of which
+  // silently deflates one side and fabricates a swing. We expect
+  // accounts × days-through-yesterday rows and grant "full" at ≥95%
+  // (a couple of globally missed days shouldn't nuke a year-over-year
+  // comparison, but a whole absent account/platform must).
+  const [rollupAgg, firstRollup] = await Promise.all([
+    prisma.accountDailyRollup.aggregate({
+      where: { socialAccountId: { in: accountIds }, rollupDate: { gte: start, lte: end } },
+      _sum: { newFollowers: true },
+      _count: { _all: true },
+    }),
+    prisma.accountDailyRollup.findFirst({
+      where: { socialAccountId: { in: accountIds } },
+      orderBy: { rollupDate: "asc" },
+      select: { rollupDate: true },
+    }),
+  ]);
+  const trackingSince = firstRollup?.rollupDate ?? null;
+
+  // Expected coverage window: period days up to and including
+  // YESTERDAY (UTC) — today's rollup only exists after that account's
+  // daily sync has run, and future days can never have rows.
+  const startOfTodayUtc = new Date();
+  startOfTodayUtc.setUTCHours(0, 0, 0, 0);
+  const effectiveEndMs = Math.min(end.getTime(), startOfTodayUtc.getTime() - 1);
+  const expectedDays =
+    effectiveEndMs >= startTime
+      ? Math.floor((effectiveEndMs - startTime) / 86400000) + 1
+      : 0;
+  const expectedRows = expectedDays * accountIds.length;
+  const actualRows = rollupAgg._count._all;
+
+  let coverageStatus: "full" | "partial" | "none";
+  if (actualRows === 0 || expectedRows === 0) {
+    coverageStatus = "none";
+  } else if (actualRows >= expectedRows * 0.95) {
+    coverageStatus = "full";
+  } else {
+    coverageStatus = "partial";
+  }
+  const followersGained =
+    coverageStatus === "none" ? null : Number(rollupAgg._sum.newFollowers ?? 0);
 
   // Compute summary
   const totalViews = platformRows.reduce((s, p) => s + p.views, 0);
@@ -167,12 +287,19 @@ async function aggregatePeriod(
           (activePlatforms.reduce((s, p) => s + p.engagementRate, 0) / activePlatforms.length).toFixed(2)
         )
       : 0;
+  const viewsPerPost = totalPosts > 0 ? Math.round(totalViews / totalPosts) : 0;
 
   return {
     label: formatLabel(start, end),
-    summary: { totalViews, totalEngagements, avgEngagementRate, totalPosts },
+    summary: { totalViews, totalEngagements, avgEngagementRate, totalPosts, viewsPerPost, followersGained },
+    followerCoverage: {
+      status: coverageStatus,
+      trackingSince: trackingSince ? trackingSince.toISOString() : null,
+    },
     platforms: platformRows,
     dailyTrend,
+    topPosts,
+    contentTypes,
   };
 }
 
@@ -238,6 +365,17 @@ export const GET = apiHandler(
         (periodA.summary.avgEngagementRate - periodB.summary.avgEngagementRate).toFixed(2)
       ),
       posts: pctChange(periodA.summary.totalPosts, periodB.summary.totalPosts),
+      viewsPerPost: pctChange(periodA.summary.viewsPerPost, periodB.summary.viewsPerPost),
+      // Followers delta is only meaningful when BOTH periods have full
+      // rollup coverage — partial/none on either side yields null and
+      // the UI explains why instead of showing a fake swing.
+      followers:
+        periodA.followerCoverage.status === "full" &&
+        periodB.followerCoverage.status === "full" &&
+        periodA.summary.followersGained != null &&
+        periodB.summary.followersGained != null
+          ? pctChange(periodA.summary.followersGained, periodB.summary.followersGained)
+          : null,
       // Match the per-period filter — only platforms with in-scope
       // accounts are present in periodA.platforms; periodB uses the
       // same accountIds so its platform set is identical.
