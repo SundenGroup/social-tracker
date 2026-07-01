@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Header from "@/components/layouts/Header";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import { PlatformGlyph, PLATFORM_COLOR } from "@/components/icons/PlatformGlyph";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/common/Toast";
 
@@ -53,6 +54,39 @@ interface RefreshProgress {
   estimatedRemainingMs: number;
 }
 
+/** Platforms whose server-side sync actually works (API-based). TikTok
+ *  and Instagram are synced by the remote scrape host — triggering a
+ *  server sync for them only produces a failed log, so the UI doesn't
+ *  offer it. */
+const API_SYNC_PLATFORMS = new Set(["youtube", "twitter", "vk"]);
+
+/* ——— shared style fragments (design tokens; dark-mode safe) ——— */
+const card: React.CSSProperties = {
+  background: "var(--bg-elev)",
+  border: "1px solid var(--border)",
+  borderRadius: 14,
+  padding: 20,
+  marginBottom: 18,
+};
+const cardTitle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: "var(--fg)", marginBottom: 4 };
+const cardHint: React.CSSProperties = { fontSize: 11, color: "var(--fg-subtle)", marginBottom: 14 };
+const statCell: React.CSSProperties = {
+  background: "var(--bg-sunken)",
+  borderRadius: 10,
+  padding: 12,
+  textAlign: "center" as const,
+};
+const primaryBtn: React.CSSProperties = {
+  padding: "7px 14px",
+  borderRadius: 8,
+  background: "var(--accent)",
+  color: "#fff",
+  fontSize: 12,
+  fontWeight: 600,
+  border: "none",
+  cursor: "pointer",
+};
+
 export default function SettingsPage() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
@@ -70,6 +104,9 @@ export default function SettingsPage() {
   const [elapsedDisplay, setElapsedDisplay] = useState(0);
   const refreshPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const apiAccounts = accounts.filter((a) => API_SYNC_PLATFORMS.has(a.platform));
+  const scraperAccounts = accounts.filter((a) => !API_SYNC_PLATFORMS.has(a.platform));
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -89,9 +126,7 @@ export default function SettingsPage() {
         const json = await logsRes.json();
         setSyncLogs(json.data ?? []);
       }
-      if (healthRes.ok) {
-        setHealth(await healthRes.json());
-      }
+      if (healthRes.ok) setHealth(await healthRes.json());
       if (settingsRes.ok) {
         const json = await settingsRes.json();
         setHideSponsored(json.data?.hideSponsored ?? false);
@@ -114,12 +149,27 @@ export default function SettingsPage() {
     setSyncingId(accountId);
     try {
       await fetch(`/api/accounts/${accountId}/sync`, { method: "POST" });
-      // Wait a moment then refresh
       setTimeout(fetchData, 2000);
     } catch {
       // Handle silently
     } finally {
       setSyncingId(null);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    setSyncingAll(true);
+    try {
+      // Only API-capable platforms — TikTok/Instagram sync via the
+      // remote scrape host, a server-side trigger can't reach them.
+      for (const account of apiAccounts) {
+        await fetch(`/api/accounts/${account.id}/sync`, { method: "POST" });
+      }
+      setTimeout(fetchData, 3000);
+    } catch {
+      // Handle silently
+    } finally {
+      setSyncingAll(false);
     }
   };
 
@@ -133,7 +183,7 @@ export default function SettingsPage() {
         body: JSON.stringify({ hideSponsored: newValue }),
       });
     } catch {
-      setHideSponsored(!newValue); // revert on error
+      setHideSponsored(!newValue);
     }
   };
 
@@ -166,28 +216,12 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSyncAll = async () => {
-    setSyncingAll(true);
-    try {
-      for (const account of accounts) {
-        await fetch(`/api/accounts/${account.id}/sync`, { method: "POST" });
-      }
-      setTimeout(fetchData, 3000);
-    } catch {
-      // Handle silently
-    } finally {
-      setSyncingAll(false);
-    }
-  };
-
   const pollRefreshStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/full-refresh");
       if (res.ok) {
         const json = await res.json();
         setRefreshProgress(json.data);
-
-        // Stop polling when done
         if (!json.data.isRunning && refreshPollRef.current) {
           clearInterval(refreshPollRef.current);
           refreshPollRef.current = null;
@@ -203,13 +237,10 @@ export default function SettingsPage() {
   }, []);
 
   const startPolling = useCallback((startedAt?: number) => {
-    // Clear any existing intervals first
     if (refreshPollRef.current) clearInterval(refreshPollRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
-
     pollRefreshStatus();
     refreshPollRef.current = setInterval(pollRefreshStatus, 2000);
-
     const baseTime = startedAt ?? Date.now();
     setElapsedDisplay(Date.now() - baseTime);
     timerRef.current = setInterval(() => {
@@ -222,22 +253,19 @@ export default function SettingsPage() {
       const res = await fetch("/api/admin/full-refresh", { method: "POST" });
       if (!res.ok) {
         const json = await res.json();
-        alert(json.error || "Failed to start refresh");
+        toast("error", json.error || "Failed to start refresh");
         return;
       }
       startPolling();
     } catch {
-      alert("Failed to start refresh");
+      toast("error", "Failed to start refresh");
     }
   };
 
-  // Check for in-progress refresh on mount
   useEffect(() => {
     pollRefreshStatus().then(() => {
       setRefreshProgress((prev) => {
-        if (prev?.isRunning) {
-          startPolling(prev.startedAt ?? undefined);
-        }
+        if (prev?.isRunning) startPolling(prev.startedAt ?? undefined);
         return prev;
       });
     });
@@ -257,345 +285,379 @@ export default function SettingsPage() {
     return `${seconds}s`;
   };
 
-  const syncStatusColor = (status: string) => {
-    switch (status) {
-      case "success": return "bg-green-50 text-green-600";
-      case "failed": return "bg-red-50 text-red-600";
-      case "syncing": return "bg-yellow-50 text-yellow-600";
-      default: return "bg-gray-50 text-gray-500";
-    }
-  };
+  const statusPill = (status: string): React.CSSProperties => ({
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: 700,
+    background:
+      status === "success"
+        ? "color-mix(in srgb, var(--good) 14%, transparent)"
+        : status === "failed"
+          ? "color-mix(in srgb, var(--bad) 12%, transparent)"
+          : "color-mix(in srgb, #E09B00 16%, transparent)",
+    color: status === "success" ? "var(--good)" : status === "failed" ? "var(--bad)" : "#E09B00",
+  });
 
-  const syncFreshness = (lastSyncedAt: string | null) => {
-    if (!lastSyncedAt) return "text-red-600";
+  const syncFreshnessColor = (lastSyncedAt: string | null) => {
+    if (!lastSyncedAt) return "var(--bad)";
     const hours = (Date.now() - new Date(lastSyncedAt).getTime()) / 3600000;
-    if (hours < 24) return "text-green-600";
-    if (hours < 72) return "text-yellow-600";
-    return "text-red-600";
+    if (hours < 30) return "var(--good)";
+    if (hours < 72) return "#E09B00";
+    return "var(--bad)";
   };
 
   if (isLoading) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
+      <>
+        <Header title="Settings & monitoring" />
+        <div style={{ display: "flex", minHeight: 400, alignItems: "center", justifyContent: "center" }}>
+          <LoadingSpinner size="lg" />
+        </div>
+      </>
     );
   }
 
-  // Find accounts with 3+ consecutive failures
   const failedAccounts = accounts.filter((a) => {
-    const accountLogs = syncLogs
-      .filter((l) => l.socialAccountId === a.id)
-      .slice(0, 3);
+    const accountLogs = syncLogs.filter((l) => l.socialAccountId === a.id).slice(0, 3);
     return accountLogs.length >= 3 && accountLogs.every((l) => l.status === "failed");
   });
 
   return (
     <>
-      <Header title="Settings & Monitoring">
-        <button
-          onClick={handleSyncAll}
-          disabled={syncingAll}
-          className="rounded-lg bg-clutch-red px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-        >
-          {syncingAll ? "Syncing..." : "Sync All"}
+      <Header title="Settings & monitoring">
+        <button onClick={handleSyncAll} disabled={syncingAll} style={{ ...primaryBtn, opacity: syncingAll ? 0.6 : 1 }}>
+          {syncingAll ? "Syncing…" : "Sync API platforms"}
         </button>
       </Header>
 
-      {/* Organization */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-1 text-sm font-bold text-clutch-black">Organization</h2>
-        <p className="mb-4 text-[10px] text-clutch-grey/50">
-          Shown in invitation emails and the workspace header.
-        </p>
-        <div className="flex items-start gap-3">
-          <div className="flex-1">
-            <label className="mb-1 block text-xs font-medium text-clutch-grey">
-              Organization name
-            </label>
-            <input
-              type="text"
-              value={orgNameInput}
-              onChange={(e) => setOrgNameInput(e.target.value)}
-              disabled={!isAdmin || savingOrgName}
-              maxLength={80}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue disabled:bg-gray-50 disabled:text-clutch-grey/60"
-              placeholder="e.g. Clutch"
-            />
-            {!isAdmin && (
-              <p className="mt-1 text-[10px] text-clutch-grey/50">
-                Only admins can change the organization name.
-              </p>
-            )}
-          </div>
-          {isAdmin && (
-            <button
-              onClick={handleSaveOrgName}
-              disabled={savingOrgName || orgNameInput.trim() === orgName || orgNameInput.trim().length < 2}
-              className="mt-5 rounded-lg bg-clutch-red px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-clutch-red/90 disabled:opacity-40"
-            >
-              {savingOrgName ? "Saving…" : "Save"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Display Preferences */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-sm font-bold text-clutch-black">Display Preferences</h2>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-clutch-black">Hide sponsored posts from stats & charts</p>
-            <p className="text-[10px] text-clutch-grey/50">
-              Sponsored posts will still appear in tables but won&apos;t affect KPIs, charts, or comparisons
-            </p>
-          </div>
-          <button
-            onClick={handleToggleSponsored}
-            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors ${
-              hideSponsored ? "bg-clutch-red" : "bg-gray-300"
-            }`}
-          >
-            <span
-              className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                hideSponsored ? "translate-x-4.5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
-        </div>
-      </div>
-
-      {/* Full Metric Refresh */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-bold text-clutch-black">Full Metric Refresh</h2>
-            <p className="text-[10px] text-clutch-grey/50">
-              Update metrics for ALL posts across all platforms. YouTube is fast (API), Twitter/TikTok are slower (per-post scraping).
-            </p>
-          </div>
-          <button
-            onClick={handleStartRefresh}
-            disabled={refreshProgress?.isRunning}
-            className="rounded-lg bg-clutch-blue px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
-          >
-            {refreshProgress?.isRunning ? "Refreshing..." : "Refresh All Metrics"}
-          </button>
-        </div>
-
-        {refreshProgress?.isRunning && (
-          <div className="space-y-3">
-            {/* Progress bar */}
-            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-              <div
-                className="h-full rounded-full bg-clutch-blue transition-all duration-500"
+      <div className="page-pad" style={{ padding: "24px 28px 48px" }}>
+        {/* Organization */}
+        <div style={card}>
+          <div style={cardTitle}>Organization</div>
+          <div style={cardHint}>Shown in invitation emails and the workspace header.</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", maxWidth: 480 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 6 }}>
+                Organization name
+              </label>
+              <input
+                type="text"
+                value={orgNameInput}
+                onChange={(e) => setOrgNameInput(e.target.value)}
+                disabled={!isAdmin || savingOrgName}
+                maxLength={80}
+                placeholder="e.g. Clutch"
                 style={{
-                  width: `${refreshProgress.totalPosts > 0 ? (refreshProgress.processedPosts / refreshProgress.totalPosts) * 100 : 0}%`,
+                  width: "100%",
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border-strong)",
+                  background: "var(--bg)",
+                  color: "var(--fg)",
+                  fontSize: 13,
+                  outline: "none",
                 }}
               />
             </div>
-
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {/* Elapsed time */}
-              <div className="rounded-lg bg-gray-50 p-3 text-center">
-                <div className="text-lg font-bold text-clutch-black">
-                  {formatDuration(elapsedDisplay)}
-                </div>
-                <p className="text-[10px] text-clutch-grey/50">Elapsed</p>
-              </div>
-
-              {/* ETA */}
-              <div className="rounded-lg bg-gray-50 p-3 text-center">
-                <div className="text-lg font-bold text-clutch-black">
-                  {refreshProgress.estimatedRemainingMs > 0
-                    ? formatDuration(refreshProgress.estimatedRemainingMs)
-                    : "Calculating..."}
-                </div>
-                <p className="text-[10px] text-clutch-grey/50">Estimated Remaining</p>
-              </div>
-
-              {/* Posts progress */}
-              <div className="rounded-lg bg-gray-50 p-3 text-center">
-                <div className="text-lg font-bold text-clutch-black">
-                  {refreshProgress.processedPosts} / {refreshProgress.totalPosts}
-                </div>
-                <p className="text-[10px] text-clutch-grey/50">Posts Processed</p>
-              </div>
-
-              {/* Metrics updated */}
-              <div className="rounded-lg bg-gray-50 p-3 text-center">
-                <div className="text-lg font-bold text-clutch-black">
-                  {refreshProgress.metricsUpdated.toLocaleString()}
-                </div>
-                <p className="text-[10px] text-clutch-grey/50">Metrics Updated</p>
-              </div>
-            </div>
-
-            {/* Current account */}
-            <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-clutch-blue">
-              Processing: <span className="font-medium capitalize">{refreshProgress.currentPlatform}</span> / {refreshProgress.currentAccount}
-              <span className="ml-2 text-clutch-grey/50">
-                (Account {refreshProgress.accountsProcessed + 1} of {refreshProgress.accountsTotal})
-              </span>
-            </div>
-
-            {/* Errors */}
-            {refreshProgress.errorCount > 0 && (
-              <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                {refreshProgress.errorCount} error{refreshProgress.errorCount !== 1 ? "s" : ""} — latest: {refreshProgress.errors[refreshProgress.errors.length - 1]}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Show last completed refresh */}
-        {refreshProgress && !refreshProgress.isRunning && refreshProgress.completedAt && (
-          <div className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
-            Last refresh completed in {formatDuration(refreshProgress.elapsedMs)} — {refreshProgress.processedPosts} posts processed, {refreshProgress.metricsUpdated.toLocaleString()} metrics updated
-            {refreshProgress.errorCount > 0 && (
-              <span className="text-red-600"> ({refreshProgress.errorCount} errors)</span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Health Status */}
-      {health && (
-        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-bold text-clutch-black">System Health</h2>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <div className="rounded-lg bg-gray-50 p-3 text-center">
-              <div className={`text-lg font-bold ${health.status === "ok" ? "text-green-600" : "text-red-600"}`}>
-                {health.status.toUpperCase()}
-              </div>
-              <p className="text-[10px] text-clutch-grey/50">Status</p>
-            </div>
-            <div className="rounded-lg bg-gray-50 p-3 text-center">
-              <div className={`text-lg font-bold ${health.database ? "text-green-600" : "text-red-600"}`}>
-                {health.database ? "Connected" : "Error"}
-              </div>
-              <p className="text-[10px] text-clutch-grey/50">Database</p>
-            </div>
-            <div className="rounded-lg bg-gray-50 p-3 text-center">
-              <div className="text-lg font-bold text-clutch-black">
-                {health.lastSync
-                  ? new Date(health.lastSync).toLocaleDateString()
-                  : "Never"}
-              </div>
-              <p className="text-[10px] text-clutch-grey/50">Last Sync</p>
-            </div>
-            <div className="rounded-lg bg-gray-50 p-3 text-center">
-              <div className="text-lg font-bold text-clutch-black">
-                v{health.version}
-              </div>
-              <p className="text-[10px] text-clutch-grey/50">Version</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Failure Alerts */}
-      {failedAccounts.length > 0 && (
-        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-5">
-          <h2 className="mb-2 text-sm font-bold text-red-700">Sync Alerts</h2>
-          {failedAccounts.map((a) => (
-            <p key={a.id} className="text-xs text-red-600">
-              {a.platform}/{a.accountName} has failed 3+ times consecutively.
-              Check credentials and try syncing manually.
-            </p>
-          ))}
-        </div>
-      )}
-
-      {/* Account Sync Status */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-bold text-clutch-black">Account Sync Status</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {accounts.map((account) => (
-            <div
-              key={account.id}
-              className="rounded-lg border border-gray-100 p-4"
-            >
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-medium capitalize text-clutch-black">
-                  {account.platform}
-                </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${syncStatusColor(account.syncStatus)}`}
-                >
-                  {account.syncStatus}
-                </span>
-              </div>
-              <p className="mb-1 text-sm font-medium text-clutch-black">
-                {account.accountName}
-              </p>
-              <p className={`mb-3 text-[10px] ${syncFreshness(account.lastSyncedAt)}`}>
-                {account.lastSyncedAt
-                  ? `Last synced: ${new Date(account.lastSyncedAt).toLocaleString()}`
-                  : "Never synced"}
-              </p>
+            {isAdmin && (
               <button
-                onClick={() => handleSyncOne(account.id)}
-                disabled={syncingId === account.id}
-                className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-[10px] font-medium text-clutch-grey transition-colors hover:bg-gray-50 disabled:opacity-50"
+                onClick={handleSaveOrgName}
+                disabled={savingOrgName || orgNameInput.trim() === orgName || orgNameInput.trim().length < 2}
+                style={{
+                  ...primaryBtn,
+                  opacity:
+                    savingOrgName || orgNameInput.trim() === orgName || orgNameInput.trim().length < 2 ? 0.4 : 1,
+                }}
               >
-                {syncingId === account.id ? "Syncing..." : "Sync Now"}
+                {savingOrgName ? "Saving…" : "Save"}
               </button>
+            )}
+          </div>
+        </div>
+
+        {/* Display preferences */}
+        <div style={card}>
+          <div style={cardTitle}>Display preferences</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)" }}>
+                Hide sponsored posts from stats &amp; charts
+              </div>
+              <div style={{ fontSize: 11, color: "var(--fg-subtle)", marginTop: 2 }}>
+                Flagged posts stay reachable via the Sponsored filter on Post performance, but won&apos;t affect KPIs,
+                charts, or comparisons.
+              </div>
             </div>
-          ))}
-          {accounts.length === 0 && (
-            <p className="col-span-full py-4 text-center text-xs text-clutch-grey/50">
-              No accounts configured
-            </p>
+            <button
+              onClick={handleToggleSponsored}
+              aria-pressed={hideSponsored}
+              style={{
+                position: "relative",
+                width: 38,
+                height: 22,
+                borderRadius: 999,
+                border: "none",
+                cursor: "pointer",
+                background: hideSponsored ? "var(--accent)" : "var(--border-strong)",
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  position: "absolute",
+                  top: 3,
+                  left: hideSponsored ? 19 : 3,
+                  width: 16,
+                  height: 16,
+                  borderRadius: "50%",
+                  background: "#fff",
+                  transition: "left .15s ease",
+                }}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Full metric refresh */}
+        <div style={card}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+            <div>
+              <div style={cardTitle}>Full metric refresh</div>
+              <div style={{ ...cardHint, marginBottom: 0, maxWidth: 560 }}>
+                Re-pulls metrics for every post on the API platforms — YouTube, X and VK. TikTok and Instagram are
+                refreshed daily by the remote scrape host and aren&apos;t part of this job.
+              </div>
+            </div>
+            <button
+              onClick={handleStartRefresh}
+              disabled={refreshProgress?.isRunning}
+              style={{ ...primaryBtn, background: "var(--fg)", color: "var(--bg-elev)", opacity: refreshProgress?.isRunning ? 0.5 : 1, whiteSpace: "nowrap" }}
+            >
+              {refreshProgress?.isRunning ? "Refreshing…" : "Refresh metrics"}
+            </button>
+          </div>
+
+          {refreshProgress?.isRunning && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ height: 6, borderRadius: 4, background: "var(--bg-sunken)", overflow: "hidden", marginBottom: 12 }}>
+                <div
+                  style={{
+                    height: "100%",
+                    borderRadius: 4,
+                    background: "var(--accent)",
+                    transition: "width .5s ease",
+                    width: `${refreshProgress.totalPosts > 0 ? (refreshProgress.processedPosts / refreshProgress.totalPosts) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+                <div style={statCell}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--fg)" }}>{formatDuration(elapsedDisplay)}</div>
+                  <div style={{ fontSize: 10, color: "var(--fg-subtle)" }}>Elapsed</div>
+                </div>
+                <div style={statCell}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--fg)" }}>
+                    {refreshProgress.estimatedRemainingMs > 0 ? formatDuration(refreshProgress.estimatedRemainingMs) : "…"}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--fg-subtle)" }}>Remaining</div>
+                </div>
+                <div style={statCell}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--fg)" }}>
+                    {refreshProgress.processedPosts} / {refreshProgress.totalPosts}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--fg-subtle)" }}>Posts</div>
+                </div>
+                <div style={statCell}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--fg)" }}>
+                    {refreshProgress.metricsUpdated.toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--fg-subtle)" }}>Metrics updated</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 10, fontSize: 11, color: "var(--fg-muted)" }}>
+                Processing <span style={{ fontWeight: 600, textTransform: "capitalize" }}>{refreshProgress.currentPlatform}</span> / {refreshProgress.currentAccount}
+                {" "}(account {refreshProgress.accountsProcessed + 1} of {refreshProgress.accountsTotal})
+              </div>
+              {refreshProgress.errorCount > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "var(--bad)" }}>
+                  {refreshProgress.errorCount} error{refreshProgress.errorCount !== 1 ? "s" : ""} — latest: {refreshProgress.errors[refreshProgress.errors.length - 1]}
+                </div>
+              )}
+            </div>
+          )}
+
+          {refreshProgress && !refreshProgress.isRunning && refreshProgress.completedAt && (
+            <div style={{ marginTop: 12, fontSize: 11, color: "var(--good)" }}>
+              Last refresh completed in {formatDuration(refreshProgress.elapsedMs)} — {refreshProgress.processedPosts} posts,{" "}
+              {refreshProgress.metricsUpdated.toLocaleString()} metrics updated
+              {refreshProgress.errorCount > 0 && (
+                <span style={{ color: "var(--bad)" }}> ({refreshProgress.errorCount} errors)</span>
+              )}
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Sync Logs Table */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-bold text-clutch-black">Recent Sync Logs</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-gray-100 text-clutch-grey/50">
-                <th className="pb-2 pr-4 font-medium">Account</th>
-                <th className="pb-2 pr-4 font-medium">Type</th>
-                <th className="pb-2 pr-4 font-medium">Status</th>
-                <th className="pb-2 pr-4 font-medium text-right">Posts</th>
-                <th className="pb-2 pr-4 font-medium">Started</th>
-                <th className="pb-2 font-medium">Error</th>
-              </tr>
-            </thead>
-            <tbody>
-              {syncLogs.map((log) => (
-                <tr key={log.id} className="border-b border-gray-50">
-                  <td className="py-2 pr-4 font-medium text-clutch-black">
-                    {log.accountName ?? log.socialAccountId.slice(0, 8)}
-                  </td>
-                  <td className="py-2 pr-4 text-clutch-grey/70">
-                    {log.syncType.replace(/_/g, " ")}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${syncStatusColor(log.status)}`}>
-                      {log.status}
+        {/* Failure alerts */}
+        {failedAccounts.length > 0 && (
+          <div
+            style={{
+              ...card,
+              background: "color-mix(in srgb, var(--bad) 6%, var(--bg-elev))",
+              border: "1px solid color-mix(in srgb, var(--bad) 35%, transparent)",
+            }}
+          >
+            <div style={{ ...cardTitle, color: "var(--bad)" }}>Sync alerts</div>
+            {failedAccounts.map((a) => (
+              <div key={a.id} style={{ fontSize: 12, color: "var(--bad)" }}>
+                {a.platform}/{a.accountName} has failed 3+ times consecutively.
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Account sync status */}
+        <div style={card}>
+          <div style={cardTitle}>Account sync status</div>
+          <div style={cardHint}>
+            YouTube, X and VK sync from the server. TikTok and Instagram are pushed daily by the remote scrape host.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 10 }}>
+            {[...apiAccounts, ...scraperAccounts].map((account) => {
+              const isApi = API_SYNC_PLATFORMS.has(account.platform);
+              return (
+                <div key={account.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: PLATFORM_COLOR[account.platform] ?? "var(--fg-muted)" }}>
+                      <PlatformGlyph platform={account.platform} size={13} />
+                      <span style={{ textTransform: "capitalize", color: "var(--fg-muted)" }}>
+                        {account.platform === "twitter" ? "X" : account.platform}
+                      </span>
                     </span>
-                  </td>
-                  <td className="py-2 pr-4 text-right">{log.postsSynced}</td>
-                  <td className="py-2 pr-4 text-clutch-grey/50">
-                    {new Date(log.startedAt).toLocaleString()}
-                  </td>
-                  <td className="max-w-[200px] truncate py-2 text-red-500">
-                    {log.errorMessage ?? "—"}
-                  </td>
+                    <span style={statusPill(account.syncStatus)}>{account.syncStatus}</span>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)", marginBottom: 2 }}>{account.accountName}</div>
+                  <div style={{ fontSize: 10, color: syncFreshnessColor(account.lastSyncedAt), marginBottom: 10 }}>
+                    {account.lastSyncedAt ? `Last synced ${new Date(account.lastSyncedAt).toLocaleString()}` : "Never synced"}
+                  </div>
+                  {isApi ? (
+                    <button
+                      onClick={() => handleSyncOne(account.id)}
+                      disabled={syncingId === account.id}
+                      style={{
+                        width: "100%",
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border: "1px solid var(--border-strong)",
+                        background: "transparent",
+                        color: "var(--fg-muted)",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        opacity: syncingId === account.id ? 0.6 : 1,
+                      }}
+                    >
+                      {syncingId === account.id ? "Syncing…" : "Sync now"}
+                    </button>
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        background: "var(--bg-sunken)",
+                        color: "var(--fg-subtle)",
+                        fontSize: 10.5,
+                        fontWeight: 600,
+                        textAlign: "center",
+                      }}
+                      title="This platform is scraped from the dedicated residential-IP machine; the server can't trigger it."
+                    >
+                      Daily via remote scraper
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {accounts.length === 0 && (
+              <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: 16, fontSize: 12, color: "var(--fg-subtle)" }}>
+                No accounts configured
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* System health */}
+        {health && (
+          <div style={card}>
+            <div style={cardTitle}>System health</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginTop: 10 }}>
+              <div style={statCell}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: health.status === "ok" ? "var(--good)" : "var(--bad)" }}>
+                  {health.status.toUpperCase()}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--fg-subtle)" }}>Status</div>
+              </div>
+              <div style={statCell}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: health.database ? "var(--good)" : "var(--bad)" }}>
+                  {health.database ? "Connected" : "Error"}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--fg-subtle)" }}>Database</div>
+              </div>
+              <div style={statCell}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--fg)" }}>
+                  {health.lastSync ? new Date(health.lastSync).toLocaleDateString() : "Never"}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--fg-subtle)" }}>Last sync</div>
+              </div>
+              <div style={statCell}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--fg)" }}>v{health.version}</div>
+                <div style={{ fontSize: 10, color: "var(--fg-subtle)" }}>Version</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sync logs */}
+        <div style={{ ...card, marginBottom: 0 }}>
+          <div style={cardTitle}>Recent sync logs</div>
+          <div className="hscroll" style={{ marginTop: 10 }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", minWidth: 640 }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "var(--fg-subtle)", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  <th style={{ padding: "0 12px 8px 0", fontWeight: 700 }}>Account</th>
+                  <th style={{ padding: "0 12px 8px 0", fontWeight: 700 }}>Type</th>
+                  <th style={{ padding: "0 12px 8px 0", fontWeight: 700 }}>Status</th>
+                  <th style={{ padding: "0 12px 8px 0", fontWeight: 700, textAlign: "right" }}>Posts</th>
+                  <th style={{ padding: "0 12px 8px 0", fontWeight: 700 }}>Started</th>
+                  <th style={{ paddingBottom: 8, fontWeight: 700 }}>Error</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {syncLogs.length === 0 && (
-            <p className="py-8 text-center text-sm text-clutch-grey/50">
-              No sync logs yet
-            </p>
-          )}
+              </thead>
+              <tbody>
+                {syncLogs.map((log) => (
+                  <tr key={log.id} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={{ padding: "8px 12px 8px 0", fontWeight: 600, color: "var(--fg)" }}>
+                      {log.accountName ?? log.socialAccountId.slice(0, 8)}
+                    </td>
+                    <td style={{ padding: "8px 12px 8px 0", color: "var(--fg-muted)" }}>{log.syncType.replace(/_/g, " ")}</td>
+                    <td style={{ padding: "8px 12px 8px 0" }}>
+                      <span style={statusPill(log.status)}>{log.status}</span>
+                    </td>
+                    <td style={{ padding: "8px 12px 8px 0", textAlign: "right", color: "var(--fg-muted)" }}>{log.postsSynced}</td>
+                    <td style={{ padding: "8px 12px 8px 0", color: "var(--fg-subtle)", whiteSpace: "nowrap" }}>
+                      {new Date(log.startedAt).toLocaleString()}
+                    </td>
+                    <td style={{ padding: "8px 0", color: "var(--bad)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {log.errorMessage ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {syncLogs.length === 0 && (
+              <div style={{ padding: 24, textAlign: "center", fontSize: 12, color: "var(--fg-subtle)" }}>No sync logs yet</div>
+            )}
+          </div>
         </div>
       </div>
     </>

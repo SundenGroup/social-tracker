@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Header from "@/components/layouts/Header";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useToast } from "@/components/common/Toast";
 import Modal from "@/components/common/Modal";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import { PlatformGlyph, PLATFORM_COLOR } from "@/components/icons/PlatformGlyph";
 import type { SocialAccountResponse } from "@/types";
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -13,6 +15,17 @@ const PLATFORM_LABELS: Record<string, string> = {
   twitter: "X / Twitter",
   instagram: "Instagram",
   tiktok: "TikTok",
+  vk: "VK",
+};
+
+/** How each platform's data actually arrives. API platforms sync from
+ *  the server; scraper platforms are pushed by the remote scrape host. */
+const SYNC_SOURCE: Record<string, string> = {
+  youtube: "API",
+  twitter: "API",
+  vk: "API + scraper",
+  instagram: "Remote scraper",
+  tiktok: "Remote scraper",
 };
 
 export default function ConnectionsPage() {
@@ -35,111 +48,182 @@ export default function ConnectionsPage() {
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <LoadingSpinner />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
-        {error}
-      </div>
-    );
-  }
+  const freshness = (lastSyncedAt: string | null) => {
+    if (!lastSyncedAt) return { label: "Never synced", color: "var(--bad)" };
+    const hours = (Date.now() - new Date(lastSyncedAt).getTime()) / 3600000;
+    const label =
+      hours < 1.5 ? "Just now" :
+      hours < 24 ? `${Math.round(hours)}h ago` :
+      `${Math.round(hours / 24)}d ago`;
+    return { label, color: hours < 30 ? "var(--good)" : hours < 72 ? "#E09B00" : "var(--bad)" };
+  };
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-clutch-black">Connections</h1>
-          <p className="text-xs text-clutch-grey/60">Social media accounts this workspace tracks</p>
-        </div>
+      <Header title="Connections" subtitle="Social accounts this workspace tracks">
         <Link
           href="/connections/new"
-          className="rounded-lg bg-clutch-red px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-clutch-red/90"
+          style={{
+            padding: "7px 14px",
+            borderRadius: 8,
+            background: "var(--accent)",
+            color: "#fff",
+            fontSize: 12,
+            fontWeight: 600,
+            textDecoration: "none",
+          }}
         >
           Add connection
         </Link>
-      </div>
+      </Header>
 
-      {accounts.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
-          <p className="text-sm text-clutch-grey/60">
+      <div className="page-pad" style={{ padding: "24px 28px 48px" }}>
+        {isLoading && (
+          <div style={{ display: "flex", minHeight: 300, alignItems: "center", justifyContent: "center" }}>
+            <LoadingSpinner size="lg" />
+          </div>
+        )}
+
+        {error && (
+          <div
+            style={{
+              background: "color-mix(in srgb, var(--bad) 8%, transparent)",
+              color: "var(--bad)",
+              border: "1px solid color-mix(in srgb, var(--bad) 40%, transparent)",
+              borderRadius: 10,
+              padding: 14,
+              fontSize: 13,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {!isLoading && !error && accounts.length === 0 && (
+          <div
+            style={{
+              border: "1px dashed var(--border-strong)",
+              borderRadius: 14,
+              padding: 48,
+              textAlign: "center",
+              color: "var(--fg-muted)",
+              fontSize: 13,
+            }}
+          >
             No connections yet. Add your first social account to get started.
-          </p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-gray-200 bg-gray-50">
-              <tr>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Platform</th>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Account name</th>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Profile</th>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Content filter</th>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Last synced</th>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Status</th>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {accounts.map((account) => {
-                const syncColor =
-                  account.syncStatus === "success"
-                    ? "text-green-600"
-                    : account.syncStatus === "failed"
-                      ? "text-red-600"
-                      : "text-yellow-600";
+          </div>
+        )}
 
+        {!isLoading && !error && accounts.length > 0 && (
+          <div className="hscroll" style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ minWidth: 760 }}>
+              {/* Header */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "170px minmax(160px, 1fr) 140px 130px 120px 110px 110px",
+                  gap: 12,
+                  padding: "10px 16px",
+                  background: "var(--bg-sunken)",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: 0.4,
+                  textTransform: "uppercase",
+                  color: "var(--fg-subtle)",
+                }}
+              >
+                <div>Platform</div>
+                <div>Account</div>
+                <div>Profile</div>
+                <div>Data source</div>
+                <div>Last synced</div>
+                <div>Status</div>
+                <div style={{ textAlign: "right" }}>Actions</div>
+              </div>
+
+              {accounts.map((account) => {
+                const fresh = freshness(account.lastSyncedAt);
                 return (
-                  <tr key={account.id} className="hover:bg-gray-50/50">
-                    <td className="px-5 py-3 font-medium">
+                  <div
+                    key={account.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "170px minmax(160px, 1fr) 140px 130px 120px 110px 110px",
+                      gap: 12,
+                      padding: "12px 16px",
+                      alignItems: "center",
+                      borderTop: "1px solid var(--border)",
+                      fontSize: 13,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, color: "var(--fg)" }}>
+                      <span style={{ color: PLATFORM_COLOR[account.platform] ?? "var(--fg-muted)" }}>
+                        <PlatformGlyph platform={account.platform} size={15} />
+                      </span>
                       {PLATFORM_LABELS[account.platform] ?? account.platform}
-                    </td>
-                    <td className="px-5 py-3">{account.accountName}</td>
-                    <td className="px-5 py-3 text-clutch-grey/60">
-                      {(account as unknown as { profileName?: string }).profileName ?? "—"}
-                    </td>
-                    <td className="px-5 py-3 capitalize">
-                      {account.contentFilter.replace("_", " ")}
-                    </td>
-                    <td className="px-5 py-3 text-clutch-grey/60">
-                      {account.lastSyncedAt
-                        ? new Date(account.lastSyncedAt).toLocaleDateString()
-                        : "Never"}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className={`text-xs font-semibold ${syncColor}`}>
+                    </div>
+                    <div style={{ color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {account.accountName}
+                      <div style={{ fontSize: 10, color: "var(--fg-subtle)" }}>@{account.accountId}</div>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>{account.profileName ?? "—"}</div>
+                    <div style={{ fontSize: 11, color: "var(--fg-muted)" }}>
+                      {SYNC_SOURCE[account.platform] ?? "—"}
+                    </div>
+                    <div style={{ fontSize: 12, color: fresh.color }}>{fresh.label}</div>
+                    <div>
+                      <span
+                        style={{
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          background:
+                            account.syncStatus === "success"
+                              ? "color-mix(in srgb, var(--good) 14%, transparent)"
+                              : account.syncStatus === "failed"
+                                ? "color-mix(in srgb, var(--bad) 12%, transparent)"
+                                : "color-mix(in srgb, #E09B00 16%, transparent)",
+                          color:
+                            account.syncStatus === "success"
+                              ? "var(--good)"
+                              : account.syncStatus === "failed"
+                                ? "var(--bad)"
+                                : "#E09B00",
+                        }}
+                      >
                         {account.syncStatus}
                       </span>
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex gap-3">
-                        <Link
-                          href={`/connections/${account.id}`}
-                          className="text-xs font-medium text-clutch-blue hover:underline"
-                        >
-                          Edit
-                        </Link>
-                        <button
-                          onClick={() => setDeleteTarget(account)}
-                          className="text-xs font-medium text-red-500 hover:underline"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+                      <Link
+                        href={`/connections/${account.id}`}
+                        style={{ fontSize: 12, fontWeight: 600, color: "var(--fg-muted)", textDecoration: "none" }}
+                      >
+                        Edit
+                      </Link>
+                      <button
+                        onClick={() => setDeleteTarget(account)}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "var(--bad)",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </div>
+          </div>
+        )}
+      </div>
 
       <Modal
         open={!!deleteTarget}
@@ -149,7 +233,7 @@ export default function ConnectionsPage() {
           <>
             <button
               onClick={() => setDeleteTarget(null)}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-clutch-grey hover:bg-gray-50"
+              className="rounded-lg border border-[var(--border-strong)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
             >
               Cancel
             </button>

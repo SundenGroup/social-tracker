@@ -73,7 +73,7 @@ export default function ProfilesPage() {
   return (
     <>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-clutch-black">Profiles</h1>
+        <h1 className="text-2xl font-bold text-[var(--fg)]">Profiles</h1>
         <Link
           href="/profiles/new"
           className="rounded-lg bg-clutch-red px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-clutch-red/90"
@@ -83,30 +83,30 @@ export default function ProfilesPage() {
       </div>
 
       {profiles.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
-          <p className="text-sm text-clutch-grey/60">
+        <div className="rounded-xl border border-dashed border-[var(--border-strong)] p-12 text-center">
+          <p className="text-sm text-[var(--fg-muted)]">
             No profiles yet. Create one to group your social accounts.
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elev)]">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-gray-200 bg-gray-50">
+            <thead className="border-b border-[var(--border)] bg-[var(--bg-sunken)]">
               <tr>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Name</th>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Accounts</th>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Type</th>
-                <th className="px-5 py-3 font-medium text-clutch-grey/60">Actions</th>
+                <th className="px-5 py-3 font-medium text-[var(--fg-muted)]">Name</th>
+                <th className="px-5 py-3 font-medium text-[var(--fg-muted)]">Accounts</th>
+                <th className="px-5 py-3 font-medium text-[var(--fg-muted)]">Type</th>
+                <th className="px-5 py-3 font-medium text-[var(--fg-muted)]">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[var(--border)]">
               {profiles.map((profile) => (
-                <tr key={profile.id} className="hover:bg-gray-50/50">
+                <tr key={profile.id} className="hover:bg-[var(--bg-sunken)]">
                   <td className="px-5 py-3 font-medium">{profile.name}</td>
                   <td className="px-5 py-3">{profile.accountCount ?? 0}</td>
                   <td className="px-5 py-3">
                     {profile.isDefault && (
-                      <span className="rounded-full bg-clutch-blue/10 px-2 py-0.5 text-xs font-semibold text-clutch-blue">
+                      <span className="rounded-full bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-semibold text-[var(--accent)]">
                         Default
                       </span>
                     )}
@@ -118,14 +118,14 @@ export default function ProfilesPage() {
                           setEditTarget(profile);
                           setEditName(profile.name);
                         }}
-                        className="text-xs font-medium text-clutch-blue hover:underline"
+                        className="text-xs font-medium text-[var(--accent)] hover:underline"
                       >
                         Rename
                       </button>
                       {!profile.isDefault && (
                         <button
                           onClick={() => setDeleteTarget(profile)}
-                          className="text-xs font-medium text-red-500 hover:underline"
+                          className="text-xs font-medium text-[var(--bad)] hover:underline"
                         >
                           Delete
                         </button>
@@ -148,7 +148,7 @@ export default function ProfilesPage() {
           <>
             <button
               onClick={() => setDeleteTarget(null)}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-clutch-grey hover:bg-gray-50"
+              className="rounded-lg border border-[var(--border-strong)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
             >
               Cancel
             </button>
@@ -177,7 +177,7 @@ export default function ProfilesPage() {
           <>
             <button
               onClick={() => setEditTarget(null)}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-clutch-grey hover:bg-gray-50"
+              className="rounded-lg border border-[var(--border-strong)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
             >
               Cancel
             </button>
@@ -196,7 +196,7 @@ export default function ProfilesPage() {
             type="text"
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+            className="w-full rounded-lg border border-[var(--border-strong)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
             placeholder="Profile name"
             autoFocus
           />

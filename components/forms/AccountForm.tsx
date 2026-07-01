@@ -195,19 +195,19 @@ export default function AccountForm({ account }: AccountFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {error && (
-        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+        <div className="rounded-lg bg-[color-mix(in_srgb,var(--bad)_10%,transparent)] p-3 text-sm text-[var(--bad)]">
           {error}
         </div>
       )}
 
       <div>
-        <label className="mb-1 block text-sm font-medium text-clutch-black">
+        <label className="mb-1 block text-sm font-medium text-[var(--fg)]">
           Platform
         </label>
         <select
           value={platform}
           onChange={(e) => setPlatform(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          className="w-full rounded-lg border border-[var(--border-strong)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
         >
           {PLATFORMS.map((p) => (
             <option key={p.value} value={p.value}>
@@ -218,7 +218,7 @@ export default function AccountForm({ account }: AccountFormProps) {
       </div>
 
       <div>
-        <label className="mb-1 block text-sm font-medium text-clutch-black">
+        <label className="mb-1 block text-sm font-medium text-[var(--fg)]">
           Account ID / Handle
         </label>
         <input
@@ -226,13 +226,13 @@ export default function AccountForm({ account }: AccountFormProps) {
           value={accountId}
           onChange={(e) => setAccountId(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          className="w-full rounded-lg border border-[var(--border-strong)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
           placeholder="e.g. UC_x5XG1OV2P6uZZ5FSM9Ttw"
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-sm font-medium text-clutch-black">
+        <label className="mb-1 block text-sm font-medium text-[var(--fg)]">
           Account Name
         </label>
         <input
@@ -240,13 +240,13 @@ export default function AccountForm({ account }: AccountFormProps) {
           value={accountName}
           onChange={(e) => setAccountName(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+          className="w-full rounded-lg border border-[var(--border-strong)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
           placeholder="e.g. PUBG Esports"
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-sm font-medium text-clutch-black">
+        <label className="mb-1 block text-sm font-medium text-[var(--fg)]">
           Content Filter
         </label>
         <div className="flex gap-4">
@@ -257,7 +257,7 @@ export default function AccountForm({ account }: AccountFormProps) {
               value="all"
               checked={contentFilter === "all"}
               onChange={() => setContentFilter("all")}
-              className="accent-clutch-blue"
+              className="accent-[var(--accent)]"
             />
             All Content
           </label>
@@ -268,7 +268,7 @@ export default function AccountForm({ account }: AccountFormProps) {
               value="video_only"
               checked={contentFilter === "video_only"}
               onChange={() => setContentFilter("video_only")}
-              className="accent-clutch-blue"
+              className="accent-[var(--accent)]"
             />
             Video Only
           </label>
@@ -277,13 +277,13 @@ export default function AccountForm({ account }: AccountFormProps) {
 
       {profiles.length > 0 && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-clutch-black">
+          <label className="mb-1 block text-sm font-medium text-[var(--fg)]">
             Profile
           </label>
           <select
             value={profileId}
             onChange={(e) => setProfileId(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+            className="w-full rounded-lg border border-[var(--border-strong)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
           >
             <option value="">No Profile</option>
             {profiles.map((p) => (
@@ -299,26 +299,26 @@ export default function AccountForm({ account }: AccountFormProps) {
           posts yet, so configuring rules upfront would be useless;
           surface it after creation when there's content to tag. */}
       {isEditing && (
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <h3 className="mb-1 text-sm font-bold text-clutch-black">Auto-tagging</h3>
-          <p className="mb-4 text-xs text-clutch-grey/70">
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-4">
+          <h3 className="mb-1 text-sm font-bold text-[var(--fg)]">Auto-tagging</h3>
+          <p className="mb-4 text-xs text-[var(--fg-muted)]">
             Tag posts automatically by hashtag, mention or keyword. Saving
             triggers a one-pass over every existing post on this account so
             historical data picks up new rules immediately.
           </p>
 
           <div className="mb-4">
-            <label className="mb-1 block text-xs font-medium text-clutch-black">
-              Default tags <span className="text-clutch-grey/50 font-normal">(applied to every post from this account)</span>
+            <label className="mb-1 block text-xs font-medium text-[var(--fg)]">
+              Default tags <span className="text-[var(--fg-subtle)] font-normal">(applied to every post from this account)</span>
             </label>
             <input
               type="text"
               value={defaultTagsText}
               onChange={(e) => setDefaultTagsText(e.target.value)}
               placeholder="e.g. esports"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+              className="w-full rounded-lg border border-[var(--border-strong)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
             />
-            <p className="mt-1 text-[10px] text-clutch-grey/50">
+            <p className="mt-1 text-[10px] text-[var(--fg-subtle)]">
               Comma- or space-separated. Use this for accounts that are 100%
               one category (e.g. dedicated esports accounts get just &quot;esports&quot;).
             </p>
@@ -326,37 +326,37 @@ export default function AccountForm({ account }: AccountFormProps) {
 
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <label className="block text-xs font-medium text-clutch-black">
+              <label className="block text-xs font-medium text-[var(--fg)]">
                 Auto-tag rules
               </label>
               <button
                 type="button"
                 onClick={addRule}
-                className="text-xs font-medium text-clutch-blue hover:underline"
+                className="text-xs font-medium text-[var(--accent)] hover:underline"
               >
                 + Add rule
               </button>
             </div>
             {tagRules.length === 0 && (
-              <p className="text-xs text-clutch-grey/50">
+              <p className="text-xs text-[var(--fg-subtle)]">
                 No rules. Click <em>+ Add rule</em> to tag posts that match a hashtag, mention, or keyword.
               </p>
             )}
             <div className="space-y-3">
               {tagRules.map((rule, idx) => (
-                <div key={idx} className="rounded-lg border border-gray-200 p-3">
+                <div key={idx} className="rounded-lg border border-[var(--border)] p-3">
                   <div className="mb-2 flex items-center gap-2">
                     <input
                       type="text"
                       value={rule.tag}
                       onChange={(e) => updateRule(idx, { tag: e.target.value })}
                       placeholder="Tag name (e.g. esports)"
-                      className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+                      className="flex-1 rounded-lg border border-[var(--border-strong)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
                     />
                     <button
                       type="button"
                       onClick={() => removeRule(idx)}
-                      className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-clutch-grey hover:bg-gray-50"
+                      className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                     >
                       Remove
                     </button>
@@ -367,27 +367,27 @@ export default function AccountForm({ account }: AccountFormProps) {
                       value={rule.hashtagsText}
                       onChange={(e) => updateRule(idx, { hashtagsText: e.target.value })}
                       placeholder="hashtags (e.g. esports, pubgesports)"
-                      className="rounded-lg border border-gray-300 px-3 py-2 text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+                      className="rounded-lg border border-[var(--border-strong)] px-3 py-2 text-xs focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
                     />
                     <input
                       type="text"
                       value={rule.mentionsText}
                       onChange={(e) => updateRule(idx, { mentionsText: e.target.value })}
                       placeholder="mentions (e.g. pubgesports)"
-                      className="rounded-lg border border-gray-300 px-3 py-2 text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+                      className="rounded-lg border border-[var(--border-strong)] px-3 py-2 text-xs focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
                     />
                     <input
                       type="text"
                       value={rule.keywordsText}
                       onChange={(e) => updateRule(idx, { keywordsText: e.target.value })}
                       placeholder="keywords (e.g. tournament, finals)"
-                      className="rounded-lg border border-gray-300 px-3 py-2 text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+                      className="rounded-lg border border-[var(--border-strong)] px-3 py-2 text-xs focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
                     />
                   </div>
-                  <p className="mt-1 text-[10px] text-clutch-grey/50">
+                  <p className="mt-1 text-[10px] text-[var(--fg-subtle)]">
                     Match any of: hashtag, mention, or keyword (case-insensitive). At least one is required.
                   </p>
-                  <label className="mt-2 flex items-center gap-2 text-xs text-clutch-black cursor-pointer">
+                  <label className="mt-2 flex items-center gap-2 text-xs text-[var(--fg)] cursor-pointer">
                     <input
                       type="checkbox"
                       checked={rule.alwaysOn}
@@ -396,7 +396,7 @@ export default function AccountForm({ account }: AccountFormProps) {
                     />
                     <span>
                       <span className="font-medium">Always on</span>
-                      <span className="text-clutch-grey/60"> — preselect this tag as the default filter on the dashboard. Users can still toggle it off.</span>
+                      <span className="text-[var(--fg-muted)]"> — preselect this tag as the default filter on the dashboard. Users can still toggle it off.</span>
                     </span>
                   </label>
                 </div>
@@ -408,21 +408,21 @@ export default function AccountForm({ account }: AccountFormProps) {
 
       {needsApiKey && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-clutch-black">
-            API key <span className="text-clutch-grey/50 font-normal">(optional)</span>
+          <label className="mb-1 block text-sm font-medium text-[var(--fg)]">
+            API key <span className="text-[var(--fg-subtle)] font-normal">(optional)</span>
           </label>
           <input
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+            className="w-full rounded-lg border border-[var(--border-strong)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
             placeholder={
               isEditing
                 ? "Leave blank to keep the current key"
                 : "Leave blank to use the server-wide default"
             }
           />
-          <p className="mt-1 text-xs text-clutch-grey/50">
+          <p className="mt-1 text-xs text-[var(--fg-subtle)]">
             The server already has a YouTube Data API v3 key configured. Only paste
             one here if you want this account to use its own dedicated key (e.g. to
             isolate quota).
@@ -432,14 +432,14 @@ export default function AccountForm({ account }: AccountFormProps) {
 
       {needsCookies && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-clutch-black">
+          <label className="mb-1 block text-sm font-medium text-[var(--fg)]">
             Session Cookies
           </label>
           <textarea
             value={authToken}
             onChange={(e) => setAuthToken(e.target.value)}
             rows={4}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-xs focus:border-clutch-blue focus:outline-none focus:ring-1 focus:ring-clutch-blue"
+            className="w-full rounded-lg border border-[var(--border-strong)] px-3 py-2 font-mono text-xs focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
             placeholder={
               isEditing
                 ? "Leave blank to keep current cookies"
@@ -457,7 +457,7 @@ export default function AccountForm({ account }: AccountFormProps) {
           type="button"
           onClick={handleTestConnection}
           disabled={isTesting}
-          className="rounded-lg border border-clutch-blue px-4 py-2 text-sm font-medium text-clutch-blue transition-colors hover:bg-clutch-blue/5 disabled:opacity-50"
+          className="rounded-lg border border-[var(--border-strong)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition-colors hover:bg-[var(--bg-sunken)] disabled:opacity-50"
         >
           {isTesting ? "Testing..." : "Test Connection"}
         </button>

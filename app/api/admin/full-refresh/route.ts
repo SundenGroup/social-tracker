@@ -65,8 +65,16 @@ async function runFullRefresh(orgId: string) {
   refreshState.currentPlatform = "";
 
   try {
+    // API-capable platforms only. TikTok and Instagram post pages can't
+    // be fetched from the datacenter IP (blocked / login-walled) — those
+    // are refreshed by the remote scrape host. Including them here only
+    // burned 30+ minutes producing per-post failures.
     const accounts = await prisma.socialAccount.findMany({
-      where: { organizationId: orgId, isActive: true },
+      where: {
+        organizationId: orgId,
+        isActive: true,
+        platform: { in: ["youtube", "twitter", "vk"] },
+      },
     });
 
     refreshState.accountsTotal = accounts.length;

@@ -79,7 +79,7 @@ export default function EditUserPage() {
 
   if (error || !user) {
     return (
-      <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
+      <div className="rounded-lg bg-[color-mix(in_srgb,var(--bad)_10%,transparent)] p-4 text-sm text-[var(--bad)]">
         {error || "User not found"}
       </div>
     );
@@ -88,7 +88,7 @@ export default function EditUserPage() {
   return (
     <>
       <Header title={`Edit User: ${user.name}`} />
-      <div className="mx-auto max-w-lg rounded-xl border border-gray-200 bg-white p-6">
+      <div className="mx-auto max-w-lg rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-6">
         <UserForm user={user} onSubmit={handleSubmit} isLoading={isSaving} />
       </div>
     </>

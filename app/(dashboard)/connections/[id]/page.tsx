@@ -23,7 +23,7 @@ export default function EditAccountPage({
 
   if (error || !account) {
     return (
-      <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
+      <div className="rounded-lg bg-[color-mix(in_srgb,var(--bad)_10%,transparent)] p-4 text-sm text-[var(--bad)]">
         {error || "Connection not found"}
       </div>
     );
@@ -31,10 +31,10 @@ export default function EditAccountPage({
 
   return (
     <>
-      <h1 className="mb-6 text-2xl font-bold text-clutch-black">
+      <h1 className="mb-6 text-2xl font-bold text-[var(--fg)]">
         Edit connection
       </h1>
-      <div className="mx-auto max-w-lg rounded-xl border border-gray-200 bg-white p-6">
+      <div className="mx-auto max-w-lg rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-6">
         <AccountForm account={account} />
       </div>
     </>
