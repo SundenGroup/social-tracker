@@ -30,6 +30,8 @@ const REPORTING_ITEMS: NavItem[] = [
   { href: "/", label: "Overview" },
   { href: "/posts", label: "Post performance" },
   { href: "/top-posts", label: "Top posts" },
+  { href: "/content", label: "Content performance" },
+  { href: "/top-content", label: "Top content" },
   { href: "/period-comparison", label: "Period comparison" },
 ];
 
@@ -56,6 +58,8 @@ const PROFILE_PAGES = new Set([
   "/",
   "/posts",
   "/top-posts",
+  "/content",
+  "/top-content",
   "/period-comparison",
   "/platforms/youtube",
   "/platforms/twitter",

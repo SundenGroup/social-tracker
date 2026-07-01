@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 import { accountTagConfig, computeAutoTags, effectiveTags } from "@/lib/tagging";
+import { regroupRecentForAccount } from "@/lib/content-grouping";
 
 const ingestSchema = z.object({
   platform: z.enum(["tiktok", "youtube", "instagram", "twitter", "vk"]),
@@ -279,6 +280,18 @@ export async function POST(req: Request) {
       } catch (err) {
         console.error("[Ingest] Failed to persist account stats:", err);
       }
+    }
+
+    // Re-run cross-platform content grouping over the profile's recent
+    // window now that new posts have landed. Non-fatal: grouping is a
+    // presentation-layer concern and must never fail an ingest.
+    try {
+      const regrouped = await regroupRecentForAccount(account.id);
+      if (regrouped > 0) {
+        console.log(`[Ingest] Content grouping: ${regrouped} posts (re)assigned`);
+      }
+    } catch (err) {
+      console.error("[Ingest] Content grouping failed (non-fatal):", err);
     }
 
     // Update sync log

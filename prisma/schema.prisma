@@ -225,6 +225,14 @@ model Post {
   // human intent — the auto-tag pass NEVER strips these on recompute.
   manualTags  String[] @default([])
 
+  // Cross-platform content grouping: posts that are the same content
+  // piece published on different platforms share a contentGroupId (the
+  // Post.id of the group's earliest member — no separate table needed,
+  // and re-running the matcher converges to the same ids). Assigned by
+  // lib/content-grouping.ts at ingest + via the backfill script.
+  // Grouping never crosses profiles. Null = not yet grouped.
+  contentGroupId String?
+
   metrics PostMetric[]
 
   @@unique([socialAccountId, postId])
@@ -232,6 +240,7 @@ model Post {
   @@index([platform, publishedAt])
   @@index([lastMetricRefreshAt])
   @@index([isDeleted, socialAccountId, publishedAt])
+  @@index([contentGroupId])
   @@index([tags], type: Gin)
 }
 
