@@ -30,7 +30,8 @@ export const ASK_TOOLS = [
         tag: { type: "string", description: "Optional tag filter — must be one of the available tags listed in your context." },
         search: { type: "string", description: "Optional case-insensitive keyword matched against post titles/captions." },
         profile_name: { type: "string", description: "Optional profile (region) name to narrow to, e.g. 'PUBG Esports KR'. Must match a profile the user can access." },
-        sort_by: { type: "string", enum: ["views", "engagements", "engagement_rate", "published_at"], description: "Sort order (descending). Default views." },
+        sort_by: { type: "string", enum: ["views", "engagements", "engagement_rate", "published_at"], description: "Metric to rank by. Default views." },
+        direction: { type: "string", enum: ["top", "bottom"], description: "top = best first (default); bottom = WORST first — use for 'worst performing', 'lowest', 'least viewed' questions." },
         limit: { type: "integer", description: "How many posts to return. Default 10, max 50." },
       },
       required: ["start_date", "end_date"],
@@ -71,7 +72,7 @@ export const ASK_TOOLS = [
   {
     name: "render_answer",
     description:
-      "REQUIRED final step: render the answer for the user as structured blocks. Call this exactly once, after you have the data. Numbers in text/kpi/table blocks must come from tool results — never invent them. For lists of posts prefer a posts block with post_ids from tool results (the server renders real thumbnails and links). Keep text blocks short; 2-3 follow-up suggestions.",
+      "REQUIRED final step: render the answer for the user as structured blocks. Call this exactly once, after you have the data. Numbers in text/kpi/table/chart blocks must come from tool results — never invent them. For lists of posts prefer a posts block with post_ids from tool results (the server renders real thumbnails and links). Use a chart block for comparisons (bar: platforms/formats) and trends (line: months) — more scannable than a table. Keep text blocks short; 2-3 follow-up suggestions.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -81,7 +82,7 @@ export const ASK_TOOLS = [
           items: {
             type: "object",
             properties: {
-              type: { type: "string", enum: ["text", "note", "kpi", "table", "posts"] },
+              type: { type: "string", enum: ["text", "note", "kpi", "table", "chart", "posts"] },
               text: { type: "string", description: "For text/note blocks." },
               items: {
                 type: "array",
@@ -96,9 +97,23 @@ export const ASK_TOOLS = [
                   required: ["label", "value"],
                 },
               },
-              title: { type: "string", description: "For table/posts blocks." },
+              title: { type: "string", description: "For table/chart/posts blocks." },
               columns: { type: "array", items: { type: "string" }, description: "For table blocks." },
               rows: { type: "array", items: { type: "array", items: { type: "string" } }, description: "For table blocks." },
+              chart: { type: "string", enum: ["bar", "line"], description: "For chart blocks: bar = category comparison (platforms, formats), line = time series (months/days)." },
+              labels: { type: "array", items: { type: "string" }, description: "For chart blocks: x-axis categories, max 31." },
+              series: {
+                type: "array",
+                description: "For chart blocks: 1-3 named series; values align with labels by index and MUST come from tool results.",
+                items: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    values: { type: "array", items: { type: "number" } },
+                  },
+                  required: ["name", "values"],
+                },
+              },
               post_ids: { type: "array", items: { type: "string" }, description: "For posts blocks: IDs from tool results, max 20." },
               display: { type: "string", enum: ["table", "cards"], description: "For posts blocks. Default table." },
             },
@@ -133,6 +148,16 @@ const answerSpecSchema = z.object({
           title: z.string().optional(),
           columns: z.array(z.string()).min(1).max(8),
           rows: z.array(z.array(z.string())).max(30),
+        }),
+        z.object({
+          type: z.literal("chart"),
+          chart: z.enum(["bar", "line"]),
+          title: z.string().optional(),
+          labels: z.array(z.string()).min(1).max(31),
+          series: z
+            .array(z.object({ name: z.string(), values: z.array(z.number().finite()).min(1).max(31) }))
+            .min(1)
+            .max(3),
         }),
         z.object({
           type: z.literal("posts"),
@@ -302,6 +327,7 @@ async function queryPosts(ctx: AskContext, args: Record<string, unknown>) {
     if (sortBy === "published_at") return b.p.publishedAt.getTime() - a.p.publishedAt.getTime();
     return b.views - a.views;
   });
+  if (args.direction === "bottom") enriched.reverse();
 
   const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
   return {

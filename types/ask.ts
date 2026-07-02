@@ -30,6 +30,18 @@ export interface AskTableBlock {
   rows: string[][];
 }
 
+/** Bar/line chart. Values are copied by the model from tool results —
+ *  same trust level as table cells. */
+export interface AskChartBlock {
+  type: "chart";
+  chart: "bar" | "line";
+  title?: string;
+  /** X-axis categories (platforms, months, formats…). */
+  labels: string[];
+  /** 1-3 series; values align with labels by index. */
+  series: Array<{ name: string; values: number[] }>;
+}
+
 /** As emitted by the model (IDs only). */
 export interface AskPostsBlockSpec {
   type: "posts";
@@ -61,8 +73,8 @@ export interface AskPostsBlock {
   posts: AskHydratedPost[];
 }
 
-export type AskBlockSpec = AskTextBlock | AskNoteBlock | AskKpiBlock | AskTableBlock | AskPostsBlockSpec;
-export type AskBlock = AskTextBlock | AskNoteBlock | AskKpiBlock | AskTableBlock | AskPostsBlock;
+export type AskBlockSpec = AskTextBlock | AskNoteBlock | AskKpiBlock | AskTableBlock | AskChartBlock | AskPostsBlockSpec;
+export type AskBlock = AskTextBlock | AskNoteBlock | AskKpiBlock | AskTableBlock | AskChartBlock | AskPostsBlock;
 
 /** Model output (validated with zod server-side). */
 export interface AskAnswerSpec {

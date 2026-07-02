@@ -80,6 +80,13 @@ export default function AskBlockRenderer({ block }: { block: AskBlock }) {
           </div>
         </div>
       );
+    case "chart":
+      return (
+        <div>
+          {block.title && <BlockTitle>{block.title}</BlockTitle>}
+          <AskChart block={block} />
+        </div>
+      );
     case "posts":
       return (
         <div>
@@ -90,6 +97,102 @@ export default function AskBlockRenderer({ block }: { block: AskBlock }) {
     default:
       return null;
   }
+}
+
+const SERIES_COLORS = ["var(--accent)", "var(--blue)", "var(--fg-subtle)"];
+
+/** Compact bar/line chart in house style. Series values align with
+ *  labels by index; short/ragged series render what they have. */
+function AskChart({ block }: { block: Extract<AskBlock, { type: "chart" }> }) {
+  const W = 660;
+  const H = 220;
+  const padL = 44;
+  const padR = 10;
+  const padT = 12;
+  const padB = 34;
+  const n = block.labels.length;
+  const max = Math.max(...block.series.flatMap((s) => s.values.filter((v) => Number.isFinite(v))), 1);
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const y = (v: number) => padT + (1 - Math.max(v, 0) / max) * innerH;
+  const slotW = innerW / Math.max(n, 1);
+  const ticks = [0, max / 2, max];
+  const showEvery = Math.max(1, Math.ceil(n / 10));
+
+  return (
+    <div className="hscroll">
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 320 }}>
+        {ticks.map((t, i) => (
+          <g key={i}>
+            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--border)" strokeDasharray={i === 0 ? "0" : "2 4"} />
+            <text x={padL - 6} y={y(t) + 3} textAnchor="end" fontSize="9" fill="var(--fg-subtle)" className="mono">
+              {fmtK(Math.round(t))}
+            </text>
+          </g>
+        ))}
+
+        {block.chart === "bar"
+          ? block.series.map((s, si) => {
+              const groupW = slotW * 0.7;
+              const barW = Math.max(groupW / block.series.length, 2);
+              return s.values.slice(0, n).map((v, i) => (
+                <rect
+                  key={`${si}-${i}`}
+                  x={padL + i * slotW + (slotW - groupW) / 2 + si * barW}
+                  y={y(v)}
+                  width={Math.max(barW - 2, 1.5)}
+                  height={Math.max(padT + innerH - y(v), 0)}
+                  rx={2}
+                  fill={SERIES_COLORS[si % SERIES_COLORS.length]}
+                  opacity={0.92}
+                />
+              ));
+            })
+          : block.series.map((s, si) => {
+              const pts = s.values
+                .slice(0, n)
+                .map((v, i) => `${padL + i * slotW + slotW / 2},${y(v)}`)
+                .join(" L ");
+              return pts ? (
+                <path
+                  key={si}
+                  d={`M ${pts}`}
+                  fill="none"
+                  stroke={SERIES_COLORS[si % SERIES_COLORS.length]}
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                />
+              ) : null;
+            })}
+
+        {block.labels.map(
+          (label, i) =>
+            i % showEvery === 0 && (
+              <text
+                key={i}
+                x={padL + i * slotW + slotW / 2}
+                y={H - 14}
+                textAnchor="middle"
+                fontSize="9.5"
+                fill="var(--fg-muted)"
+              >
+                {label.length > 12 ? `${label.slice(0, 11)}…` : label}
+              </text>
+            )
+        )}
+      </svg>
+      {block.series.length > 1 && (
+        <div style={{ display: "flex", gap: 14, justifyContent: "center", marginTop: 2, flexWrap: "wrap" }}>
+          {block.series.map((s, si) => (
+            <span key={si} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "var(--fg-muted)" }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: SERIES_COLORS[si % SERIES_COLORS.length] }} />
+              {s.name}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function BlockTitle({ children }: { children: React.ReactNode }) {

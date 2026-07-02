@@ -71,12 +71,16 @@ export function parseMockQuestion(ctx: AskContext, question: string): MockPlan {
   }
 
   // — limit —
-  const topN = q.match(/top\s+(\d{1,2})/);
+  const topN = q.match(/(?:top|bottom|worst)\s+(\d{1,2})/);
   args.limit = topN ? Math.min(Number(topN[1]), 50) : 10;
 
   // — sort —
   if (q.includes("engagement rate")) args.sort_by = "engagement_rate";
   else if (q.includes("engagement")) args.sort_by = "engagements";
+
+  // — direction —
+  const wantsWorst = /(worst|lowest|bottom|least|underperform|flop)/.test(q);
+  if (wantsWorst) args.direction = "bottom";
 
   // — tool choice —
   let tool: MockPlan["tool"] = "query_posts";
@@ -93,7 +97,9 @@ export function parseMockQuestion(ctx: AskContext, question: string): MockPlan {
     delete args.sort_by;
     notes.push("period totals");
   } else {
-    notes.push(`top ${args.limit} posts${args.sort_by === "engagements" ? " by engagements" : args.sort_by === "engagement_rate" ? " by eng. rate" : " by views"}`);
+    const metricLabel =
+      args.sort_by === "engagements" ? " by engagements" : args.sort_by === "engagement_rate" ? " by eng. rate" : " by views";
+    notes.push(`${wantsWorst ? "worst" : "top"} ${args.limit} posts${metricLabel}`);
   }
 
   return { tool, args, interpretation: notes.join(" · ") };
@@ -130,12 +136,17 @@ export async function runMockAsk(ctx: AskContext, question: string): Promise<Ask
       blocks.push({
         type: "kpi",
         items: [
-          { label: "Combined views (top set)", value: fmtK(totalViews) },
+          { label: `Combined views (${plan.args.direction === "bottom" ? "worst" : "top"} set)`, value: fmtK(totalViews) },
           { label: "Combined engagements", value: fmtK(totalEng) },
           { label: "Posts in range", value: String(r.total_matching) },
         ],
       });
-      blocks.push({ type: "posts", title: "Top posts", post_ids: posts.map((p) => String(p.id)), display: "table" });
+      blocks.push({
+        type: "posts",
+        title: plan.args.direction === "bottom" ? "Worst-performing posts" : "Top posts",
+        post_ids: posts.map((p) => String(p.id)),
+        display: "table",
+      });
     }
   } else if (plan.tool === "query_content_pieces") {
     const pieces = (r.pieces as Array<Record<string, unknown>>) ?? [];
@@ -182,6 +193,13 @@ export async function runMockAsk(ctx: AskContext, question: string): Promise<Ask
       ],
     });
     if (groups.length > 1) {
+      blocks.push({
+        type: "chart",
+        chart: "bar",
+        title: "Views by group",
+        labels: groups.map((g) => (String(g.group) === "twitter" ? "X" : String(g.group))),
+        series: [{ name: "Views", values: groups.map((g) => Number(g.views)) }],
+      });
       blocks.push({
         type: "table",
         columns: ["Group", "Posts", "Views", "Engagements", "Eng. rate", "Views/post"],
