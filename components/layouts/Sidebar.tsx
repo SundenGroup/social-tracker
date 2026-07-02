@@ -44,6 +44,8 @@ const REPORTING_ITEMS: NavItem[] = [
   { href: "/content", label: "Cross-platform", icon: navIcon("M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5") },
   // Compare periods: opposing arrows
   { href: "/period-comparison", label: "Compare periods", icon: navIcon("M8 7h13M8 7l3-3M8 7l3 3M16 17H3M16 17l-3-3M16 17l-3 3") },
+  // Ask: sparkle — natural-language Q&A over the workspace data
+  { href: "/ask", label: "Ask", icon: navIcon("M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z") },
 ];
 
 const PLATFORM_ITEMS: PlatformNavItem[] = [
@@ -70,6 +72,7 @@ const PROFILE_PAGES = new Set([
   "/posts",
   "/content",
   "/period-comparison",
+  "/ask",
   "/platforms/youtube",
   "/platforms/twitter",
   "/platforms/instagram",
