@@ -4,7 +4,8 @@ import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
 import { effectiveProfileIds, profileIdsWhere } from "@/lib/profile-scope";
 import { tagFilterWhere } from "@/lib/tagging";
-import type { Platform, PostType } from "@prisma/client";
+import { buildPostTypeFilter } from "@/lib/post-format";
+import type { Platform } from "@prisma/client";
 
 const ALL_PLATFORMS: Platform[] = ["youtube", "twitter", "instagram", "tiktok", "vk"];
 
@@ -64,26 +65,8 @@ function formatLabel(start: Date, end: Date): string {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-function buildPostTypeFilter(contentType: string | null): Record<string, unknown> {
-  if (contentType === "video") {
-    return { postType: { in: ["video", "short"] as PostType[] } };
-  } else if (contentType === "short-form") {
-    return {
-      OR: [
-        { postType: "short" },
-        { platform: "tiktok", postType: "video" },
-        { platform: "instagram", postType: "video" },
-      ],
-    };
-  } else if (contentType === "long-form") {
-    return { platform: "youtube", postType: "video" };
-  } else if (contentType === "image") {
-    // "image" rolls up single-image posts and TikTok slideshows into
-    // one "non-video" bucket. Carousels stay separate.
-    return { postType: { in: ["image", "slideshow"] as PostType[] } };
-  }
-  return {};
-}
+// buildPostTypeFilter moved to lib/post-format.ts — shared with the
+// Ask tools so "short-form" means the same thing everywhere.
 
 async function aggregatePeriod(
   accountIds: string[],

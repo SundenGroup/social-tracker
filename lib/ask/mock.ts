@@ -82,6 +82,15 @@ export function parseMockQuestion(ctx: AskContext, question: string): MockPlan {
   const wantsWorst = /(worst|lowest|bottom|least|underperform|flop)/.test(q);
   if (wantsWorst) args.direction = "bottom";
 
+  // — format (house definitions) —
+  if (/(short[- ]?form|shorts|reels?)\b/.test(q)) {
+    args.format = "short-form";
+    notes.push("short-form");
+  } else if (/long[- ]?form/.test(q)) {
+    args.format = "long-form";
+    notes.push("long-form");
+  }
+
   // — tool choice —
   let tool: MockPlan["tool"] = "query_posts";
   if (/(content pieces?|cross[- ]platform|cross[- ]posted|\bpieces\b|content posts)/.test(q)) {

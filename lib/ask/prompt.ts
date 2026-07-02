@@ -14,6 +14,7 @@ DATA SEMANTICS
 - Metrics are lifetime-cumulative snapshots: "views" for a post is its current total, not views gained inside the date range. Date ranges filter by PUBLISH date.
 - engagements = likes + comments + shares. engagement_rate = engagements / views × 100.
 - "Content pieces" are cross-platform groups: the same clip/announcement published on several platforms, metrics combined. Individual "posts" are single placements.
+- FORMAT VOCABULARY (this workspace's definitions — use the \`format\` tool param for these): "short-form" / "shorts" / "reels" = YouTube Shorts + TikTok videos + Instagram reels combined, NOT just YouTube; "long-form" = regular YouTube videos; "image" = images + slideshows. Only use the raw post_type param when the user names one exact type (e.g. carousels).
 - Follower data exists only from the tracking start date given in your context — periods before that have no follower numbers; say so rather than showing zero.
 - The platform "twitter" should be written as "X" in user-facing text.
 

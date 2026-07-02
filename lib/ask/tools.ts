@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getLatestMetrics, metricValue } from "@/lib/metrics-helper";
+import { buildPostTypeFilter, CONTENT_FORMATS } from "@/lib/post-format";
 import type { AskContext } from "@/lib/ask/context";
 import type { AskAnswerSpec, AskBlock, AskPostsBlockSpec } from "@/types/ask";
 import type { Platform, PostType } from "@prisma/client";
@@ -26,7 +27,13 @@ export const ASK_TOOLS = [
         start_date: { type: "string", description: "Inclusive ISO date (YYYY-MM-DD) the posts were PUBLISHED from." },
         end_date: { type: "string", description: "Inclusive ISO date (YYYY-MM-DD) the posts were published to." },
         platform: { type: "string", enum: PLATFORM_ENUM, description: "Optional single-platform filter. 'twitter' = X." },
-        post_type: { type: "string", enum: POST_TYPE_ENUM, description: "Optional content-format filter." },
+        format: {
+          type: "string",
+          enum: [...CONTENT_FORMATS],
+          description:
+            "PREFERRED format filter using this workspace's definitions: 'short-form' = YouTube Shorts + TikTok videos + Instagram reels (cross-platform — NOT just YouTube); 'long-form' = regular YouTube videos; 'video' = any video; 'image' = images + slideshows. Use this for concepts like shorts/reels/short-form.",
+        },
+        post_type: { type: "string", enum: POST_TYPE_ENUM, description: "Exact raw post type. Only when the user means one specific type (e.g. carousels); for 'short-form'/'shorts'/'reels' use `format` instead." },
         tag: { type: "string", description: "Optional tag filter — must be one of the available tags listed in your context." },
         search: { type: "string", description: "Optional case-insensitive keyword matched against post titles/captions." },
         profile_name: { type: "string", description: "Optional profile (region) name to narrow to, e.g. 'PUBG Esports KR'. Must match a profile the user can access." },
@@ -47,6 +54,11 @@ export const ASK_TOOLS = [
         start_date: { type: "string", description: "Inclusive ISO date (YYYY-MM-DD)." },
         end_date: { type: "string", description: "Inclusive ISO date (YYYY-MM-DD)." },
         group_by: { type: "string", enum: ["none", "platform", "post_type", "month"], description: "Default none (single total row)." },
+        format: {
+          type: "string",
+          enum: [...CONTENT_FORMATS],
+          description: "Optional format filter — 'short-form' = YouTube Shorts + TikTok videos + Instagram reels (this workspace's definition).",
+        },
         tag: { type: "string", description: "Optional tag filter." },
         profile_name: { type: "string", description: "Optional profile (region) name to narrow to." },
       },
@@ -292,21 +304,29 @@ async function queryPosts(ctx: AskContext, args: Record<string, unknown>) {
   const accountIds = resolveAccountIds(ctx, args);
 
   const extra: Record<string, unknown> = {};
+  // format and search each produce OR clauses — combine under AND so
+  // they never clobber each other.
+  const andClauses: Record<string, unknown>[] = [];
   if (typeof args.platform === "string" && PLATFORM_ENUM.includes(args.platform)) {
     extra.platform = args.platform as Platform;
   }
-  if (typeof args.post_type === "string" && POST_TYPE_ENUM.includes(args.post_type)) {
+  if (typeof args.format === "string" && (CONTENT_FORMATS as readonly string[]).includes(args.format)) {
+    andClauses.push(buildPostTypeFilter(args.format));
+  } else if (typeof args.post_type === "string" && POST_TYPE_ENUM.includes(args.post_type)) {
     extra.postType = args.post_type as PostType;
   }
   if (typeof args.tag === "string" && args.tag.trim()) {
     extra.tags = { has: args.tag.trim().toLowerCase() };
   }
   if (typeof args.search === "string" && args.search.trim()) {
-    extra.OR = [
-      { title: { contains: args.search.trim(), mode: "insensitive" } },
-      { description: { contains: args.search.trim(), mode: "insensitive" } },
-    ];
+    andClauses.push({
+      OR: [
+        { title: { contains: args.search.trim(), mode: "insensitive" } },
+        { description: { contains: args.search.trim(), mode: "insensitive" } },
+      ],
+    });
   }
+  if (andClauses.length > 0) extra.AND = andClauses;
 
   const { posts, totalCount, truncated } = await fetchScopedPosts(ctx, accountIds, start, end, extra);
   const metrics = await getLatestMetrics(posts.map((p) => p.id));
@@ -356,6 +376,9 @@ async function queryPeriodStats(ctx: AskContext, args: Record<string, unknown>) 
   const extra: Record<string, unknown> = {};
   if (typeof args.tag === "string" && args.tag.trim()) {
     extra.tags = { has: args.tag.trim().toLowerCase() };
+  }
+  if (typeof args.format === "string" && (CONTENT_FORMATS as readonly string[]).includes(args.format)) {
+    extra.AND = [buildPostTypeFilter(args.format)];
   }
 
   const { posts, truncated } = await fetchScopedPosts(ctx, accountIds, start, end, extra);
