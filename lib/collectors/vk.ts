@@ -32,6 +32,54 @@ interface VideoExtMetrics {
   reposts: number | null;
 }
 
+/* ————— Official VK API (activates when VK_SERVICE_TOKEN is set) —————
+ * A service token from a free VK app (dev.vk.com → create app → service
+ * key) unlocks wall.get / groups.getById from ANY IP — datacenter
+ * included. When present, discovery + follower counts move fully
+ * server-side and the Mac Playwright scraper becomes redundant for VK.
+ * Scraping vk.com HTML from the droplet was tested and is login-walled
+ * for datacenter IPs, so the API is the only clean server-side path. */
+
+const VK_API_VERSION = "5.199";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function vkApi<T = any>(method: string, params: Record<string, string>): Promise<T | null> {
+  const token = process.env.VK_SERVICE_TOKEN;
+  if (!token) return null;
+  const qs = new URLSearchParams({ ...params, access_token: token, v: VK_API_VERSION });
+  try {
+    const res = await fetch(`https://api.vk.com/method/${method}?${qs}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    const json = (await res.json()) as { response?: T; error?: { error_msg: string } };
+    if (json.error) {
+      console.error(`[VK] API ${method} error: ${json.error.error_msg}`);
+      return null;
+    }
+    return json.response ?? null;
+  } catch (err) {
+    console.error(`[VK] API ${method} failed:`, err);
+    return null;
+  }
+}
+
+interface VkWallItem {
+  id: number;
+  owner_id: number;
+  date: number;
+  text?: string;
+  is_pinned?: number;
+  likes?: { count: number };
+  comments?: { count: number };
+  reposts?: { count: number };
+  views?: { count: number };
+  attachments?: Array<{
+    type: string;
+    video?: { id: number; owner_id: number; image?: Array<{ url: string; width: number }> };
+    photo?: { sizes?: Array<{ url: string; width: number }> };
+  }>;
+}
+
 /** Owner IDs in VK are negative for groups, positive for users. The Mac
  *  scraper stores them on the account as accountId="pubg" (screen name);
  *  the numeric group id is discovered once at ingest time and baked into
@@ -85,13 +133,48 @@ export class VKCollector extends BaseCollector {
     super(account);
   }
 
-  /** Discovery is external (Mac scraper → /api/sync/ingest). Returning []
-   *  means the base sync() loop doesn't try to create new posts from here. */
+  /** With VK_SERVICE_TOKEN: full server-side discovery via wall.get.
+   *  Without it: no-op — discovery stays with the Mac scraper. */
   async fetchPosts(): Promise<PostData[]> {
-    this.logger(
-      "fetchPosts → no-op; VK discovery happens via the remote Playwright scraper pushing to /api/sync/ingest"
-    );
-    return [];
+    if (!process.env.VK_SERVICE_TOKEN) {
+      this.logger(
+        "fetchPosts → no-op; set VK_SERVICE_TOKEN to enable official-API discovery (currently relies on the remote Playwright scraper)"
+      );
+      return [];
+    }
+
+    const resp = await vkApi<{ items: VkWallItem[] }>("wall.get", {
+      domain: this.account.accountId,
+      count: "30",
+    });
+    if (!resp?.items) {
+      this.logger("fetchPosts → wall.get returned nothing");
+      return [];
+    }
+
+    const posts: PostData[] = [];
+    for (const item of resp.items) {
+      const video = item.attachments?.find((a) => a.type === "video")?.video;
+      const photo = item.attachments?.find((a) => a.type === "photo")?.photo;
+      const biggest = <S extends { url: string; width: number }>(sizes?: S[]) =>
+        sizes && sizes.length > 0 ? [...sizes].sort((a, b) => b.width - a.width)[0].url : null;
+
+      posts.push({
+        // Bare wall item id — matches what the Mac scraper has always
+        // written, so upserts hit the same rows (no duplicates).
+        postId: String(item.id),
+        platform: "vk",
+        postType: video ? "video" : photo ? "image" : "text",
+        title: null,
+        description: item.text || null,
+        contentUrl: `https://vk.com/wall${item.owner_id}_${item.id}`,
+        thumbnailUrl: video ? biggest(video.image) : biggest(photo?.sizes),
+        publishedAt: new Date(item.date * 1000),
+        attachedVideoId: video ? `${video.owner_id}_${video.id}` : null,
+      });
+    }
+    this.logger(`fetchPosts → ${posts.length} posts from wall.get (official API)`);
+    return posts;
   }
 
   /**
@@ -148,15 +231,67 @@ export class VKCollector extends BaseCollector {
     }
 
     this.logger(`Fetched ${metrics.length} metric records from video_ext.php`);
+
+    // With the official API: wall-level likes/comments/reposts (and VK's
+    // native post views) for EVERY post — the counters the Mac scraper
+    // used to read from the DOM.
+    if (process.env.VK_SERVICE_TOKEN) {
+      const rows = await prisma.post.findMany({
+        where: { socialAccountId: this.account.id, postId: { in: postIds } },
+        select: { id: true, contentUrl: true },
+      });
+      const refs = rows
+        .map((r) => {
+          const m = r.contentUrl.match(/wall(-?\d+)_(\d+)/);
+          return m ? { dbId: r.id, ref: `${m[1]}_${m[2]}` } : null;
+        })
+        .filter((x): x is { dbId: string; ref: string } => Boolean(x));
+
+      for (let i = 0; i < refs.length; i += 100) {
+        const batch = refs.slice(i, i + 100);
+        const resp = await vkApi<{ items?: VkWallItem[] } | VkWallItem[]>("wall.getById", {
+          posts: batch.map((b) => b.ref).join(","),
+        });
+        const items = Array.isArray(resp) ? resp : resp?.items;
+        if (!items) continue;
+        const byRef = new Map(batch.map((b) => [b.ref, b.dbId]));
+        for (const item of items) {
+          const dbId = byRef.get(`${item.owner_id}_${item.id}`);
+          if (!dbId) continue;
+          const push = (type: "likes" | "comments" | "shares" | "views", value?: number) => {
+            if (value != null && value > 0) {
+              metrics.push({ postId: dbId, metricType: type, metricDate: today, metricValue: BigInt(value) });
+            }
+          };
+          push("likes", item.likes?.count);
+          push("comments", item.comments?.count);
+          push("shares", item.reposts?.count);
+          // Text/image posts have no video_ext views — VK's wall view
+          // counter is the right number for those.
+          push("views", item.views?.count);
+        }
+        await new Promise((r) => setTimeout(r, 350)); // ~3 req/s API limit
+      }
+      this.logger(`Total ${metrics.length} metric records after wall.getById (official API)`);
+    }
+
     return metrics;
   }
 
   /**
-   * Follower count is owned by the Mac scraper (which reads it from the
-   * public group page). We fall back to the most recent daily rollup so
-   * the base sync() still gets a sensible number for reporting.
+   * With VK_SERVICE_TOKEN: live member count from groups.getById.
+   * Without: fall back to the most recent daily rollup (Mac scraper
+   * owns follower counts in that mode).
    */
   async getAccountStats(): Promise<AccountStats> {
+    if (process.env.VK_SERVICE_TOKEN) {
+      const resp = await vkApi<{ groups?: Array<{ members_count?: number }> } | Array<{ members_count?: number }>>(
+        "groups.getById",
+        { group_id: this.account.accountId, fields: "members_count" }
+      );
+      const group = Array.isArray(resp) ? resp[0] : resp?.groups?.[0];
+      if (group?.members_count) return { followers: group.members_count };
+    }
     const rollup = await prisma.accountDailyRollup.findFirst({
       where: { socialAccountId: this.account.id },
       orderBy: { rollupDate: "desc" },

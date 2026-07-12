@@ -18,6 +18,9 @@ export interface PostData {
   contentUrl: string;
   thumbnailUrl: string | null;
   publishedAt: Date;
+  /** VK only: "<ownerId>_<videoId>" of the post's primary video, used by
+   *  the video_ext.php view refresher. */
+  attachedVideoId?: string | null;
 }
 
 export interface MetricData {
@@ -181,6 +184,7 @@ export abstract class BaseCollector {
                 thumbnailUrl: cleanThumbnail,
                 publishedAt: post.publishedAt,
                 tags: finalTags,
+                ...(post.attachedVideoId ? { attachedVideoId: post.attachedVideoId } : {}),
               },
               // Defensive update — never let a sync that returned a
               // null/empty caption (CAPTCHA, IP block, partial-data
@@ -191,6 +195,7 @@ export abstract class BaseCollector {
                 ...(cleanTitle && { title: cleanTitle }),
                 ...(cleanDescription && { description: cleanDescription }),
                 ...(cleanThumbnail && { thumbnailUrl: cleanThumbnail }),
+                ...(post.attachedVideoId ? { attachedVideoId: post.attachedVideoId } : {}),
                 publishedAt: post.publishedAt,
                 lastMetricRefreshAt: new Date(),
                 // Recompute every sync — auto tags reflect the latest

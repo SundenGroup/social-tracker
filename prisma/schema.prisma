@@ -398,3 +398,33 @@ model AskRequest {
   @@index([userId, createdAt])
   @@index([organizationId, createdAt])
 }
+
+// Personal bookmark of a filtered view (path + querystring). The URL
+// carries profile/date scope; page-local state (tags) is best-effort.
+model SavedView {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  url       String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Public, tokenized, read-only report snapshot definition. The data is
+// computed live at view time (always current); the row pins scope +
+// range + who created it. Revocable.
+model SharedReport {
+  id             String    @id @default(cuid())
+  token          String    @unique
+  organizationId String
+  createdById    String
+  title          String
+  profileId      String?
+  startDate      DateTime
+  endDate        DateTime
+  createdAt      DateTime  @default(now())
+  revokedAt      DateTime?
+
+  @@index([organizationId])
+}

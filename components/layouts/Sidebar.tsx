@@ -46,6 +46,8 @@ const REPORTING_ITEMS: NavItem[] = [
   { href: "/period-comparison", label: "Compare periods", icon: navIcon("M8 7h13M8 7l3-3M8 7l3 3M16 17H3M16 17l-3-3M16 17l-3 3") },
   // Ask: sparkle — natural-language Q&A over the workspace data
   { href: "/ask", label: "Ask", icon: navIcon("M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z") },
+  // Best time to post: clock
+  { href: "/best-time", label: "Best time to post", icon: navIcon("M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3.5 2") },
 ];
 
 const PLATFORM_ITEMS: PlatformNavItem[] = [
@@ -73,6 +75,7 @@ const PROFILE_PAGES = new Set([
   "/content",
   "/period-comparison",
   "/ask",
+  "/best-time",
   "/platforms/youtube",
   "/platforms/twitter",
   "/platforms/instagram",
@@ -240,6 +243,8 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps = 
             />
           ))}
         </NavGroup>
+
+        <SavedViewsGroup />
 
         {/* Hide the whole Platforms group if the current profile scope
             has zero connected platforms — avoids a dangling heading. */}
@@ -471,6 +476,161 @@ function MenuRow({
     >
       {label}
     </button>
+  );
+}
+
+interface SavedViewRow {
+  id: string;
+  name: string;
+  url: string;
+}
+
+/**
+ * Personal bookmarks of filtered views. The saved URL carries the
+ * profile + date scope; clicking restores it exactly. Hidden entirely
+ * until the user saves their first view (plus the save affordance).
+ */
+function SavedViewsGroup() {
+  const pathname = usePathname();
+  const [views, setViews] = useState<SavedViewRow[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/saved-views")
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((j) => setViews(j.data ?? []))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  async function saveCurrent() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const url = window.location.pathname + window.location.search;
+    const res = await fetch("/api/saved-views", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed, url }),
+    });
+    if (res.ok) {
+      const j = await res.json();
+      setViews((prev) => [j.data, ...prev]);
+      setName("");
+      setSaving(false);
+    }
+  }
+
+  async function remove(id: string) {
+    setViews((prev) => prev.filter((v) => v.id !== id));
+    await fetch(`/api/saved-views/${id}`, { method: "DELETE" }).catch(() => {});
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <NavGroup label="Saved views">
+      {views.map((v) => (
+        <div key={v.id} className="saved-view-row" style={{ position: "relative" }}>
+          <NavRow
+            href={v.url}
+            label={v.name}
+            active={typeof window !== "undefined" && pathname + window.location.search === v.url}
+            leading={
+              <span style={{ display: "flex", opacity: 0.75 }}>{navIcon("M5 4h14v17l-7-4-7 4V4z")}</span>
+            }
+          />
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              remove(v.id);
+            }}
+            title="Delete saved view"
+            style={{
+              position: "absolute",
+              right: 6,
+              top: "50%",
+              transform: "translateY(-50%)",
+              width: 18,
+              height: 18,
+              borderRadius: 5,
+              border: "none",
+              background: "transparent",
+              color: "var(--fg-subtle)",
+              fontSize: 12,
+              lineHeight: 1,
+              cursor: "pointer",
+            }}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+
+      {saving ? (
+        <div style={{ display: "flex", gap: 6, padding: "4px 10px" }}>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveCurrent();
+              if (e.key === "Escape") setSaving(false);
+            }}
+            placeholder="Name this view…"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              padding: "5px 8px",
+              borderRadius: 6,
+              border: "1px solid var(--border-strong)",
+              background: "var(--bg)",
+              color: "var(--fg)",
+              fontSize: 12,
+              outline: "none",
+            }}
+          />
+          <button
+            onClick={saveCurrent}
+            style={{
+              padding: "0 10px",
+              borderRadius: 6,
+              border: "none",
+              background: "var(--accent)",
+              color: "#fff",
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Save
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setSaving(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            width: "100%",
+            padding: "7px 10px",
+            borderRadius: 7,
+            fontSize: 12.5,
+            fontWeight: 500,
+            color: "var(--fg-subtle)",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          <span style={{ width: 13, textAlign: "center" }}>＋</span>
+          Save current view
+        </button>
+      )}
+    </NavGroup>
   );
 }
 

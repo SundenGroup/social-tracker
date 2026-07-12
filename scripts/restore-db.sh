@@ -1,45 +1,36 @@
 #!/bin/bash
-set -e
+# Restore a backup produced by backup-db.sh (custom-format pg_dump).
+# Run ON THE DROPLET as root:  ./scripts/restore-db.sh /root/backups/clutch-social-<ts>.dump.gz
+set -euo pipefail
 
-DB_NAME="clutch_social_tracker"
+APP_DIR="/root/clutch-social"
 
-if [ -z "$1" ]; then
-    echo "Usage: $0 <backup-file.sql.gz>"
-    echo ""
-    echo "Available backups:"
-    ls -lh /home/ubuntu/backups/clutch-social-backup-*.sql.gz 2>/dev/null || echo "  No backups found"
-    exit 1
+if [ -z "${1:-}" ]; then
+  echo "Usage: $0 <clutch-social-*.dump.gz>"
+  echo ""
+  echo "Available backups:"
+  ls -lh /root/backups/clutch-social-*.dump.gz 2>/dev/null || echo "  none"
+  exit 1
 fi
 
 BACKUP_FILE="$1"
+[ -f "$BACKUP_FILE" ] || { echo "Not found: $BACKUP_FILE"; exit 1; }
 
-if [ ! -f "$BACKUP_FILE" ]; then
-    echo "Error: Backup file not found: $BACKUP_FILE"
-    exit 1
-fi
+# shellcheck disable=SC1091
+set -a; source "$APP_DIR/.env"; set +a
 
 echo "=== WARNING ==="
-echo "This will DROP and RECREATE the database: $DB_NAME"
-echo "Restoring from: $BACKUP_FILE"
-echo ""
-read -p "Are you sure? Type 'yes' to continue: " CONFIRM
-
-if [ "$CONFIRM" != "yes" ]; then
-    echo "Aborted."
-    exit 0
-fi
+echo "This will WIPE the current database and restore: $BACKUP_FILE"
+read -r -p "Type 'yes' to continue: " CONFIRM
+[ "$CONFIRM" = "yes" ] || { echo "Aborted."; exit 0; }
 
 echo "Stopping application..."
 pm2 stop clutch-social 2>/dev/null || true
 
-echo "Dropping and recreating database..."
-sudo -u postgres psql -c "DROP DATABASE IF EXISTS $DB_NAME;"
-sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER clutch_user;"
-
-echo "Restoring from backup..."
-gunzip -c "$BACKUP_FILE" | sudo -u postgres psql "$DB_NAME"
+echo "Restoring (drop + recreate objects from dump)..."
+gunzip -c "$BACKUP_FILE" | pg_restore --clean --if-exists --no-owner -d "$DATABASE_URL"
 
 echo "Starting application..."
-pm2 start clutch-social
+pm2 restart clutch-social
 
-echo "Restore complete!"
+echo "Restore complete."

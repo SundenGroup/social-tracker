@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import Header from "@/components/layouts/Header";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import ExportButton from "@/components/common/ExportButton";
+import ShareReportButton from "@/components/common/ShareReportButton";
 import { useDateRange } from "@/hooks/useDateRange";
 import KPICard from "@/components/cards/KPICard";
 import PlatformStrip, { type PlatformStripItem } from "@/components/cards/PlatformStrip";
@@ -170,6 +171,7 @@ export default function DashboardPage() {
           onChange={(s, e) => setDateRange(s, e)}
         />
         <ExportButton startDate={startDate} endDate={endDate} tags={tags} />
+        <ShareReportButton startDate={startDate} endDate={endDate} />
       </Header>
 
       {isLoading && !data && (

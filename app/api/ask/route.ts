@@ -21,6 +21,17 @@ export const POST = apiHandler(
     const body = await req.json().catch(() => ({}));
     const question = typeof body.question === "string" ? body.question.trim() : "";
     const profileId = typeof body.profileId === "string" ? body.profileId : null;
+    // Follow-up memory: the client replays its recent exchanges
+    // (question + the model's own validated answer spec). Each spec is
+    // re-validated — we never replay arbitrary client JSON to the model.
+    const history: Array<{ question: string; spec: AskAnswerSpec }> = [];
+    if (Array.isArray(body.history)) {
+      for (const h of body.history.slice(-4)) {
+        if (typeof h?.question !== "string" || h.question.length > MAX_QUESTION_CHARS) continue;
+        const v = validateAnswerSpec(h.spec);
+        if (v.ok) history.push({ question: h.question.trim(), spec: v.spec });
+      }
+    }
 
     if (!question) {
       return NextResponse.json({ error: "Question is required" }, { status: 400 });
@@ -66,7 +77,7 @@ export const POST = apiHandler(
       if (mockMode) {
         spec = await runMockAsk(ctx, question);
       } else {
-        const live = await runLiveAsk(ctx, question, log);
+        const live = await runLiveAsk(ctx, question, history, log);
         spec = live;
       }
 
@@ -81,7 +92,9 @@ export const POST = apiHandler(
           model: log.model ?? undefined,
         },
       };
-      return NextResponse.json({ data: { answer } });
+      // `spec` goes back to the client so it can be replayed as
+      // follow-up context (IDs only — the hydrated data stays server-made).
+      return NextResponse.json({ data: { answer, spec } });
     } catch (err) {
       log.status = "error";
       console.error("[Ask] Failed:", err);
@@ -116,6 +129,7 @@ export const POST = apiHandler(
 async function runLiveAsk(
   ctx: AskContext,
   question: string,
+  history: Array<{ question: string; spec: AskAnswerSpec }>,
   log: { model: string | null; inputTokens: number; outputTokens: number; toolCalls: number; status: string }
 ): Promise<AskAnswerSpec> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -123,7 +137,18 @@ async function runLiveAsk(
   // `effort` is supported on Sonnet 5 / Opus tiers but errors on Haiku 4.5.
   const supportsEffort = /sonnet-5|opus/.test(model);
 
-  const messages: Anthropic.MessageParam[] = [{ role: "user", content: question }];
+  // Replay prior exchanges so follow-ups ("and for TikTok only?",
+  // "same but June") resolve against what was already answered. The
+  // assistant side is the compact validated spec, not hydrated data.
+  const messages: Anthropic.MessageParam[] = [];
+  for (const h of history) {
+    messages.push({ role: "user", content: h.question });
+    messages.push({
+      role: "assistant",
+      content: `[I answered via render_answer with:]\n${JSON.stringify(h.spec)}`,
+    });
+  }
+  messages.push({ role: "user", content: question });
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await client.messages.create({
