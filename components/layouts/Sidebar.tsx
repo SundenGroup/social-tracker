@@ -46,8 +46,6 @@ const REPORTING_ITEMS: NavItem[] = [
   { href: "/period-comparison", label: "Compare periods", icon: navIcon("M8 7h13M8 7l3-3M8 7l3 3M16 17H3M16 17l-3-3M16 17l-3 3") },
   // Ask: sparkle — natural-language Q&A over the workspace data
   { href: "/ask", label: "Ask", icon: navIcon("M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z") },
-  // Best time to post: clock
-  { href: "/best-time", label: "Best time to post", icon: navIcon("M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3.5 2") },
 ];
 
 const PLATFORM_ITEMS: PlatformNavItem[] = [
@@ -75,7 +73,6 @@ const PROFILE_PAGES = new Set([
   "/content",
   "/period-comparison",
   "/ask",
-  "/best-time",
   "/platforms/youtube",
   "/platforms/twitter",
   "/platforms/instagram",

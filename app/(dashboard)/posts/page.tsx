@@ -9,6 +9,7 @@ import ContentPerformanceTable from "@/components/tables/ContentPerformanceTable
 import TopPostCard from "@/components/cards/TopPostCard";
 import TagFilterPills from "@/components/common/TagFilterPills";
 import ViewToggle from "@/components/common/ViewToggle";
+import BestTimePanel from "@/components/analytics/BestTimePanel";
 import { useDashboard } from "@/hooks/useDashboard";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useProfiles } from "@/hooks/useProfiles";
@@ -40,7 +41,7 @@ const PLATFORM_FILTERS = [
  */
 export default function PostsPage() {
   const { startDate, endDate, setDateRange } = useDateRange();
-  const [view, setView] = useState<"table" | "gallery">("table");
+  const [view, setView] = useState<"table" | "gallery" | "timing">("table");
   const [tags, setTags] = useState<string[]>([]);
   const [metric, setMetric] = useState<Metric>("views");
   const [platform, setPlatform] = useState("all");
@@ -56,14 +57,13 @@ export default function PostsPage() {
   const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
   const { data, isLoading, error, refetch } = useDashboard(startDate, endDate, undefined, tags);
 
-  // Honor ?view=gallery (the /top-posts redirect target). Read from
-  // location instead of useSearchParams to avoid a Suspense boundary
-  // requirement on a client page.
+  // Honor ?view=gallery / ?view=timing (redirect targets of the former
+  // /top-posts and /best-time pages). Read from location instead of
+  // useSearchParams to avoid a Suspense boundary on a client page.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (new URLSearchParams(window.location.search).get("view") === "gallery") {
-      setView("gallery");
-    }
+    const v = new URLSearchParams(window.location.search).get("view");
+    if (v === "gallery" || v === "timing") setView(v);
   }, []);
 
   useEffect(() => {
@@ -105,17 +105,30 @@ export default function PostsPage() {
       <Header title="Posts" subtitle="Every post, every platform">
         <ViewToggle
           value={view}
-          onChange={(v) => setView(v as "table" | "gallery")}
+          onChange={(v) => setView(v as "table" | "gallery" | "timing")}
           options={[
             { key: "table", label: "Table" },
             { key: "gallery", label: "Gallery" },
+            { key: "timing", label: "Timing" },
           ]}
         />
-        <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
-        <ExportButton startDate={startDate} endDate={endDate} tags={tags} />
+        {/* The timing view runs on its own lookback window — the date
+            picker and export don't apply there and would mislead. */}
+        {view !== "timing" && (
+          <>
+            <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => setDateRange(s, e)} />
+            <ExportButton startDate={startDate} endDate={endDate} tags={tags} />
+          </>
+        )}
       </Header>
 
-      {isLoading && !data && (
+      {view === "timing" && (
+        <div className="page-pad" style={{ padding: "24px 28px 48px" }}>
+          <BestTimePanel tags={tags} />
+        </div>
+      )}
+
+      {view !== "timing" && isLoading && !data && (
         <div style={{ display: "flex", minHeight: 400, alignItems: "center", justifyContent: "center" }}>
           <LoadingSpinner size="lg" />
         </div>
