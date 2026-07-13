@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import Header from "@/components/layouts/Header";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import TagFilterPills from "@/components/common/TagFilterPills";
+import ViewToggle from "@/components/common/ViewToggle";
 import { useDashboard } from "@/hooks/useDashboard";
 import { useProfiles } from "@/hooks/useProfiles";
 import { PlatformGlyph, PLATFORM_COLOR, PLATFORM_LABEL } from "@/components/icons/PlatformGlyph";
@@ -11,7 +12,15 @@ import { UNTAGGED_FILTER, NO_EXTRAS_FILTER } from "@/lib/tagging";
 import { fmtK } from "@/lib/format";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const LOOKBACK_DAYS = 180;
+/** Lookback presets instead of a free date picker: timing analysis
+ *  needs enough posts per slot to be meaningful — short custom ranges
+ *  would render a heatmap of noise. */
+const LOOKBACKS = [
+  { key: "90", label: "90 days" },
+  { key: "180", label: "180 days" },
+  { key: "365", label: "1 year" },
+  { key: "3000", label: "All time" },
+];
 /** Cells need a minimum sample before we trust (or color) them. */
 const MIN_POSTS = 3;
 
@@ -37,6 +46,7 @@ function median(values: number[]): number {
 export default function BestTimePage() {
   const [tags, setTags] = useState<string[]>([]);
   const [platform, setPlatform] = useState<string>("all");
+  const [lookback, setLookback] = useState("180");
   const {
     availableTags,
     hasUntaggedPostsInScope,
@@ -48,13 +58,11 @@ export default function BestTimePage() {
   } = useProfiles();
   const scopeKey = selectedProfileIds.length === 0 ? "__org__" : selectedProfileIds.join(",");
 
-  // Fixed 180-day window — the header date picker is intentionally not
-  // used here; timing analysis needs a long baseline.
   const { startDate, endDate } = useMemo(() => {
     const end = new Date();
-    const start = new Date(end.getTime() - LOOKBACK_DAYS * 86400000);
+    const start = new Date(end.getTime() - Number(lookback) * 86400000);
     return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) };
-  }, []);
+  }, [lookback]);
   const { data, isLoading, error } = useDashboard(startDate, endDate, undefined, tags);
 
   useEffect(() => {
@@ -131,8 +139,10 @@ export default function BestTimePage() {
     <>
       <Header
         title="Best time to post"
-        subtitle={`From your own last ${LOOKBACK_DAYS} days · times shown in your timezone`}
-      />
+        subtitle={`Analyzing ${startDate} → ${endDate} · times shown in your timezone`}
+      >
+        <ViewToggle value={lookback} onChange={setLookback} options={LOOKBACKS} />
+      </Header>
 
       <div className="page-pad" style={{ padding: "24px 28px 48px", display: "flex", flexDirection: "column", gap: 18 }}>
         {/* Platform tabs + tag filter */}
