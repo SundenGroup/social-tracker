@@ -490,13 +490,30 @@ async function scrape(username: string): Promise<ScrapeResult> {
               if (!m) continue;
               const shortcode = m[2];
               if (out[shortcode] != null) continue;
-              const viewSvgs = a.querySelectorAll('svg[aria-label="View count icon"]');
-              for (const svg of Array.from(viewSvgs)) {
+              // Match the icon on a case-insensitive regex over aria-label
+              // rather than an exact attribute selector. IG relabelled it
+              // "View count icon" -> "View Count Icon" (seen 2026-08-11) and
+              // CSS attribute matching is case-sensitive by default, so the
+              // old exact selector silently returned nothing.
+              const viewSvgs = Array.from(a.querySelectorAll("svg[aria-label]"))
+                .filter((s) => /view\\s*count/i.test(s.getAttribute("aria-label") || ""));
+              for (const svg of viewSvgs) {
+                const label = svg.getAttribute("aria-label") || "";
                 let cur = svg.parentElement;
                 let found = 0;
                 for (let hop = 0; hop < 5 && cur && cur !== a; hop++) {
                   const text = cur.textContent || "";
-                  const numMatch = text.match(/[\\d.,]+\\s*[KkMmBb]?/);
+                  // Take the number that FOLLOWS the icon's own title text.
+                  // The svg carries a <title> matching its aria-label, so it
+                  // shows up in textContent. Walking up eventually reaches a
+                  // container that also holds the likes/comments counts,
+                  // whose digits sit *before* the icon — e.g.
+                  // "311View Count Icon3,904" (31 likes, 1 comment, 3904
+                  // views). Slicing past the title keeps us on the views
+                  // number instead of grabbing a mashed-up "311".
+                  const idx = text.indexOf(label);
+                  const tail = idx >= 0 ? text.slice(idx + label.length) : text;
+                  const numMatch = tail.match(/[\\d.,]+\\s*[KkMmBb]?/);
                   if (numMatch) {
                     const n = parseCount(numMatch[0]);
                     if (n > 0) { found = n; break; }
@@ -584,7 +601,20 @@ async function scrape(username: string): Promise<ScrapeResult> {
       //   DXiaXRuiKuQ → views=3,118 ✓ (matches user's eyes minus drift)
       if (tab.label === "Reels") {
         await harvestGridViewCounts();
-        console.log(`[Scraper] Captured grid view counts for ${Object.keys(reelsViewMap).length} reels`);
+        const captured = Object.keys(reelsViewMap).length;
+        console.log(`[Scraper] Captured grid view counts for ${captured} reels`);
+        // Loud on zero. This harvester is a *fallback* — views normally come
+        // from the private API's play_count — so a silent break here goes
+        // unnoticed until play_count erodes again (as it did in April 2026)
+        // and views quietly stop being recorded altogether.
+        if (captured === 0) {
+          console.log(
+            `[Scraper] WARNING: reels grid yielded 0 view counts for @${username}. ` +
+              `The view-count icon markup likely changed again — re-check the ` +
+              `aria-label match in harvestGridViewCounts(). Views this run depend ` +
+              `entirely on the private API's play_count.`
+          );
+        }
       }
     }
 
