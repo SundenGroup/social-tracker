@@ -108,7 +108,18 @@ export async function POST(req: Request) {
           if (!text) return null;
           let clean = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
           clean = clean.replace(/\\/g, "");
-          if (clean.length > max) clean = clean.substring(0, max);
+          // Truncate by CODE POINTS, not UTF-16 units — substring(0, max)
+          // can slice an emoji's surrogate pair in half, and the lone
+          // surrogate then crashes Prisma's JSON wire encoding
+          // ("unexpected end of hex escape"), failing the whole post
+          // upsert. This is exactly what killed IG ingest for the
+          // emoji-heavy KR/TR/Global accounts starting 2026-08-13.
+          if (clean.length > max) clean = Array.from(clean).slice(0, max).join("");
+          // Scraped DOM text can also arrive with unpaired surrogates
+          // already baked in (IG itself truncates captions) — strip them.
+          clean = clean
+            .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "")
+            .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "");
           return clean;
         };
 
