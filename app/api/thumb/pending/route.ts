@@ -28,17 +28,22 @@ export async function GET(req: Request) {
       isDeleted: false,
       thumbnailUrl: { not: null },
     },
-    select: { id: true, thumbnailUrl: true },
+    select: { id: true, thumbnailUrl: true, publishedAt: true },
     orderBy: { publishedAt: "desc" },
     take: limit * 4,
   });
 
-  const pending: Array<{ id: string; thumbnailUrl: string }> = [];
+  // publishedAt lets the warmer distinguish "URL expired" (old post,
+  // 403 is expected — skip) from "I'm being rate-limited" (fresh post
+  // 403ing — abort before the CDN escalates).
+  const pending: Array<{ id: string; thumbnailUrl: string; publishedAt: string }> = [];
   for (const c of candidates) {
     if (pending.length >= limit) break;
     if (!c.thumbnailUrl) continue;
     const cached = await readCached(c.id);
-    if (!cached) pending.push({ id: c.id, thumbnailUrl: c.thumbnailUrl });
+    if (!cached) {
+      pending.push({ id: c.id, thumbnailUrl: c.thumbnailUrl, publishedAt: c.publishedAt.toISOString() });
+    }
   }
 
   return NextResponse.json({ platform, count: pending.length, pending });

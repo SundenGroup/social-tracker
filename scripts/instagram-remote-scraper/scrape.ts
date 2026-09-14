@@ -931,6 +931,22 @@ async function main() {
     }
   }
 
+  // Warm the permanent thumbnail cache while today's signed CDN URLs
+  // are fresh (droplet can't fetch IG images itself — datacenter IPs
+  // get 403). Runs regardless of scrape failures: warming works off
+  // already-stored URLs and is independent of today's scrape outcome.
+  try {
+    const { spawnSync } = await import("child_process");
+    console.log("[Scraper] Warming thumbnail cache...");
+    const warm = spawnSync("npx", ["tsx", path.join(SCRIPT_DIR, "..", "warm-thumbnails.ts"), "instagram", "250"], {
+      stdio: "inherit",
+      timeout: 15 * 60_000,
+    });
+    if (warm.status !== 0) console.error("[Scraper] Thumbnail warmer exited non-zero (non-fatal).");
+  } catch (err) {
+    console.error("[Scraper] Thumbnail warmer failed (non-fatal):", err);
+  }
+
   if (hasFailure) {
     console.error("[Scraper] Some accounts failed to scrape.");
     process.exit(1);
