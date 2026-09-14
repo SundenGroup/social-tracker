@@ -420,7 +420,10 @@ model SharedReport {
   organizationId String
   createdById    String
   title          String
-  profileId      String?
+  /// Profile scope: empty array = all profiles the creator could see.
+  /// Was a single nullable profileId until 2026-09-14 — multi-profile
+  /// selections silently shared org-wide (the bug that forced this).
+  profileIds     String[]  @default([])
   startDate      DateTime
   endDate        DateTime
   createdAt      DateTime  @default(now())

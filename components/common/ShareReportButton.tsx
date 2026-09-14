@@ -16,6 +16,14 @@ export default function ShareReportButton({ startDate, endDate }: { startDate: s
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  // A link is only valid for the scope+range it was created with —
+  // invalidate the cached one whenever either changes.
+  const paramsKey = `${startDate}|${endDate}|${[...selectedProfileIds].sort().join(",")}`;
+  const linkKeyRef = useRef<string | null>(null);
+  if (link && linkKeyRef.current !== paramsKey) {
+    setLink(null);
+  }
+
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
@@ -34,12 +42,16 @@ export default function ShareReportButton({ startDate, endDate }: { startDate: s
         body: JSON.stringify({
           startDate,
           endDate,
-          profileId: selectedProfileIds.length === 1 ? selectedProfileIds[0] : undefined,
+          // Full multi-select — an empty array means "all profiles".
+          // (The old code only sent a single-profile selection, so any
+          // multi-select silently shared org-wide.)
+          profileIds: selectedProfileIds,
         }),
       });
       const json = await res.json();
       if (res.ok) {
         const url = `${window.location.origin}${json.data.url}`;
+        linkKeyRef.current = paramsKey;
         setLink(url);
         await navigator.clipboard.writeText(url).catch(() => {});
         setCopied(true);

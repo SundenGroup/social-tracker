@@ -18,19 +18,24 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "This report link is no longer available" }, { status: 404 });
   }
 
-  const [org, profile, accounts] = await Promise.all([
+  const scopeIds = report.profileIds;
+  const [org, profiles, accounts] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: report.organizationId },
       select: { name: true, hideSponsored: true },
     }),
-    report.profileId
-      ? prisma.profile.findUnique({ where: { id: report.profileId }, select: { name: true } })
-      : Promise.resolve(null),
+    scopeIds.length > 0
+      ? prisma.profile.findMany({
+          where: { id: { in: scopeIds } },
+          select: { name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
     prisma.socialAccount.findMany({
       where: {
         organizationId: report.organizationId,
         isActive: true,
-        ...(report.profileId ? { profileId: report.profileId } : {}),
+        ...(scopeIds.length > 0 ? { profileId: { in: scopeIds } } : {}),
       },
       select: { id: true },
     }),
@@ -94,7 +99,7 @@ export async function GET(req: Request) {
     data: {
       title: report.title,
       organization: org?.name ?? "",
-      scope: profile?.name ?? "All profiles",
+      scope: profiles.length > 0 ? profiles.map((p) => p.name).join(", ") : "All profiles",
       startDate: report.startDate.toISOString().slice(0, 10),
       endDate: report.endDate.toISOString().slice(0, 10),
       generatedAt: new Date().toISOString(),

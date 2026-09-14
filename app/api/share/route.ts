@@ -16,20 +16,36 @@ export const POST = apiHandler(
       return NextResponse.json({ error: "Valid startDate and endDate are required" }, { status: 400 });
     }
 
-    // Resolve the requested profile through the caller's permission set —
-    // a scoped viewer can only share what they can see.
-    const requested = typeof body.profileId === "string" && body.profileId ? body.profileId : null;
+    // Resolve the requested profiles through the caller's permission
+    // set — a scoped viewer can only share what they can see. Accepts
+    // the full multi-select (`profileIds` array) and the legacy single
+    // `profileId` string.
+    const requested: string[] | string | null = Array.isArray(body.profileIds)
+      ? body.profileIds.filter((x: unknown): x is string => typeof x === "string" && x.length > 0)
+      : typeof body.profileId === "string" && body.profileId
+        ? body.profileId
+        : null;
     const scopeIds = effectiveProfileIds(session!, requested);
-    const profileId = scopeIds.length === 1 ? scopeIds[0] : null;
 
-    const profile = profileId
-      ? await prisma.profile.findFirst({
-          where: { id: profileId, organizationId: session!.user.organizationId },
-          select: { name: true },
-        })
-      : null;
+    // Keep only profiles that really belong to this org, and get their
+    // names for the default title.
+    const profiles =
+      scopeIds.length > 0
+        ? await prisma.profile.findMany({
+            where: { id: { in: scopeIds }, organizationId: session!.user.organizationId },
+            select: { id: true, name: true },
+            orderBy: { name: "asc" },
+          })
+        : [];
+    const profileIds = profiles.map((p) => p.id);
 
-    const fallbackTitle = `${profile?.name ?? "All profiles"} — ${body.startDate} to ${body.endDate}`;
+    const scopeLabel =
+      profileIds.length === 0
+        ? "All profiles"
+        : profiles.length <= 2
+          ? profiles.map((p) => p.name).join(" + ")
+          : `${profiles.length} profiles`;
+    const fallbackTitle = `${scopeLabel} — ${body.startDate} to ${body.endDate}`;
     const title =
       typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, 120) : fallbackTitle;
 
@@ -39,7 +55,7 @@ export const POST = apiHandler(
         organizationId: session!.user.organizationId,
         createdById: session!.user.id,
         title,
-        profileId,
+        profileIds,
         startDate: start,
         endDate: end,
       },
