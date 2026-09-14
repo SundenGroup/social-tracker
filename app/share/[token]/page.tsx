@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { PlatformGlyph, PLATFORM_COLOR, PLATFORM_LABEL } from "@/components/icons/PlatformGlyph";
-import { thumbProxySrc } from "@/lib/thumb-src";
+import { thumbSrc, thumbProxySrc } from "@/lib/thumb-src";
 import { fmtK } from "@/lib/format";
 
 interface ShareData {
@@ -177,12 +177,23 @@ export default function SharedReportPage() {
               >
                 <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: "var(--fg-subtle)" }}>{i + 1}</span>
                 <span style={{ width: 40, height: 40, borderRadius: 6, overflow: "hidden", background: "var(--bg)", display: "block" }}>
+                  {/* Direct CDN URL first — it loads from the VIEWER's
+                      (residential) IP, which is the only thing Instagram's
+                      CDN accepts; the droplet proxy would 403 there and
+                      serve a placeholder. Proxy stays as the fallback for
+                      expired/dead URLs. Same pattern as the dashboard. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={thumbProxySrc(p.id)}
+                    src={thumbSrc(p)}
                     alt=""
                     loading="lazy"
+                    referrerPolicy="no-referrer"
                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    onError={(e) => {
+                      const img = e.target as HTMLImageElement;
+                      const proxied = thumbProxySrc(p.id);
+                      if (!img.src.endsWith(proxied)) img.src = proxied;
+                    }}
                   />
                 </span>
                 <span style={{ minWidth: 0 }}>
